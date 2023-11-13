@@ -1,4 +1,8 @@
 pub mod todoitem;
+pub mod todopriority;
+pub mod todorecurrence;
+pub mod todoproject;
+pub mod todocontext;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
