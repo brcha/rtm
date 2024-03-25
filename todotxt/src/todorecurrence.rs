@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -48,6 +48,34 @@ impl FromStr for TodoRecurrence {
                 unit,
             }),
             Err(e) => Err(e),
+        }
+    }
+}
+
+impl Display for TodoRecurrence {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.strict {
+            write!(f, "+")?;
+        }
+        if self.count > 1 {
+            write!(f, "{}", self.count)?;
+        }
+        match self.unit {
+            TodoRecurrenceUnit::Daily => {
+                write!(f, "d")
+            }
+            TodoRecurrenceUnit::BusinessDay => {
+                write!(f, "b")
+            }
+            TodoRecurrenceUnit::Weekly => {
+                write!(f, "w")
+            }
+            TodoRecurrenceUnit::Monthly => {
+                write!(f, "m")
+            }
+            TodoRecurrenceUnit::Yearly => {
+                write!(f, "y")
+            }
         }
     }
 }
@@ -110,6 +138,55 @@ mod tests {
         assert_eq!(
             TodoRecurrence::from_str("d"),
             TodoRecurrence::from_str("1d")
+        );
+    }
+
+    #[test]
+    fn display_test() {
+        assert_eq!(
+            "+d",
+            TodoRecurrence {
+                count: 1,
+                strict: true,
+                unit: Daily
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "13y",
+            TodoRecurrence {
+                count: 13,
+                strict: false,
+                unit: Yearly
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "3w",
+            TodoRecurrence {
+                count: 3,
+                strict: false,
+                unit: Weekly
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "2b",
+            TodoRecurrence {
+                count: 2,
+                strict: false,
+                unit: BusinessDay
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "4m",
+            TodoRecurrence {
+                count: 4,
+                strict: false,
+                unit: Monthly
+            }
+            .to_string()
         );
     }
 }
