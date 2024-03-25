@@ -1,5 +1,5 @@
 use std::fmt;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -10,7 +10,7 @@ pub struct TodoPriority {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TodoPriorityParseError;
 
-impl FromStr for TodoPriority{
+impl FromStr for TodoPriority {
     type Err = TodoPriorityParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -21,7 +21,9 @@ impl FromStr for TodoPriority{
 
         if prio_char.len() == 1 {
             if let p @ b'A'..=b'Z' = prio_char.as_bytes()[0] {
-                Ok(TodoPriority { priority: Some(p - b'A') })
+                Ok(TodoPriority {
+                    priority: Some(p - b'A'),
+                })
             } else {
                 Err(TodoPriorityParseError)
             }
@@ -31,12 +33,12 @@ impl FromStr for TodoPriority{
     }
 }
 
-impl fmt::Display for TodoPriority {
+impl Display for TodoPriority {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self.priority {
             Some(p) => {
                 write!(f, "({})", (p + b'A') as char)
-            },
+            }
             None => Ok(()),
         }
     }
@@ -45,9 +47,13 @@ impl fmt::Display for TodoPriority {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn parse_test() {
-        assert_eq!(Ok(TodoPriority { priority: Some(3)}), TodoPriority::from_str("(D)"));
+        assert_eq!(
+            Ok(TodoPriority { priority: Some(3) }),
+            TodoPriority::from_str("(D)")
+        );
         assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(g)"));
         assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("A"));
     }
