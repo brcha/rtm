@@ -5,7 +5,7 @@ use crate::todopriority::TodoPriority;
 use crate::todoproject::TodoProject;
 use crate::todorecurrence::TodoRecurrence;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TodoItem {
     pub done: bool,
     pub priority: TodoPriority,
