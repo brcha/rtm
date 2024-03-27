@@ -1,19 +1,14 @@
 {
   "packages": [
-    "rustup@latest"
+    "rustc@1.76.0",
+    "cargo@1.76.0"
   ],
   "env": {
     "PROJECT_DIR": "$PWD"
   },
   "shell": {
-    "init_hook": [
-      ". conf/setup_environment.sh",
-      "rustup default stable"
-    ],
     "scripts": {
-      "test": [
-        "echo \"Error: no test specified\" && exit 1"
-      ]
+      "test": ["echo \"Error: no test specified\" && exit 1"]
     }
   }
 }
