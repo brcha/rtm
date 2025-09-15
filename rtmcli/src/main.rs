@@ -5,7 +5,7 @@ use todotxt::TodoLibrary;
 
 #[derive(Parser)]
 #[command(name = "rtmcli")]
-#[command(about = "Simple Todo.txt CLI")]
+#[command(about = "Rust Todo.txt Manager CLI")]
 struct Cli {
     /// Todo.txt file name
     #[arg(short = 'f', long)]
