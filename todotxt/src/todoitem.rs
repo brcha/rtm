@@ -96,13 +96,18 @@ impl FromStr for TodoItem {
         let mut creation_date = None;
 
         if done {
-            let comp_str = parts.get(index).ok_or(TodoItemParseError)?;
-            completion_date = Some(chrono::NaiveDate::parse_from_str(comp_str, "%Y-%m-%d")?);
-            index += 1;
-
-            let creat_str = parts.get(index).ok_or(TodoItemParseError)?;
-            creation_date = Some(chrono::NaiveDate::parse_from_str(creat_str, "%Y-%m-%d")?);
-            index += 1;
+            if let Some(date_str) = parts.get(index) {
+                if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                    completion_date = Some(date);
+                    index += 1;
+                }
+            }
+            if let Some(date_str) = parts.get(index) {
+                if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                    creation_date = Some(date);
+                    index += 1;
+                }
+            }
         } else {
             if let Some(date_str) = parts.get(index) {
                 if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
