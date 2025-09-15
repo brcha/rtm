@@ -3,7 +3,7 @@
 resolver = "2"
 
 members = [
-	"libtodotxt",
+	"todotxt",
 	"rtmcli",
 	"rtmgui",
 ]
