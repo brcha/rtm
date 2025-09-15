@@ -17,7 +17,7 @@ pub struct TodoItem {
     pub done: bool,
     pub priority: TodoPriority,
     pub completion_date: Option<NaiveDate>,
-    pub creation_date: Option<NaiveDate>, // must exist if completion date is
+    pub creation_date: Option<NaiveDate>, // must exist if completion date is set
     pub description: String,
     pub projects: Vec<TodoProject>,
     pub contexts: Vec<TodoContext>,
@@ -234,18 +234,136 @@ impl Display for TodoItem {
 }
 
 impl TodoItem {
-    pub fn add_subtask(mut parent: TodoItem, mut child: TodoItem) -> (Option<TodoItem>, TodoItem) {
-        let has_uuid = parent.uuid.is_some();
-        let new_uuid = if !has_uuid {
-            let uuid = Uuid::new_v4();
-            parent.uuid = Some(uuid);
-            uuid
+    pub fn add_subtask(&self, child: &TodoItem) -> (Option<TodoItem>, TodoItem) {
+        let new_uuid = if let Some(existing_uuid) = self.uuid {
+            existing_uuid
         } else {
-            parent.uuid.unwrap()
+            Uuid::new_v4()
         };
-        child.sub = Some(new_uuid);
-        let updated_parent = if has_uuid { None } else { Some(parent) };
-        (updated_parent, child)
+        let new_parent = if self.uuid.is_none() {
+            let mut p = self.clone();
+            p.uuid = Some(new_uuid);
+            Some(p)
+        } else {
+            None
+        };
+        let mut new_child = child.clone();
+        new_child.sub = Some(new_uuid);
+        (new_parent, new_child)
+    }
+
+    pub fn set_done(&self, done: bool) -> TodoItem {
+        TodoItem {
+            done,
+            ..self.clone()
+        }
+    }
+
+    pub fn set_priority(&self, priority: TodoPriority) -> TodoItem {
+        TodoItem {
+            priority,
+            ..self.clone()
+        }
+    }
+
+    pub fn set_completion_date(&self, completion_date: Option<NaiveDate>) -> TodoItem {
+        TodoItem {
+            completion_date,
+            ..self.clone()
+        }
+    }
+
+    pub fn set_creation_date(&self, creation_date: Option<NaiveDate>) -> TodoItem {
+        TodoItem {
+            creation_date,
+            ..self.clone()
+        }
+    }
+
+    pub fn set_description(&self, description: String) -> TodoItem {
+        TodoItem {
+            description,
+            ..self.clone()
+        }
+    }
+
+    pub fn set_projects(&self, projects: Vec<TodoProject>) -> TodoItem {
+        TodoItem {
+            projects,
+            ..self.clone()
+        }
+    }
+
+    pub fn add_project(&self, project: TodoProject) -> TodoItem {
+        let mut new_projects = self.projects.clone();
+        new_projects.push(project);
+        TodoItem {
+            projects: new_projects,
+            ..self.clone()
+        }
+    }
+
+    pub fn remove_project(&self, project: &TodoProject) -> Option<TodoItem> {
+        if let Some(pos) = self.projects.iter().position(|p| p == project) {
+            let mut new_projects = self.projects.clone();
+            new_projects.remove(pos);
+            Some(TodoItem {
+                projects: new_projects,
+                ..self.clone()
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn set_contexts(&self, contexts: Vec<TodoContext>) -> TodoItem {
+        TodoItem {
+            contexts,
+            ..self.clone()
+        }
+    }
+
+    pub fn add_context(&self, context: TodoContext) -> TodoItem {
+        let mut new_contexts = self.contexts.clone();
+        new_contexts.push(context);
+        TodoItem {
+            contexts: new_contexts,
+            ..self.clone()
+        }
+    }
+
+    pub fn remove_context(&self, context: &TodoContext) -> Option<TodoItem> {
+        if let Some(pos) = self.contexts.iter().position(|c| c == context) {
+            let mut new_contexts = self.contexts.clone();
+            new_contexts.remove(pos);
+            Some(TodoItem {
+                contexts: new_contexts,
+                ..self.clone()
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn set_due(&self, due: Option<NaiveDate>) -> TodoItem {
+        TodoItem {
+            due,
+            ..self.clone()
+        }
+    }
+
+    pub fn set_recurrence(&self, recurrence: Option<TodoRecurrence>) -> TodoItem {
+        TodoItem {
+            recurrence,
+            ..self.clone()
+        }
+    }
+
+    pub fn set_threshold(&self, threshold: Option<NaiveDate>) -> TodoItem {
+        TodoItem {
+            threshold,
+            ..self.clone()
+        }
     }
 }
 
@@ -462,7 +580,7 @@ mod tests {
             uuid: None,
             sub: None,
         };
-        let (updated_parent, new_child) = TodoItem::add_subtask(parent, child);
+        let (updated_parent, new_child) = parent.add_subtask(&child);
         assert!(updated_parent.is_some());
         let up = updated_parent.unwrap();
         assert_eq!(up.uuid, new_child.sub);
@@ -502,9 +620,236 @@ mod tests {
             uuid: None,
             sub: Some(Uuid::new_v4()), // existing sub, should be overwritten
         };
-        let (updated_parent, new_child) = TodoItem::add_subtask(parent, child);
+        let (updated_parent, new_child) = parent.add_subtask(&child);
         assert!(updated_parent.is_none());
         assert_eq!(new_child.sub, Some(existing_uuid));
         assert_eq!(new_child.description, "Child task");
+    }
+
+    #[test]
+    fn test_set_done() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let new_item = item.set_done(true);
+        assert_eq!(new_item.done, true);
+        assert_eq!(item.done, false); // original unchanged
+    }
+
+    #[test]
+    fn test_set_priority() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: Some(0) },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let new_item = item.set_priority(TodoPriority { priority: Some(1) });
+        assert_eq!(new_item.priority.priority, Some(1));
+        assert_eq!(item.priority.priority, Some(0));
+    }
+
+    #[test]
+    fn test_set_description() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Old".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let new_item = item.set_description("New".to_string());
+        assert_eq!(new_item.description, "New");
+        assert_eq!(item.description, "Old");
+    }
+
+    #[test]
+    fn test_add_project() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let proj = TodoProject {
+            name: "Work".to_string(),
+        };
+        let new_item = item.add_project(proj.clone());
+        assert_eq!(new_item.projects.len(), 1);
+        assert_eq!(new_item.projects[0], proj);
+        assert_eq!(item.projects.len(), 0); // original unchanged
+    }
+
+    #[test]
+    fn test_remove_project() {
+        let proj = TodoProject {
+            name: "Work".to_string(),
+        };
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![proj.clone()],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let new_item = item.remove_project(&proj).unwrap();
+        assert_eq!(new_item.projects.len(), 0);
+        assert_eq!(item.projects.len(), 1);
+    }
+
+    #[test]
+    fn test_add_context() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let ctx = TodoContext {
+            name: "Home".to_string(),
+        };
+        let new_item = item.add_context(ctx.clone());
+        assert_eq!(new_item.contexts.len(), 1);
+        assert_eq!(new_item.contexts[0], ctx);
+        assert_eq!(item.contexts.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_context() {
+        let ctx = TodoContext {
+            name: "Home".to_string(),
+        };
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![ctx.clone()],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let new_item = item.remove_context(&ctx).unwrap();
+        assert_eq!(new_item.contexts.len(), 0);
+        assert_eq!(item.contexts.len(), 1);
+    }
+
+    #[test]
+    fn test_set_due() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let date = NaiveDate::from_ymd_opt(2023, 5, 30).unwrap();
+        let new_item = item.set_due(Some(date));
+        assert_eq!(new_item.due, Some(date));
+        assert_eq!(item.due, None);
+    }
+
+    #[test]
+    fn test_set_recurrence() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let rec = TodoRecurrence::from_str("1m").unwrap();
+        let new_item = item.set_recurrence(Some(rec.clone()));
+        assert_eq!(new_item.recurrence, Some(rec));
+        assert_eq!(item.recurrence, None);
+    }
+
+    #[test]
+    fn test_set_threshold() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let date = NaiveDate::from_ymd_opt(2023, 5, 25).unwrap();
+        let new_item = item.set_threshold(Some(date));
+        assert_eq!(new_item.threshold, Some(date));
+        assert_eq!(item.threshold, None);
     }
 }
