@@ -10,7 +10,7 @@ use crate::todocontext::TodoContextParseError;
 use crate::todopriority::TodoPriorityParseError;
 use crate::todoproject::TodoProjectParseError;
 use crate::todorecurrence::TodoRecurrenceParseError;
-// use uuid::Uuid;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TodoItem {
@@ -24,12 +24,18 @@ pub struct TodoItem {
     pub due: Option<NaiveDate>,
     pub recurrence: Option<TodoRecurrence>,
     pub threshold: Option<NaiveDate>,
-    // pub uuid: Option<Uuid>, // to be used to link with other items
-    // pub sub: Option<Uuid>, // to be used for subitems
+    pub uuid: Option<Uuid>,
+    pub sub: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TodoItemParseError;
+
+impl From<uuid::Error> for TodoItemParseError {
+    fn from(_: uuid::Error) -> Self {
+        TodoItemParseError
+    }
+}
 
 impl From<chrono::ParseError> for TodoItemParseError {
     fn from(_: chrono::ParseError) -> Self {
@@ -113,6 +119,8 @@ impl FromStr for TodoItem {
         let mut due = None;
         let mut recurrence = None;
         let mut threshold = None;
+        let mut uuid: Option<Uuid> = None;
+        let mut sub: Option<Uuid> = None;
         let mut clean_description_parts = vec![];
 
         for word in description_vec {
@@ -131,6 +139,15 @@ impl FromStr for TodoItem {
             } else if word.starts_with("t:") && word.len() > 2 {
                 let thresh_str = &word[2..];
                 threshold = Some(chrono::NaiveDate::parse_from_str(thresh_str, "%Y-%m-%d")?);
+            } else if word.starts_with("uuid:") && word.len() > 5 {
+                let uuid_str = &word[5..];
+                let parsed_uuid = Uuid::parse_str(uuid_str)?;
+                // Only set if not already set, or overwrite?
+                uuid = Some(parsed_uuid);
+            } else if word.starts_with("sub:") && word.len() > 4 {
+                let sub_str = &word[4..];
+                let parsed_sub = Uuid::parse_str(sub_str)?;
+                sub = Some(parsed_sub);
             } else {
                 clean_description_parts.push(word.to_string());
             }
@@ -149,6 +166,8 @@ impl FromStr for TodoItem {
             due,
             recurrence,
             threshold,
+            uuid,
+            sub,
         })
     }
 }
@@ -202,7 +221,31 @@ impl Display for TodoItem {
             write!(f, " t:{}", t.format("%Y-%m-%d"))?;
         }
 
+        if let Some(u) = self.uuid {
+            write!(f, " uuid:{}", u)?;
+        }
+
+        if let Some(s) = self.sub {
+            write!(f, " sub:{}", s)?;
+        }
+
         Ok(())
+    }
+}
+
+impl TodoItem {
+    pub fn add_subtask(mut parent: TodoItem, mut child: TodoItem) -> (Option<TodoItem>, TodoItem) {
+        let has_uuid = parent.uuid.is_some();
+        let new_uuid = if !has_uuid {
+            let uuid = Uuid::new_v4();
+            parent.uuid = Some(uuid);
+            uuid
+        } else {
+            parent.uuid.unwrap()
+        };
+        child.sub = Some(new_uuid);
+        let updated_parent = if has_uuid { None } else { Some(parent) };
+        (updated_parent, child)
     }
 }
 
@@ -224,6 +267,8 @@ mod tests {
         assert_eq!(item.due, None);
         assert_eq!(item.recurrence, None);
         assert_eq!(item.threshold, None);
+        assert_eq!(item.uuid, None);
+        assert_eq!(item.sub, None);
     }
 
     #[test]
@@ -251,6 +296,9 @@ mod tests {
             }]
         );
         assert_eq!(item.description, "Buy milk");
+        assert_eq!(item.threshold, None);
+        assert_eq!(item.uuid, None);
+        assert_eq!(item.sub, None);
     }
 
     #[test]
@@ -282,8 +330,13 @@ mod tests {
             due: None,
             recurrence: None,
             threshold: None,
+            uuid: None,
+            sub: None,
         };
         assert_eq!(item.to_string(), "Buy milk");
+        assert_eq!(item.threshold, None);
+        assert_eq!(item.uuid, None);
+        assert_eq!(item.sub, None);
     }
 
     #[test]
@@ -334,10 +387,124 @@ mod tests {
             due: Some(NaiveDate::from_ymd_opt(2023, 5, 30).unwrap()),
             recurrence: Some("1m".parse().unwrap()),
             threshold: Some(NaiveDate::from_ymd_opt(2023, 5, 25).unwrap()),
+            uuid: None,
+            sub: None,
         };
         assert_eq!(
             item.to_string(),
             "Buy groceries +Personal @home due:2023-05-30 rec:m t:2023-05-25"
         );
+    }
+
+    #[test]
+    fn parse_with_uuid_and_sub() {
+        let item: TodoItem = "Buy milk uuid:12345678-1234-1234-1234-123456789abc sub:87654321-4321-4321-4321-abc123456789".parse().unwrap();
+        assert_eq!(item.description, "Buy milk");
+        assert_eq!(
+            item.uuid,
+            Some(Uuid::parse_str("12345678-1234-1234-1234-123456789abc").unwrap())
+        );
+        assert_eq!(
+            item.sub,
+            Some(Uuid::parse_str("87654321-4321-4321-4321-abc123456789").unwrap())
+        );
+    }
+
+    #[test]
+    fn display_with_uuid_and_sub() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Buy milk".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: Some(Uuid::parse_str("12345678-1234-1234-1234-123456789abc").unwrap()),
+            sub: Some(Uuid::parse_str("87654321-4321-4321-4321-abc123456789").unwrap()),
+        };
+        assert_eq!(
+            item.to_string(),
+            "Buy milk uuid:12345678-1234-1234-1234-123456789abc sub:87654321-4321-4321-4321-abc123456789"
+        );
+    }
+
+    #[test]
+    fn add_subtask_new_uuid() {
+        let parent = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Parent task".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let child = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Child task".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let (updated_parent, new_child) = TodoItem::add_subtask(parent, child);
+        assert!(updated_parent.is_some());
+        let up = updated_parent.unwrap();
+        assert_eq!(up.uuid, new_child.sub);
+        assert!(new_child.sub.is_some());
+        assert_eq!(up.description, "Parent task");
+        assert_eq!(new_child.description, "Child task");
+    }
+
+    #[test]
+    fn add_subtask_existing_uuid() {
+        let existing_uuid = Uuid::new_v4();
+        let parent = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Parent task".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: Some(existing_uuid),
+            sub: None,
+        };
+        let child = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Child task".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: Some(Uuid::new_v4()), // existing sub, should be overwritten
+        };
+        let (updated_parent, new_child) = TodoItem::add_subtask(parent, child);
+        assert!(updated_parent.is_none());
+        assert_eq!(new_child.sub, Some(existing_uuid));
+        assert_eq!(new_child.description, "Child task");
     }
 }
