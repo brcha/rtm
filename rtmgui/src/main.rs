@@ -84,9 +84,11 @@ impl TodoApp {
 
 impl eframe::App for TodoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {
             ui.heading("Rust Todo.txt Manager");
+        });
 
+        egui::SidePanel::left("Side panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("File:");
                 let mut input_file = self.file_name.clone().unwrap_or_default();
@@ -105,22 +107,6 @@ impl eframe::App for TodoApp {
                 ui.label("No file loaded. Use 'Load' to select a todo.txt file.");
                 return;
             }
-
-            ui.horizontal(|ui| {
-                ui.label("New Item:");
-                ui.text_edit_singleline(&mut self.new_item);
-                if ui.button("Add").clicked() && !self.new_item.is_empty() {
-                    if let Ok(item) = self.new_item.parse::<TodoItem>() {
-                        self.lib.add_item(item);
-                        self.new_item.clear();
-                        self.save();
-                    } else {
-                        eprintln!("Parse error");
-                    }
-                }
-            });
-
-            ui.separator();
 
             if ui
                 .checkbox(&mut self.show_completed_items, "Show completed items")
@@ -146,6 +132,22 @@ impl eframe::App for TodoApp {
                 self.reverse_sort = !self.reverse_sort;
                 self.save_config();
             }
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("New Item:");
+                ui.text_edit_singleline(&mut self.new_item);
+                if ui.button("Add").clicked() && !self.new_item.is_empty() {
+                    if let Ok(item) = self.new_item.parse::<TodoItem>() {
+                        self.lib.add_item(item);
+                        self.new_item.clear();
+                        self.save();
+                    } else {
+                        eprintln!("Parse error");
+                    }
+                }
+            });
 
             ui.separator();
 
