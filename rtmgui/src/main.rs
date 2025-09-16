@@ -1,27 +1,77 @@
 use chrono::{Datelike, Local};
 use eframe::egui;
+use serde::{Deserialize, Serialize};
 use todotxt::{TodoItem, TodoLibrary};
 
-struct TodoApp {
-    lib: TodoLibrary,
-    new_item: String,
-    file_name: String,
+#[derive(Serialize, Deserialize)]
+struct AppConfig {
+    file_name: Option<String>,
     show_completed_items: bool,
     show_future_items: bool,
     reverse_sort: bool,
 }
 
+struct TodoApp {
+    lib: TodoLibrary,
+    new_item: String,
+    file_name: Option<String>,
+    show_completed_items: bool,
+    show_future_items: bool,
+    reverse_sort: bool,
+    config_path: std::path::PathBuf,
+}
+
 impl TodoApp {
-    fn new(_cc: &eframe::CreationContext<'_>, file_name: String) -> Self {
-        let mut lib = TodoLibrary::new(file_name.clone());
-        lib.load().unwrap_or(());
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let config_path = Self::config_path();
+        let config: AppConfig = std::fs::read_to_string(&config_path)
+            .ok()
+            .and_then(|s| toml::from_str(&s).ok())
+            .unwrap_or(AppConfig {
+                file_name: None,
+                show_completed_items: false,
+                show_future_items: false,
+                reverse_sort: false,
+            });
+        let file_path = config
+            .file_name
+            .clone()
+            .unwrap_or_else(|| "todo.txt".to_string());
+        let mut lib = TodoLibrary::new(file_path.clone());
+        let has_file = lib.load().is_ok();
+        let actual_file_name = if has_file {
+            Some(file_path.clone())
+        } else {
+            config.file_name
+        };
         Self {
             lib,
             new_item: String::new(),
-            file_name,
-            show_completed_items: false,
-            show_future_items: false,
-            reverse_sort: false,
+            file_name: actual_file_name,
+            show_completed_items: config.show_completed_items,
+            show_future_items: config.show_future_items,
+            reverse_sort: config.reverse_sort,
+            config_path,
+        }
+    }
+
+    fn config_path() -> std::path::PathBuf {
+        let mut path = dirs::config_dir().unwrap_or_else(|| std::env::temp_dir());
+        path.push("rtmcli");
+        std::fs::create_dir_all(&path).unwrap();
+        path.push("config.toml");
+        path
+    }
+
+    fn save_config(&self) {
+        let config = AppConfig {
+            file_name: self.file_name.clone(),
+            show_completed_items: self.show_completed_items,
+            show_future_items: self.show_future_items,
+            reverse_sort: self.reverse_sort,
+        };
+        if let Ok(toml_str) = toml::to_string(&config) {
+            let _ = std::fs::write(&self.config_path, toml_str);
         }
     }
 
@@ -36,6 +86,25 @@ impl eframe::App for TodoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Rust Todo.txt Manager");
+
+            ui.horizontal(|ui| {
+                ui.label("File:");
+                let mut input_file = self.file_name.clone().unwrap_or_default();
+                ui.text_edit_singleline(&mut input_file);
+                if ui.button("Load").clicked() {
+                    self.lib = TodoLibrary::new(input_file.clone());
+                    if self.lib.load().is_ok() {
+                        self.file_name = Some(input_file);
+                        self.save_config();
+                    } else {
+                        eprintln!("Failed to load file");
+                    }
+                }
+            });
+            if !self.file_name.is_some() {
+                ui.label("No file loaded. Use 'Load' to select a todo.txt file.");
+                return;
+            }
 
             ui.horizontal(|ui| {
                 ui.label("New Item:");
@@ -53,8 +122,19 @@ impl eframe::App for TodoApp {
 
             ui.separator();
 
-            ui.checkbox(&mut self.show_completed_items, "Show completed items");
-            ui.checkbox(&mut self.show_future_items, "Show future items");
+            if ui
+                .checkbox(&mut self.show_completed_items, "Show completed items")
+                .clicked()
+            {
+                self.save_config();
+            }
+            if ui
+                .checkbox(&mut self.show_future_items, "Show future items")
+                .clicked()
+            {
+                self.save_config();
+            }
+
             if ui
                 .button(if self.reverse_sort {
                     "Normal Order"
@@ -64,6 +144,7 @@ impl eframe::App for TodoApp {
                 .clicked()
             {
                 self.reverse_sort = !self.reverse_sort;
+                self.save_config();
             }
 
             ui.separator();
@@ -122,7 +203,7 @@ impl eframe::App for TodoApp {
             ui.label(format!(
                 "Total items: {} (file: {})",
                 self.lib.item_count(),
-                self.file_name
+                self.file_name.clone().unwrap_or_default()
             ));
         });
     }
@@ -134,11 +215,10 @@ fn main() -> eframe::Result<()> {
     //     std::env::set_var("WINIT_UNIX_BACKEND", "x11");
     // }
 
-    let file_name = std::env::var("TODOTXT").unwrap_or_else(|_| "todo.txt".to_string());
     let options = eframe::NativeOptions::default();
     eframe::run_native(
-        &format!("Rust Todo.txt Manager - {}", file_name),
+        "Rust Todo.txt Manager",
         options,
-        Box::new(move |cc| Box::new(TodoApp::new(cc, file_name.clone()))),
+        Box::new(|cc| Box::new(TodoApp::new(cc))),
     )
 }

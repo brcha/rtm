@@ -11,3 +11,6 @@ egui = "0.26"
 todotxt = { path = "../todotxt" }
 chrono = "0.4.31"
 uuid = "1.18.1"
+toml = "0.8"
+dirs = "5.0"
+serde = { version = "1.0", features = ["derive"] }
