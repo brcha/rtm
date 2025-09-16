@@ -1,4 +1,6 @@
 use crate::todoitem::TodoItem;
+use crate::todorecurrence::TodoRecurrenceUnit;
+use chrono::Duration;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TodoLibrary {
@@ -55,13 +57,55 @@ impl TodoLibrary {
     pub fn item_count(&self) -> usize {
         self.items.len()
     }
-    pub fn complete_item(&mut self, index: usize) -> Option<()> {
-        if index < self.items.len() {
-            self.items[index].done = true;
-            Some(())
-        } else {
-            None
+    pub fn complete_item(&mut self, index: usize) -> Option<bool> {
+        if index >= self.items.len() {
+            return None;
         }
+        self.items[index].done = true;
+        // Check for recurrence and create new item
+        let has_recurrence = self.items[index].recurrence.is_some();
+        if has_recurrence {
+            if let Some(ref recurrence) = self.items[index].recurrence {
+                if let Some(current_due) = self.items[index].due {
+                    let new_due = match recurrence.unit {
+                        TodoRecurrenceUnit::Daily => {
+                            current_due + Duration::days(recurrence.count as i64)
+                        }
+                        TodoRecurrenceUnit::BusinessDay => {
+                            // Skip weekends or something, but for simplicity, treat as daily
+                            current_due + Duration::days(recurrence.count as i64)
+                        }
+                        TodoRecurrenceUnit::Weekly => {
+                            current_due + Duration::weeks(recurrence.count as i64)
+                        }
+                        TodoRecurrenceUnit::Monthly => {
+                            // Approximate months as 30 days
+                            current_due + Duration::days(recurrence.count as i64 * 30)
+                        }
+                        TodoRecurrenceUnit::Yearly => {
+                            // Approximate years as 365 days
+                            current_due + Duration::days(recurrence.count as i64 * 365)
+                        }
+                    };
+                    let new_item = TodoItem {
+                        done: false,
+                        priority: self.items[index].priority.clone(),
+                        completion_date: None,
+                        creation_date: Some(chrono::Local::now().date_naive()),
+                        description: self.items[index].description.clone(),
+                        projects: self.items[index].projects.clone(),
+                        contexts: self.items[index].contexts.clone(),
+                        due: Some(new_due),
+                        recurrence: Some(recurrence.clone()),
+                        threshold: self.items[index].threshold,
+                        uuid: Some(uuid::Uuid::new_v4()),
+                        sub: None,
+                    };
+                    self.items.push(new_item);
+                }
+            }
+        }
+        Some(has_recurrence)
     }
 }
 
@@ -125,7 +169,7 @@ mod tests {
         let mut lib = TodoLibrary::new("dummy.txt".to_string());
         lib.add_item("Incomplete".parse().unwrap());
         let result = lib.complete_item(0);
-        assert!(result.is_some());
+        assert_eq!(result, Some(false));
         assert!(lib.items[0].done);
     }
 
@@ -133,7 +177,8 @@ mod tests {
     fn test_complete_item_out_of_bounds() {
         let mut lib = TodoLibrary::new("dummy.txt".to_string());
         let result = lib.complete_item(0);
-        assert!(result.is_none());
+        assert_eq!(result, None);
+        assert_eq!(lib.items.len(), 0);
     }
 
     #[test]
@@ -189,7 +234,7 @@ mod tests {
         lib.add_item("Uncompleted".parse().unwrap());
         assert!(!lib.items[0].done);
         let result = lib.complete_item(0);
-        assert!(result.is_some());
+        assert_eq!(result, Some(false));
         assert!(lib.items[0].done);
     }
 
@@ -200,5 +245,56 @@ mod tests {
         let content = fs::read_to_string("test_empty.txt").unwrap();
         assert_eq!(content.trim(), "");
         fs::remove_file("test_empty.txt").unwrap();
+    }
+
+    #[test]
+    fn test_complete_recurring_daily() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let today = chrono::Local::now().date_naive();
+        let mut item = "Test rec daily".parse::<TodoItem>().unwrap();
+        item.due = Some(today);
+        item.recurrence = Some(crate::todorecurrence::TodoRecurrence {
+            count: 1,
+            unit: crate::todorecurrence::TodoRecurrenceUnit::Daily,
+            strict: false,
+        });
+        lib.add_item(item);
+        assert_eq!(lib.item_count(), 1);
+        let result = lib.complete_item(0);
+        assert_eq!(result, Some(true));
+        assert_eq!(lib.item_count(), 2);
+        assert!(lib.items[0].done);
+        assert!(!lib.items[1].done);
+        assert_eq!(lib.items[1].due, Some(today + chrono::Duration::days(1)));
+        assert_eq!(lib.items[1].description, "Test rec daily");
+    }
+
+    #[test]
+    fn test_complete_recurring_weekly() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let today = chrono::Local::now().date_naive();
+        let mut item = "Test rec weekly".parse::<TodoItem>().unwrap();
+        item.due = Some(today);
+        item.recurrence = Some(crate::todorecurrence::TodoRecurrence {
+            count: 2,
+            unit: crate::todorecurrence::TodoRecurrenceUnit::Weekly,
+            strict: false,
+        });
+        lib.add_item(item);
+        let result = lib.complete_item(0);
+        assert_eq!(result, Some(true));
+        assert_eq!(lib.item_count(), 2);
+        assert_eq!(lib.items[1].due, Some(today + chrono::Duration::weeks(2)));
+    }
+
+    #[test]
+    fn test_complete_non_recurring() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let item = "Test non rec".parse::<TodoItem>().unwrap();
+        lib.add_item(item);
+        let result = lib.complete_item(0);
+        assert_eq!(result, Some(false));
+        assert_eq!(lib.item_count(), 1);
+        assert!(lib.items[0].done);
     }
 }
