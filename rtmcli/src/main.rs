@@ -108,6 +108,8 @@ fn main() {
             }
         }
         Commands::Add { description } => {
+            // Try to load existing items to preserve them
+            let _ = lib.load(); // Ignore error if file doesn't exist
             let item: TodoItem = description.parse().unwrap_or_else(|e| {
                 eprintln!("Error parsing todo: {:?}", e);
                 std::process::exit(1);
