@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{Datelike, Local};
 use eframe::egui;
 use todotxt::{TodoItem, TodoLibrary};
 
@@ -8,6 +8,7 @@ struct TodoApp {
     file_name: String,
     show_completed_items: bool,
     show_future_items: bool,
+    reverse_sort: bool,
 }
 
 impl TodoApp {
@@ -20,6 +21,7 @@ impl TodoApp {
             file_name,
             show_completed_items: false,
             show_future_items: false,
+            reverse_sort: false,
         }
     }
 
@@ -53,22 +55,55 @@ impl eframe::App for TodoApp {
 
             ui.checkbox(&mut self.show_completed_items, "Show completed items");
             ui.checkbox(&mut self.show_future_items, "Show future items");
+            if ui
+                .button(if self.reverse_sort {
+                    "Normal Order"
+                } else {
+                    "Reverse Order"
+                })
+                .clicked()
+            {
+                self.reverse_sort = !self.reverse_sort;
+            }
 
             // List tasks
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let items = self.lib.list_items();
-                let mut to_complete = None;
+                let mut sorted_items: Vec<(usize, &TodoItem)> = items.iter().enumerate().collect();
                 let today = Local::now().date_naive();
-                for (i, item) in items.iter().enumerate() {
-                    if !self.show_future_items && item.due.map_or(false, |d| d > today) {
-                        continue;
+                sorted_items.sort_by_key(|(_, item)| match item.due {
+                    None => (0i32, 0i64),
+                    Some(d) if d < today => {
+                        if self.reverse_sort {
+                            (3i32, -((today - d).num_days() as i64))
+                        } else {
+                            (3i32, (today - d).num_days() as i64)
+                        }
                     }
-                    if !self.show_completed_items && item.done {
-                        continue;
+                    Some(d) if d == today => (2i32, d.num_days_from_ce() as i64),
+                    Some(d) => {
+                        if self.reverse_sort {
+                            (1i32, -d.num_days_from_ce() as i64)
+                        } else {
+                            (1i32, d.num_days_from_ce() as i64)
+                        }
                     }
+                });
+
+                // Apply filters after sorting
+                let filtered_items: Vec<_> = sorted_items
+                    .into_iter()
+                    .filter(|(_, item)| {
+                        !(item.due.map_or(false, |d| d > today) && !self.show_future_items)
+                            && !(item.done && !self.show_completed_items)
+                    })
+                    .collect();
+
+                let mut to_complete = None;
+                for (original_i, item) in filtered_items {
                     ui.horizontal(|ui| {
                         if ui.button("Complete").clicked() {
-                            to_complete = Some(i);
+                            to_complete = Some(original_i);
                         }
                         ui.label(item.to_string());
                     });
