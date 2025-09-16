@@ -8,7 +8,6 @@ struct TodoApp {
     file_name: String,
     show_completed_items: bool,
     show_future_items: bool,
-    reverse_sort: bool,
 }
 
 impl TodoApp {
@@ -21,7 +20,6 @@ impl TodoApp {
             file_name,
             show_completed_items: false,
             show_future_items: false,
-            reverse_sort: false,
         }
     }
 
@@ -55,16 +53,6 @@ impl eframe::App for TodoApp {
 
             ui.checkbox(&mut self.show_completed_items, "Show completed items");
             ui.checkbox(&mut self.show_future_items, "Show future items");
-            if ui
-                .button(if self.reverse_sort {
-                    "Normal Order"
-                } else {
-                    "Reverse Order"
-                })
-                .clicked()
-            {
-                self.reverse_sort = !self.reverse_sort;
-            }
 
             // List tasks
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -75,21 +63,9 @@ impl eframe::App for TodoApp {
                     let priority_key = item.priority.priority.map(|p| p as i32).unwrap_or(26);
                     match item.due {
                         None => (0i32, 0i64, priority_key),
-                        Some(d) if d < today => {
-                            if self.reverse_sort {
-                                (3i32, -((today - d).num_days() as i64), priority_key)
-                            } else {
-                                (3i32, (today - d).num_days() as i64, priority_key)
-                            }
-                        }
-                        Some(d) if d == today => (2i32, d.num_days_from_ce() as i64, priority_key),
-                        Some(d) => {
-                            if self.reverse_sort {
-                                (1i32, -d.num_days_from_ce() as i64, priority_key)
-                            } else {
-                                (1i32, d.num_days_from_ce() as i64, priority_key)
-                            }
-                        }
+                        Some(d) if d < today => (1i32, -d.num_days_from_ce() as i64, priority_key),
+                        Some(d) if d == today => (1i32, -d.num_days_from_ce() as i64, priority_key),
+                        Some(d) => (1i32, -d.num_days_from_ce() as i64, priority_key),
                     }
                 });
 
