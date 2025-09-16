@@ -1,3 +1,4 @@
+use chrono::{Local, NaiveDate};
 use eframe::egui;
 use todotxt::{TodoItem, TodoLibrary};
 
@@ -6,6 +7,7 @@ struct TodoApp {
     new_task: String,
     file_name: String,
     show_completed: bool,
+    show_future_tasks: bool,
 }
 
 impl TodoApp {
@@ -17,6 +19,7 @@ impl TodoApp {
             new_task: String::new(),
             file_name,
             show_completed: false,
+            show_future_tasks: false,
         }
     }
 
@@ -49,12 +52,17 @@ impl eframe::App for TodoApp {
             ui.separator();
 
             ui.checkbox(&mut self.show_completed, "Show completed tasks");
+            ui.checkbox(&mut self.show_future_tasks, "Show future tasks");
 
             // List tasks
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let items = self.lib.list_items();
                 let mut to_complete = None;
+                let today = Local::now().date_naive();
                 for (i, item) in items.iter().enumerate() {
+                    if !self.show_future_tasks && item.due.map_or(false, |d| d > today) {
+                        continue;
+                    }
                     if !self.show_completed && item.done {
                         continue;
                     }
