@@ -71,21 +71,24 @@ impl eframe::App for TodoApp {
                 let items = self.lib.list_items();
                 let mut sorted_items: Vec<(usize, &TodoItem)> = items.iter().enumerate().collect();
                 let today = Local::now().date_naive();
-                sorted_items.sort_by_key(|(_, item)| match item.due {
-                    None => (0i32, 0i64),
-                    Some(d) if d < today => {
-                        if self.reverse_sort {
-                            (3i32, -((today - d).num_days() as i64))
-                        } else {
-                            (3i32, (today - d).num_days() as i64)
+                sorted_items.sort_by_key(|(_, item)| {
+                    let priority_key = item.priority.priority.map(|p| p as i32).unwrap_or(26);
+                    match item.due {
+                        None => (0i32, 0i64, priority_key),
+                        Some(d) if d < today => {
+                            if self.reverse_sort {
+                                (3i32, -((today - d).num_days() as i64), priority_key)
+                            } else {
+                                (3i32, (today - d).num_days() as i64, priority_key)
+                            }
                         }
-                    }
-                    Some(d) if d == today => (2i32, d.num_days_from_ce() as i64),
-                    Some(d) => {
-                        if self.reverse_sort {
-                            (1i32, -d.num_days_from_ce() as i64)
-                        } else {
-                            (1i32, d.num_days_from_ce() as i64)
+                        Some(d) if d == today => (2i32, d.num_days_from_ce() as i64, priority_key),
+                        Some(d) => {
+                            if self.reverse_sort {
+                                (1i32, -d.num_days_from_ce() as i64, priority_key)
+                            } else {
+                                (1i32, d.num_days_from_ce() as i64, priority_key)
+                            }
                         }
                     }
                 });
