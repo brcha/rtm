@@ -4,15 +4,17 @@ use todotxt::{TodoItem, TodoLibrary};
 struct TodoApp {
     lib: TodoLibrary,
     new_task: String,
+    file_name: String,
 }
 
 impl TodoApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let mut lib = TodoLibrary::new("todo.txt".to_string());
+    fn new(_cc: &eframe::CreationContext<'_>, file_name: String) -> Self {
+        let mut lib = TodoLibrary::new(file_name.clone());
         lib.load().unwrap_or(());
         Self {
             lib,
             new_task: String::new(),
+            file_name,
         }
     }
 
@@ -26,7 +28,7 @@ impl TodoApp {
 impl eframe::App for TodoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Todo.txt GUI");
+            ui.heading("Rust Todo.txt Manager");
 
             ui.horizontal(|ui| {
                 ui.label("New Task:");
@@ -66,7 +68,11 @@ impl eframe::App for TodoApp {
 
             ui.separator();
 
-            ui.label(format!("Total items: {}", self.lib.item_count()));
+            ui.label(format!(
+                "Total items: {} (file: {})",
+                self.lib.item_count(),
+                self.file_name
+            ));
         });
     }
 }
@@ -77,10 +83,11 @@ fn main() -> eframe::Result<()> {
     //     std::env::set_var("WINIT_UNIX_BACKEND", "x11");
     // }
 
+    let file_name = std::env::var("TODOTXT").unwrap_or_else(|_| "todo.txt".to_string());
     let options = eframe::NativeOptions::default();
     eframe::run_native(
-        "Todo GUI",
+        &format!("Rust Todo.txt Manager - {}", file_name),
         options,
-        Box::new(|cc| Box::new(TodoApp::new(cc))),
+        Box::new(move |cc| Box::new(TodoApp::new(cc, file_name.clone()))),
     )
 }
