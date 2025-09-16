@@ -1,4 +1,4 @@
-use chrono::{Local, NaiveDate};
+use chrono::Local;
 use eframe::egui;
 use todotxt::{TodoItem, TodoLibrary};
 
