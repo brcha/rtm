@@ -17,9 +17,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// List tasks
+    /// List items
     List {
-        /// List completed tasks
+        /// List completed items
         #[arg(short, long)]
         completed: bool,
 
@@ -27,12 +27,12 @@ enum Commands {
         #[arg(value_enum)]
         filter: Option<Filter>,
     },
-    /// Add a new task
+    /// Add a new item
     Add {
         /// Todo description in Todo.txt format
         description: String,
     },
-    /// Complete tasks by filter or identifier
+    /// Complete items by filter or identifier
     Complete {
         /// First arg: filter or identifier
         arg1: String,
@@ -48,6 +48,7 @@ enum Filter {
     Week,
     All,
     Overdue,
+    Future,
 }
 
 fn parse_filter(s: &str) -> Option<Filter> {
@@ -56,6 +57,7 @@ fn parse_filter(s: &str) -> Option<Filter> {
         "week" => Some(Filter::Week),
         "all" => Some(Filter::All),
         "overdue" => Some(Filter::Overdue),
+        "future" => Some(Filter::Future),
         _ => None,
     }
 }
@@ -81,6 +83,7 @@ fn main() {
                 Some(Filter::Week) => Some((today, today + Duration::days(6))),
                 Some(Filter::All) => None,
                 Some(Filter::Overdue) => Some((chrono::NaiveDate::MIN, today - Duration::days(1))),
+                Some(Filter::Future) => Some((today + Duration::days(1), chrono::NaiveDate::MAX)),
                 None => None,
             };
 
@@ -138,6 +141,7 @@ fn main() {
                     Filter::Week => Some((today, today + Duration::days(6))),
                     Filter::All => None,
                     Filter::Overdue => Some((chrono::NaiveDate::MIN, today - Duration::days(1))),
+                    Filter::Future => Some((today + Duration::days(1), chrono::NaiveDate::MAX)),
                 };
 
                 let filtered_indices: Vec<usize> = items
