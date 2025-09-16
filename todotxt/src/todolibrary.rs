@@ -103,7 +103,7 @@ impl TodoLibrary {
                         due: Some(new_due),
                         recurrence: Some(recurrence.clone()),
                         threshold: self.items[index].threshold,
-                        uuid: Some(uuid::Uuid::new_v4()),
+                        uuid: None,
                         sub: None,
                     };
                     self.items.push(new_item);
