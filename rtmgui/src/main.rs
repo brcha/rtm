@@ -204,7 +204,7 @@ impl eframe::App for TodoApp {
                 let mut to_complete = None;
                 for (original_i, item) in filtered_items {
                     ui.horizontal(|ui| {
-                        if !item.done &&"S" ui.button("Complete").clicked() {
+                        if !item.done && ui.button("Complete").clicked() {
                             to_complete = Some(original_i);
                         }
                         ui.label(item.to_string());
