@@ -6,7 +6,8 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.5", features = ["desktop"] }
-dioxus-desktop = "0.5"
+eframe = "0.26"
+egui = "0.26"
 todotxt = { path = "../todotxt" }
 chrono = "0.4.31"
+uuid = "1.18.1"

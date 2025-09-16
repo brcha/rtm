@@ -1,132 +1,86 @@
-use dioxus::prelude::*;
+use eframe::egui;
 use todotxt::{TodoItem, TodoLibrary};
 
-#[derive(Clone, PartialEq)]
-struct AppState {
+struct TodoApp {
     lib: TodoLibrary,
     new_task: String,
-    filter: String,
-    completed_filter: bool,
 }
 
-fn main() {
-    dioxus_desktop::launch(app);
-}
-
-fn app(cx: Scope) -> Element {
-    let state = use_state(cx, || {
+impl TodoApp {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let mut lib = TodoLibrary::new("todo.txt".to_string());
         lib.load().unwrap_or(());
-        AppState {
+        Self {
             lib,
             new_task: String::new(),
-            filter: String::new(),
-            completed_filter: false,
-        }
-    });
-
-    render! {
-        div { class: "container",
-            h1 { "Todo.txt GUI" }
-
-            // Add new task
-            div { class: "add-task",
-                input {
-                    placeholder: "New task...",
-                    value: "{state.new_task}",
-                    oninput: move |e| {
-                        let new_value = e.value.clone();
-                        state.set(|s| AppState {
-                            new_task: new_value,
-                            ..s.clone()
-                        });
-                    }
-                }
-                button {
-                    onclick: move |_| {
-                        if !state.new_task.is_empty() {
-                            match state.new_task.parse::<TodoItem>() {
-                                Ok(item) => {
-                                    let mut new_lib = state.lib.clone();
-                                    new_lib.add_item(item);
-                                    new_lib.save().unwrap_or_else(|e| eprintln!("Save error: {:?}", e));
-                                    state.set(|s| AppState {
-                                        lib: new_lib,
-                                        new_task: String::new(),
-                                        ..s.clone()
-                                    });
-                                }
-                                Err(e) => {
-                                    eprintln!("Error parsing todo: {:?}", e);
-                                }
-                            }
-                        }
-                    },
-                    "Add"
-                }
-            }
-
-            // Filter
-            div { class: "filter",
-                input {
-                    placeholder: "Filter...",
-                    value: "{state.filter}",
-                    oninput: move |e| {
-                        let new_value = e.value.clone();
-                        state.set(|s| AppState {
-                            filter: new_value,
-                            ..s.clone()
-                        });
-                    }
-                }
-                label {
-                    input {
-                        r#type: "checkbox",
-                        checked: "{state.completed_filter}",
-                        onchange: move |_| {
-                            let new_completed = !state.completed_filter;
-                            state.set(|s| AppState {
-                                completed_filter: new_completed,
-                                ..s.clone()
-                            });
-                        }
-                    }
-                    "Completed"
-                }
-            }
-
-            // List tasks
-            div { class: "task-list",
-                for (i, item) in state.lib.list_items().iter().enumerate() {
-                    if !state.filter.is_empty() && !item.description.contains(&state.filter) {
-                        continue;
-                    }
-                    if item.done != state.completed_filter {
-                        continue;
-                    }
-                    rsx! {
-                        div { class: "task",
-                            "{i + 1}. {item}"
-                            button {
-                                onclick: move |_| {
-                                    let mut new_lib = state.lib.clone();
-                                    new_lib.complete_item(i).unwrap_or_else(|| eprintln!("Complete failed"));
-                                    new_lib.save().unwrap_or_else(|e| eprintln!("Save error: {:?}", e));
-                                    state.set(|s| AppState {
-                                        lib: new_lib,
-                                        ..s.clone()
-                                    });
-                                },
-                                "Complete"
-                            }
-                        }
-                    }
-                }
-            }
-
-            div { class: "footer",
-                "Total items: {state.lib.item_count()}"
-            }
         }
     }
+
+    fn save(&mut self) {
+        self.lib
+            .save()
+            .unwrap_or_else(|e| eprintln!("Save error: {:?}", e));
+    }
+}
+
+impl eframe::App for TodoApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Todo.txt GUI");
+
+            ui.horizontal(|ui| {
+                ui.label("New Task:");
+                ui.text_edit_singleline(&mut self.new_task);
+                if ui.button("Add").clicked() && !self.new_task.is_empty() {
+                    if let Ok(item) = self.new_task.parse::<TodoItem>() {
+                        self.lib.add_item(item);
+                        self.new_task.clear();
+                        self.save();
+                    } else {
+                        eprintln!("Parse error");
+                    }
+                }
+            });
+
+            ui.separator();
+
+            // List tasks
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let items = self.lib.list_items();
+                let mut to_complete = None;
+                for (i, item) in items.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        if ui.button("Complete").clicked() {
+                            to_complete = Some(i);
+                        }
+                        ui.label(format!("{}. {}", i + 1, item));
+                    });
+                }
+                if let Some(idx) = to_complete {
+                    self.lib
+                        .complete_item(idx)
+                        .unwrap_or_else(|| eprintln!("Complete failed"));
+                    self.save();
+                }
+            });
+
+            ui.separator();
+
+            ui.label(format!("Total items: {}", self.lib.item_count()));
+        });
+    }
+}
+
+fn main() -> eframe::Result<()> {
+    // // Force X11 backend to avoid Wayland errors on some systems
+    // unsafe {
+    //     std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+    // }
+
+    let options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "Todo GUI",
+        options,
+        Box::new(|cc| Box::new(TodoApp::new(cc))),
+    )
 }
