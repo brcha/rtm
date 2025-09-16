@@ -1,6 +1,5 @@
-use std::process::Command;
 use std::fs;
-use std::path::Path;
+use std::process::Command;
 
 #[test]
 fn test_cli_add_single_task() {
@@ -13,7 +12,9 @@ fn test_cli_add_single_task() {
 
     // Run add command
     let output = Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Buy milk"])
+        .args(&[
+            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Buy milk",
+        ])
         .output()
         .expect("Failed to run add command");
 
@@ -37,13 +38,17 @@ fn test_cli_add_multiple_tasks() {
 
     // Add first task
     Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Buy milk"])
+        .args(&[
+            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Buy milk",
+        ])
         .output()
         .expect("Failed to add first task");
 
     // Add second task
     Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Call mom"])
+        .args(&[
+            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Call mom",
+        ])
         .output()
         .expect("Failed to add second task");
 
@@ -67,11 +72,15 @@ fn test_cli_list_tasks() {
 
     // Add tasks
     Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Task 1"])
+        .args(&[
+            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Task 1",
+        ])
         .output()
         .unwrap();
     Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Task 2"])
+        .args(&[
+            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Task 2",
+        ])
         .output()
         .unwrap();
 
@@ -99,13 +108,24 @@ fn test_cli_complete_task_by_index() {
 
     // Add task
     Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Incomplete task"])
+        .args(&[
+            "run",
+            "--bin",
+            "rtmcli",
+            "--",
+            "-f",
+            file_path,
+            "add",
+            "Incomplete task",
+        ])
         .output()
         .unwrap();
 
     // Complete task by index
     let output = Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "complete", "1"])
+        .args(&[
+            "run", "--bin", "rtmcli", "--", "-f", file_path, "complete", "1",
+        ])
         .output()
         .expect("Failed to complete");
 
@@ -128,23 +148,52 @@ fn test_cli_list_completed_tasks() {
 
     // Add and complete task
     Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Complete this"])
+        .args(&[
+            "run",
+            "--bin",
+            "rtmcli",
+            "--",
+            "-f",
+            file_path,
+            "add",
+            "Complete this",
+        ])
         .output()
         .unwrap();
     Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "complete", "1"])
+        .args(&[
+            "run", "--bin", "rtmcli", "--", "-f", file_path, "complete", "1",
+        ])
         .output()
         .unwrap();
 
     // Add another uncompleted
     Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Keep uncompleted"])
+        .args(&[
+            "run",
+            "--bin",
+            "rtmcli",
+            "--",
+            "-f",
+            file_path,
+            "add",
+            "Keep uncompleted",
+        ])
         .output()
         .unwrap();
 
     // List completed
     let output = Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "list", "--completed"])
+        .args(&[
+            "run",
+            "--bin",
+            "rtmcli",
+            "--",
+            "-f",
+            file_path,
+            "list",
+            "--completed",
+        ])
         .output()
         .expect("Failed to list completed");
 
