@@ -1,5 +1,6 @@
 use crate::todoitem::TodoItem;
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct TodoLibrary {
     pub file_name: String,
     pub items: Vec<TodoItem>,
