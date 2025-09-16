@@ -70,7 +70,7 @@ impl eframe::App for TodoApp {
                         if ui.button("Complete").clicked() {
                             to_complete = Some(i);
                         }
-                        ui.label(format!("{}. {}", i + 1, item));
+                        ui.label(item.to_string());
                     });
                 }
                 if let Some(idx) = to_complete {
