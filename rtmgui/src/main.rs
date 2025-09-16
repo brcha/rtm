@@ -4,10 +4,10 @@ use todotxt::{TodoItem, TodoLibrary};
 
 struct TodoApp {
     lib: TodoLibrary,
-    new_task: String,
+    new_item: String,
     file_name: String,
-    show_completed: bool,
-    show_future_tasks: bool,
+    show_completed_items: bool,
+    show_future_items: bool,
 }
 
 impl TodoApp {
@@ -16,10 +16,10 @@ impl TodoApp {
         lib.load().unwrap_or(());
         Self {
             lib,
-            new_task: String::new(),
+            new_item: String::new(),
             file_name,
-            show_completed: false,
-            show_future_tasks: false,
+            show_completed_items: false,
+            show_future_items: false,
         }
     }
 
@@ -36,12 +36,12 @@ impl eframe::App for TodoApp {
             ui.heading("Rust Todo.txt Manager");
 
             ui.horizontal(|ui| {
-                ui.label("New Task:");
-                ui.text_edit_singleline(&mut self.new_task);
-                if ui.button("Add").clicked() && !self.new_task.is_empty() {
-                    if let Ok(item) = self.new_task.parse::<TodoItem>() {
+                ui.label("New Item:");
+                ui.text_edit_singleline(&mut self.new_item);
+                if ui.button("Add").clicked() && !self.new_item.is_empty() {
+                    if let Ok(item) = self.new_item.parse::<TodoItem>() {
                         self.lib.add_item(item);
-                        self.new_task.clear();
+                        self.new_item.clear();
                         self.save();
                     } else {
                         eprintln!("Parse error");
@@ -51,8 +51,8 @@ impl eframe::App for TodoApp {
 
             ui.separator();
 
-            ui.checkbox(&mut self.show_completed, "Show completed tasks");
-            ui.checkbox(&mut self.show_future_tasks, "Show future tasks");
+            ui.checkbox(&mut self.show_completed_items, "Show completed items");
+            ui.checkbox(&mut self.show_future_items, "Show future items");
 
             // List tasks
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -60,10 +60,10 @@ impl eframe::App for TodoApp {
                 let mut to_complete = None;
                 let today = Local::now().date_naive();
                 for (i, item) in items.iter().enumerate() {
-                    if !self.show_future_tasks && item.due.map_or(false, |d| d > today) {
+                    if !self.show_future_items && item.due.map_or(false, |d| d > today) {
                         continue;
                     }
-                    if !self.show_completed && item.done {
+                    if !self.show_completed_items && item.done {
                         continue;
                     }
                     ui.horizontal(|ui| {
