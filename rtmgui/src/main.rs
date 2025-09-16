@@ -1,5 +1,6 @@
 use chrono::{Datelike, Local};
 use eframe::egui;
+use rfd;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use todotxt::{TodoItem, TodoLibrary};
@@ -106,17 +107,9 @@ impl eframe::App for TodoApp {
         });
 
         egui::SidePanel::left("left_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("File:");
-                let mut input_file = self
-                    .file_name
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                ui.text_edit_singleline(&mut input_file);
-                if ui.button("Load").clicked() {
-                    let path_buf = PathBuf::from(&input_file);
-                    let canonical_path = path_buf.canonicalize().unwrap_or(path_buf);
+            if ui.button("Load").clicked() {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    let canonical_path = path.canonicalize().unwrap_or(path);
                     let canonical_str = canonical_path.to_string_lossy().to_string();
                     self.lib = TodoLibrary::new(canonical_str);
                     if self.lib.load().is_ok() {
@@ -126,7 +119,7 @@ impl eframe::App for TodoApp {
                         eprintln!("Failed to load file");
                     }
                 }
-            });
+            }
             if !self.file_name.is_some() {
                 return;
             }
