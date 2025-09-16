@@ -5,6 +5,7 @@ struct TodoApp {
     lib: TodoLibrary,
     new_task: String,
     file_name: String,
+    show_completed: bool,
 }
 
 impl TodoApp {
@@ -15,6 +16,7 @@ impl TodoApp {
             lib,
             new_task: String::new(),
             file_name,
+            show_completed: false,
         }
     }
 
@@ -46,11 +48,16 @@ impl eframe::App for TodoApp {
 
             ui.separator();
 
+            ui.checkbox(&mut self.show_completed, "Show completed tasks");
+
             // List tasks
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let items = self.lib.list_items();
                 let mut to_complete = None;
                 for (i, item) in items.iter().enumerate() {
+                    if !self.show_completed && item.done {
+                        continue;
+                    }
                     ui.horizontal(|ui| {
                         if ui.button("Complete").clicked() {
                             to_complete = Some(i);
