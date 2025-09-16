@@ -1,6 +1,7 @@
 use chrono::{Datelike, Local};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use todotxt::{TodoItem, TodoLibrary};
 
 #[derive(Serialize, Deserialize)]
@@ -14,11 +15,11 @@ struct AppConfig {
 struct TodoApp {
     lib: TodoLibrary,
     new_item: String,
-    file_name: Option<String>,
+    file_name: Option<PathBuf>,
     show_completed_items: bool,
     show_future_items: bool,
     reverse_sort: bool,
-    config_path: std::path::PathBuf,
+    config_path: PathBuf,
 }
 
 impl TodoApp {
@@ -33,21 +34,23 @@ impl TodoApp {
                 show_future_items: false,
                 reverse_sort: false,
             });
-        let file_path = config
-            .file_name
-            .clone()
-            .unwrap_or_else(|| "todo.txt".to_string());
+        let file_path_buf = if let Some(s) = config.file_name.clone() {
+            PathBuf::from(s).canonicalize().unwrap()
+        } else {
+            PathBuf::from("todo.txt")
+        };
+        let file_path = file_path_buf.to_string_lossy().to_string();
         let mut lib = TodoLibrary::new(file_path.clone());
         let has_file = lib.load().is_ok();
         let actual_file_name = if has_file {
-            Some(file_path.clone())
+            Some(file_path_buf)
         } else {
-            config.file_name
+            config.file_name.as_ref().map(|s| PathBuf::from(s))
         };
         Self {
             lib,
             new_item: String::new(),
-            file_name: actual_file_name,
+            file_name: actual_file_name.map(|s| PathBuf::from(s)),
             show_completed_items: config.show_completed_items,
             show_future_items: config.show_future_items,
             reverse_sort: config.reverse_sort,
@@ -57,7 +60,7 @@ impl TodoApp {
 
     fn config_path() -> std::path::PathBuf {
         let mut path = dirs::config_dir().unwrap_or_else(|| std::env::temp_dir());
-        path.push("rtmcli");
+        path.push("rtm");
         std::fs::create_dir_all(&path).unwrap();
         path.push("config.toml");
         path
@@ -65,7 +68,10 @@ impl TodoApp {
 
     fn save_config(&self) {
         let config = AppConfig {
-            file_name: self.file_name.clone(),
+            file_name: self
+                .file_name
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
             show_completed_items: self.show_completed_items,
             show_future_items: self.show_future_items,
             reverse_sort: self.reverse_sort,
@@ -92,19 +98,29 @@ impl eframe::App for TodoApp {
             ui.label(format!(
                 "Total items: {} (file: {})",
                 self.lib.item_count(),
-                self.file_name.clone().unwrap_or_default()
+                self.file_name
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
             ));
         });
 
         egui::SidePanel::left("left_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("File:");
-                let mut input_file = self.file_name.clone().unwrap_or_default();
+                let mut input_file = self
+                    .file_name
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
                 ui.text_edit_singleline(&mut input_file);
                 if ui.button("Load").clicked() {
-                    self.lib = TodoLibrary::new(input_file.clone());
+                    let path_buf = PathBuf::from(&input_file);
+                    let canonical_path = path_buf.canonicalize().unwrap_or(path_buf);
+                    let canonical_str = canonical_path.to_string_lossy().to_string();
+                    self.lib = TodoLibrary::new(canonical_str);
                     if self.lib.load().is_ok() {
-                        self.file_name = Some(input_file);
+                        self.file_name = Some(canonical_path);
                         self.save_config();
                     } else {
                         eprintln!("Failed to load file");
