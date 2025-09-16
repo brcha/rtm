@@ -84,11 +84,19 @@ impl TodoApp {
 
 impl eframe::App for TodoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.heading("Rust Todo.txt Manager");
         });
 
-        egui::SidePanel::left("Side panel").show(ctx, |ui| {
+        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+            ui.label(format!(
+                "Total items: {} (file: {})",
+                self.lib.item_count(),
+                self.file_name.clone().unwrap_or_default()
+            ));
+        });
+
+        egui::SidePanel::left("left_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("File:");
                 let mut input_file = self.file_name.clone().unwrap_or_default();
@@ -104,7 +112,6 @@ impl eframe::App for TodoApp {
                 }
             });
             if !self.file_name.is_some() {
-                ui.label("No file loaded. Use 'Load' to select a todo.txt file.");
                 return;
             }
 
@@ -135,6 +142,11 @@ impl eframe::App for TodoApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            if !self.file_name.is_some() {
+                ui.label("No file loaded. Use 'Load' to select a todo.txt file.");
+                return;
+            }
+
             ui.horizontal(|ui| {
                 ui.label("New Item:");
                 ui.text_edit_singleline(&mut self.new_item);
@@ -199,14 +211,6 @@ impl eframe::App for TodoApp {
                     }
                 }
             });
-
-            ui.separator();
-
-            ui.label(format!(
-                "Total items: {} (file: {})",
-                self.lib.item_count(),
-                self.file_name.clone().unwrap_or_default()
-            ));
         });
     }
 }
