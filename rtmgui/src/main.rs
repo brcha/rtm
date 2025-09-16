@@ -92,7 +92,7 @@ impl TodoApp {
 impl eframe::App for TodoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.heading("Rust Todo.txt Manager");
+            ui.heading("Rusty Todo.txt Manager");
         });
 
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
@@ -204,7 +204,7 @@ impl eframe::App for TodoApp {
                 let mut to_complete = None;
                 for (original_i, item) in filtered_items {
                     ui.horizontal(|ui| {
-                        if !item.done && ui.button("Complete").clicked() {
+                        if !item.done &&"S" ui.button("Complete").clicked() {
                             to_complete = Some(original_i);
                         }
                         ui.label(item.to_string());
@@ -232,7 +232,7 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions::default();
     eframe::run_native(
-        "Rust Todo.txt Manager",
+        "Rusty Todo.txt Manager",
         options,
         Box::new(|cc| Box::new(TodoApp::new(cc))),
     )

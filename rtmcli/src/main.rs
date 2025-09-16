@@ -5,7 +5,7 @@ use todotxt::TodoLibrary;
 
 #[derive(Parser)]
 #[command(name = "rtmcli")]
-#[command(about = "Rust Todo.txt Manager CLI")]
+#[command(about = "Rusty Todo.txt Manager CLI")]
 struct Cli {
     /// Todo.txt file name
     #[arg(short = 'f', long)]
@@ -98,13 +98,13 @@ fn main() {
                 })
                 .collect();
 
-            println!("Tasks in '{}':", file_name);
+            println!("Items in '{}':", file_name);
             for (i, item) in filtered_items.iter().enumerate() {
                 println!("{}. {}", i + 1, item);
             }
 
             if filtered_items.is_empty() {
-                println!("No tasks found.");
+                println!("No items found.");
             }
         }
         Commands::Add { description } => {
@@ -119,7 +119,7 @@ fn main() {
                 eprintln!("Error saving file: {}", e);
                 std::process::exit(1);
             }
-            println!("Added task to '{}'", file_name);
+            println!("Added item to '{}'", file_name);
         }
         Commands::Complete { arg1, arg2 } => {
             if let Err(e) = lib.load() {
@@ -221,12 +221,12 @@ fn main() {
                     std::process::exit(1);
                 }
                 println!(
-                    "Completed {} task(s) in '{}'",
+                    "Completed {} item(s) in '{}'",
                     indices_to_complete.len(),
                     file_name
                 );
             } else {
-                println!("No tasks matched the criteria");
+                println!("No items matched the criteria");
             }
         }
     }
