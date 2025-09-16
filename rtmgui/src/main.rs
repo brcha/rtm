@@ -109,10 +109,13 @@ impl eframe::App for TodoApp {
                     });
                 }
                 if let Some(idx) = to_complete {
-                    self.lib
-                        .complete_item(idx)
-                        .unwrap_or_else(|| eprintln!("Complete failed"));
-                    self.save();
+                    if let Some(_) = self.lib.complete_item(idx) {
+                        self.save();
+                        // Reload from file to refresh the list (important for recurring tasks)
+                        self.lib.load().unwrap_or(());
+                    } else {
+                        eprintln!("Complete failed");
+                    }
                 }
             });
 
