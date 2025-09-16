@@ -3,14 +3,36 @@ in
   with pkgs.stdenv;
   with pkgs.lib;
 pkgs.mkShell {
-  # nativeBuildInputs is usually what you want -- tools you need to run
+  # nativeBuildInputs is usually what you need -- tools you need to run
   nativeBuildInputs = with pkgs; [
-    xorg.libxcb libGL libxkbcommon libsoup_3 atk gdk-pixbuf pango pkg-config cairo webkitgtk_4_1
+    # GTK and related libraries for Dioxus desktop
+    gtk3
+    glib
+    gobject-introspection
+    libsoup_3
+    atk
+    gdk-pixbuf
+    pango
+    cairo
+    webkitgtk_4_1
+    # X11 and graphics
+    xorg.libxcb
+    xorg.libX11
+    xorg.libXcursor
+    xorg.libXrandr
+    xorg.libXi
+    libGL
+    libxkbcommon
+    # Build tools
+    pkg-config
+    rustc
+    cargo
   ];
   # buildInputs is for 32bit versions
   buildInputs = with pkgs.pkgsi686Linux; [
   ];
   shellHook = with pkgs.xorg; ''
-    export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${makeLibraryPath (with pkgs.xorg; with pkgs; [ libX11 libXcursor libXrandr libXi libGL libxkbcommon libsoup_3 atk gdk-pixbuf pango cairo webkitgtk_4_1 ])}
+    export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${makeLibraryPath (with pkgs.xorg; with pkgs; [ libX11 libXcursor libXrandr libXi libGL libxkbcommon libsoup_3 atk gdk-pixbuf pango cairo webkitgtk_4_1 gtk3 glib ])}
+    export PKG_CONFIG_PATH=${makePkgConfigPath (with pkgs; [gtk3 glib libsoup_3 atk gdk-pixbuf pango cairo webkitgtk_4_1])}
   '';
 }
