@@ -112,14 +112,6 @@ mod tests {
     }
 
     #[test]
-    fn test_clear_items() {
-        let mut lib = TodoLibrary::new("dummy.txt".to_string());
-        lib.add_item("Item".parse().unwrap());
-        lib.clear_items();
-        assert!(lib.items.is_empty());
-    }
-
-    #[test]
     fn test_item_count() {
         let mut lib = TodoLibrary::new("dummy.txt".to_string());
         lib.add_item("Item 1".parse().unwrap());
@@ -145,11 +137,8 @@ mod tests {
 
     #[test]
     fn test_load_and_save() {
-        use std::env;
-        use uuid::Uuid;
-
-        let temp_dir = env::temp_dir();
-        let file_name = Uuid::new_v4().to_string() + ".txt";
+        let temp_dir = std::env::temp_dir();
+        let file_name = format!("{}.txt", uuid::Uuid::new_v4());
         let path = temp_dir.join(file_name);
         let content = "Buy milk\nx Complete task\n";
         fs::write(&path, content).unwrap();
@@ -163,5 +152,52 @@ mod tests {
         let saved_content = fs::read_to_string(&path).unwrap();
         assert_eq!(saved_content.trim(), content.trim());
         fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn test_clear_items() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        lib.add_item("Item 1".parse().unwrap());
+        lib.add_item("Item 2".parse().unwrap());
+        assert_eq!(lib.item_count(), 2);
+        lib.clear_items();
+        assert_eq!(lib.item_count(), 0);
+        assert!(lib.list_items().is_empty());
+    }
+
+    #[test]
+    fn test_item_count_empty() {
+        let lib = TodoLibrary::new("dummy.txt".to_string());
+        assert_eq!(lib.item_count(), 0);
+    }
+
+    #[test]
+    fn test_list_items_multiple() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        lib.add_item("First".parse().unwrap());
+        lib.add_item("Second".parse().unwrap());
+        let items = lib.list_items();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].description, "First");
+        assert_eq!(items[1].description, "Second");
+    }
+
+    #[test]
+    fn test_complete_item_success() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        lib.add_item("Uncompleted".parse().unwrap());
+        assert!(!lib.items[0].done);
+        let result = lib.complete_item(0);
+        assert!(result.is_some());
+        assert!(lib.items[0].done);
+    }
+
+    #[test]
+    fn test_save_empty() {
+        let lib = TodoLibrary::new("test_empty.txt".to_string());
+        lib.save().unwrap();
+        let content = fs::read_to_string("test_empty.txt").unwrap();
+        assert_eq!(content.trim(), "");
+        fs::remove_file("test_empty.txt").unwrap();
     }
 }
