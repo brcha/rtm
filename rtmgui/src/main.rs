@@ -66,6 +66,8 @@ impl eframe::App for TodoApp {
                 self.reverse_sort = !self.reverse_sort;
             }
 
+            ui.separator();
+
             // List tasks
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let items = self.lib.list_items();
