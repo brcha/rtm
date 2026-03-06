@@ -4,6 +4,8 @@ const { open } = window.__TAURI__.dialog;
 let items = [];
 let fileLoaded = false;
 let currentEditIndex = null;
+let dueDatePicker = null;
+let thresholdDatePicker = null;
 
 async function loadFile() {
   const selected = await open({
@@ -93,11 +95,16 @@ function openEditDialog(index) {
 
   document.getElementById('edit-description').value = item.description;
   document.getElementById('edit-priority').value = item.priority !== null ? item.priority : '';
-  document.getElementById('edit-due').value = item.due || '';
   document.getElementById('edit-recurrence').value = item.recurrence || '';
-  document.getElementById('edit-threshold').value = item.threshold || '';
   document.getElementById('edit-projects').value = item.projects.join(', ');
   document.getElementById('edit-contexts').value = item.contexts.join(', ');
+
+  if (dueDatePicker) {
+    dueDatePicker.setDate(item.due || null, false);
+  }
+  if (thresholdDatePicker) {
+    thresholdDatePicker.setDate(item.threshold || null, false);
+  }
 
   document.getElementById('edit-dialog').style.display = 'flex';
 }
@@ -112,9 +119,9 @@ async function saveEdit() {
 
   const description = document.getElementById('edit-description').value.trim();
   const priorityStr = document.getElementById('edit-priority').value;
-  const due = document.getElementById('edit-due').value || null;
+  const dueDate = dueDatePicker ? dueDatePicker.selectedDates[0] : null;
   const recurrence = document.getElementById('edit-recurrence').value.trim() || null;
-  const threshold = document.getElementById('edit-threshold').value || null;
+  const thresholdDate = thresholdDatePicker ? thresholdDatePicker.selectedDates[0] : null;
   const projectsStr = document.getElementById('edit-projects').value;
   const contextsStr = document.getElementById('edit-contexts').value;
 
@@ -123,6 +130,8 @@ async function saveEdit() {
     return;
   }
 
+  const due = dueDate ? flatpickr.formatDate(dueDate, 'Y-m-d') : null;
+  const threshold = thresholdDate ? flatpickr.formatDate(thresholdDate, 'Y-m-d') : null;
   const priority = priorityStr ? parseInt(priorityStr, 10) : null;
   const projects = projectsStr ? projectsStr.split(',').map(p => p.trim()).filter(p => p) : [];
   const contexts = contextsStr ? contextsStr.split(',').map(c => c.trim()).filter(c => c) : [];
@@ -219,6 +228,18 @@ async function saveConfig() {
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
+  dueDatePicker = flatpickr('#edit-due', {
+    dateFormat: 'Y-m-d',
+    placeholder: 'Select due date',
+    allowInput: true
+  });
+
+  thresholdDatePicker = flatpickr('#edit-threshold', {
+    dateFormat: 'Y-m-d',
+    placeholder: 'Select threshold',
+    allowInput: true
+  });
+
   document.getElementById('load-btn').addEventListener('click', loadFile);
   
   document.getElementById('add-btn').addEventListener('click', addItem);
