@@ -39,6 +39,11 @@ async function updateFileName() {
   }
 }
 
+async function checkFileLoaded() {
+  const hasFile = await invoke('has_file_loaded');
+  fileLoaded = hasFile;
+}
+
 async function refreshItems() {
   try {
     items = await invoke('get_items');
@@ -262,6 +267,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   await loadConfig();
   await updateFileName();
+  await checkFileLoaded();
   await refreshItems();
 });
 

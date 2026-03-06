@@ -134,6 +134,12 @@ fn get_file_name(state: tauri::State<AppState>) -> Option<String> {
 }
 
 #[tauri::command]
+fn has_file_loaded(state: tauri::State<AppState>) -> bool {
+    let lib_guard = state.lib.lock().unwrap();
+    lib_guard.is_some()
+}
+
+#[tauri::command]
 fn save_file(state: tauri::State<AppState>) -> Result<bool, String> {
     let mut lib_guard = state.lib.lock().unwrap();
     if let Some(ref mut lib) = *lib_guard {
@@ -327,6 +333,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_file,
             get_file_name,
+            has_file_loaded,
             save_file,
             get_items,
             get_item_count,
