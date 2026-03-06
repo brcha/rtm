@@ -82,8 +82,8 @@ impl Display for TodoRecurrence {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::TodoRecurrenceUnit::*;
+    use super::*;
 
     #[test]
     fn parse_test() {

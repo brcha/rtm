@@ -6,6 +6,7 @@ members = [
 	"todotxt",
 	"rtmcli",
 	"rtmgui",
+	"rtmapp/src-tauri",
 ]
 
 [profile.release]

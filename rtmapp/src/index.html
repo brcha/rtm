@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rusty Todo.txt Manager</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1>Rusty Todo.txt Manager</h1>
+      </header>
+
+      <div class="main-layout">
+        <aside class="sidebar">
+          <button id="load-btn" class="btn btn-primary">Load File</button>
+          
+          <div class="file-info">
+            <span id="file-name">No file loaded</span>
+          </div>
+
+          <div class="filters">
+            <label class="checkbox-label">
+              <input type="checkbox" id="show-completed" />
+              Show completed items
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="show-future" />
+              Show future items
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="reverse-sort" />
+              Reverse sort order
+            </label>
+          </div>
+
+          <div class="stats">
+            <span id="item-count">Total items: 0</span>
+          </div>
+        </aside>
+
+        <main class="content">
+          <div class="add-item">
+            <input type="text" id="new-item-input" placeholder="New item (e.g., (A) Task due:2024-01-15 +Project @context)" />
+            <button id="add-btn" class="btn btn-success">Add</button>
+          </div>
+
+          <div id="todo-list" class="todo-list">
+            <p class="no-file">No file loaded. Use 'Load File' to select a todo.txt file.</p>
+          </div>
+        </main>
+      </div>
+
+      <div id="edit-dialog" class="dialog-overlay" style="display: none;">
+        <div class="dialog">
+          <h2>Edit Item</h2>
+          <form id="edit-form">
+            <div class="form-group">
+              <label for="edit-description">Description</label>
+              <input type="text" id="edit-description" required />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="edit-priority">Priority</label>
+                <select id="edit-priority">
+                  <option value="">None</option>
+                  <option value="0">(A) High</option>
+                  <option value="1">(B) Medium</option>
+                  <option value="2">(C) Low</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="edit-due">Due Date</label>
+                <input type="date" id="edit-due" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="edit-recurrence">Recurrence</label>
+                <input type="text" id="edit-recurrence" placeholder="e.g., 1d, 1w, 1m" />
+              </div>
+              <div class="form-group">
+                <label for="edit-threshold">Threshold</label>
+                <input type="date" id="edit-threshold" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="edit-projects">Projects (comma separated)</label>
+              <input type="text" id="edit-projects" placeholder="e.g., Work, Personal" />
+            </div>
+            <div class="form-group">
+              <label for="edit-contexts">Contexts (comma separated)</label>
+              <input type="text" id="edit-contexts" placeholder="e.g., home, office" />
+            </div>
+            <div class="dialog-buttons">
+              <button type="button" id="edit-cancel" class="btn btn-secondary">Cancel</button>
+              <button type="submit" class="btn btn-success">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
