@@ -296,11 +296,105 @@ mod tests {
     #[test]
     fn test_complete_non_recurring() {
         let mut lib = TodoLibrary::new("dummy.txt".to_string());
-        let item = "Test non rec".parse::<TodoItem>().unwrap();
+        let item = "Test non rec".parse().unwrap();
         lib.add_item(item);
         let result = lib.complete_item(0);
         assert_eq!(result, Some(false));
         assert_eq!(lib.item_count(), 1);
         assert!(lib.items[0].done);
+    }
+
+    #[test]
+    fn test_complete_item_invalid_index() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        lib.add_item("Task 1".parse().unwrap());
+        lib.add_item("Task 2".parse().unwrap());
+        let result = lib.complete_item(5);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_complete_item_at_last_index() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        lib.add_item("Task 1".parse().unwrap());
+        lib.add_item("Task 2".parse().unwrap());
+        let result = lib.complete_item(1);
+        assert_eq!(result, Some(false));
+        assert!(lib.items[1].done);
+    }
+
+    #[test]
+    fn test_remove_item_first() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        lib.add_item("First".parse().unwrap());
+        lib.add_item("Second".parse().unwrap());
+        lib.add_item("Third".parse().unwrap());
+        let removed = lib.remove_item(0);
+        assert_eq!(removed.unwrap().description, "First");
+        assert_eq!(lib.item_count(), 2);
+    }
+
+    #[test]
+    fn test_remove_item_middle() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        lib.add_item("First".parse().unwrap());
+        lib.add_item("Second".parse().unwrap());
+        lib.add_item("Third".parse().unwrap());
+        let removed = lib.remove_item(1);
+        assert_eq!(removed.unwrap().description, "Second");
+        assert_eq!(lib.item_count(), 2);
+    }
+
+    #[test]
+    fn test_load_invalid_file() {
+        let mut lib = TodoLibrary::new("nonexistent_file_12345.txt".to_string());
+        let result = lib.load();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_save_to_new_file() {
+        let temp_dir = std::env::temp_dir();
+        let file_name = format!("{}.txt", uuid::Uuid::new_v4());
+        let path = temp_dir.join(&file_name);
+
+        let mut lib = TodoLibrary::new(path.to_str().unwrap().to_string());
+        lib.add_item("Task 1".parse().unwrap());
+        lib.add_item("Task 2".parse().unwrap());
+        lib.save().unwrap();
+
+        let mut lib2 = TodoLibrary::new(path.to_str().unwrap().to_string());
+        lib2.load().unwrap();
+        assert_eq!(lib2.item_count(), 2);
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn test_complete_item_with_threshold() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let mut item: TodoItem = "Task with threshold".parse().unwrap();
+        item.threshold = Some(chrono::NaiveDate::from_ymd_opt(2023, 1, 1).unwrap());
+        lib.add_item(item);
+
+        let result = lib.complete_item(0);
+        assert_eq!(result, Some(false));
+        assert!(lib.items[0].done);
+    }
+
+    #[test]
+    fn test_library_equality() {
+        let lib1 = TodoLibrary::new("test.txt".to_string());
+        let lib2 = TodoLibrary::new("test.txt".to_string());
+        assert_eq!(lib1, lib2);
+    }
+
+    #[test]
+    fn test_library_clone() {
+        let mut lib1 = TodoLibrary::new("test.txt".to_string());
+        lib1.add_item("Task".parse().unwrap());
+        let lib2 = lib1.clone();
+        assert_eq!(lib1.file_name, lib2.file_name);
+        assert_eq!(lib1.item_count(), lib2.item_count());
     }
 }

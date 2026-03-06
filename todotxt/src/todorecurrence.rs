@@ -189,4 +189,89 @@ mod tests {
             .to_string()
         );
     }
+
+    #[test]
+    fn parse_invalid() {
+        assert_eq!(Err(TodoRecurrenceParseError), TodoRecurrence::from_str("x"));
+        assert_eq!(
+            Err(TodoRecurrenceParseError),
+            TodoRecurrence::from_str("1x")
+        );
+        assert_eq!(
+            Err(TodoRecurrenceParseError),
+            TodoRecurrence::from_str("+1x")
+        );
+    }
+
+    #[test]
+    fn display_strict_variants() {
+        assert_eq!(
+            "+d",
+            TodoRecurrence {
+                strict: true,
+                count: 1,
+                unit: Daily
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "+2w",
+            TodoRecurrence {
+                strict: true,
+                count: 2,
+                unit: Weekly
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "+3m",
+            TodoRecurrence {
+                strict: true,
+                count: 3,
+                unit: Monthly
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "+y",
+            TodoRecurrence {
+                strict: true,
+                count: 1,
+                unit: Yearly
+            }
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn recurrence_equality() {
+        let r1 = TodoRecurrence {
+            strict: false,
+            count: 1,
+            unit: Daily,
+        };
+        let r2 = TodoRecurrence {
+            strict: false,
+            count: 1,
+            unit: Daily,
+        };
+        let r3 = TodoRecurrence {
+            strict: true,
+            count: 1,
+            unit: Daily,
+        };
+        assert_eq!(r1, r2);
+        assert_ne!(r1, r3);
+    }
+
+    #[test]
+    fn recurrence_clone() {
+        let r1 = TodoRecurrence {
+            strict: false,
+            count: 1,
+            unit: Weekly,
+        };
+        let r2 = r1.clone();
+        assert_eq!(r1, r2);
+    }
 }

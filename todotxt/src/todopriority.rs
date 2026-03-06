@@ -63,4 +63,60 @@ mod tests {
         assert_eq!("(A)", TodoPriority { priority: Some(0) }.to_string());
         assert_eq!("", TodoPriority { priority: None }.to_string());
     }
+
+    #[test]
+    fn parse_all_priorities() {
+        assert_eq!(
+            Ok(TodoPriority { priority: Some(0) }),
+            TodoPriority::from_str("(A)")
+        );
+        assert_eq!(
+            Ok(TodoPriority { priority: Some(1) }),
+            TodoPriority::from_str("(B)")
+        );
+        assert_eq!(
+            Ok(TodoPriority { priority: Some(2) }),
+            TodoPriority::from_str("(C)")
+        );
+        assert_eq!(
+            Ok(TodoPriority { priority: Some(25) }),
+            TodoPriority::from_str("(Z)")
+        );
+    }
+
+    #[test]
+    fn display_all_priorities() {
+        for i in 0u8..26 {
+            let expected = format!("({})", (i + b'A') as char);
+            assert_eq!(expected, TodoPriority { priority: Some(i) }.to_string());
+        }
+    }
+
+    #[test]
+    fn parse_invalid_priorities() {
+        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(a)"));
+        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(AA)"));
+        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(0)"));
+        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("()"));
+        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(A"));
+        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("A)"));
+    }
+
+    #[test]
+    fn priority_equality() {
+        let p1 = TodoPriority { priority: Some(0) };
+        let p2 = TodoPriority { priority: Some(0) };
+        let p3 = TodoPriority { priority: Some(1) };
+        let p4 = TodoPriority { priority: None };
+        assert_eq!(p1, p2);
+        assert_ne!(p1, p3);
+        assert_ne!(p1, p4);
+    }
+
+    #[test]
+    fn priority_clone() {
+        let p1 = TodoPriority { priority: Some(5) };
+        let p2 = p1.clone();
+        assert_eq!(p1, p2);
+    }
 }

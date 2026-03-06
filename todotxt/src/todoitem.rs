@@ -375,6 +375,7 @@ impl TodoItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::todorecurrence::TodoRecurrenceUnit;
     use chrono::NaiveDate;
 
     #[test]
@@ -856,5 +857,229 @@ mod tests {
         let new_item = item.set_threshold(Some(date));
         assert_eq!(new_item.threshold, Some(date));
         assert_eq!(item.threshold, None);
+    }
+
+    #[test]
+    fn test_set_uuid() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let uuid = Uuid::new_v4();
+        let new_item = TodoItem {
+            uuid: Some(uuid),
+            ..item.clone()
+        };
+        assert_eq!(new_item.uuid, Some(uuid));
+        assert_eq!(item.uuid, None);
+    }
+
+    #[test]
+    fn test_set_sub() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let sub = Uuid::new_v4();
+        let new_item = TodoItem {
+            sub: Some(sub),
+            ..item.clone()
+        };
+        assert_eq!(new_item.sub, Some(sub));
+        assert_eq!(item.sub, None);
+    }
+
+    #[test]
+    fn test_set_completion_date() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let date = NaiveDate::from_ymd_opt(2023, 5, 26).unwrap();
+        let new_item = item.set_completion_date(Some(date));
+        assert_eq!(new_item.completion_date, Some(date));
+        assert_eq!(item.completion_date, None);
+    }
+
+    #[test]
+    fn test_set_creation_date() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let date = NaiveDate::from_ymd_opt(2023, 5, 20).unwrap();
+        let new_item = item.set_creation_date(Some(date));
+        assert_eq!(new_item.creation_date, Some(date));
+        assert_eq!(item.creation_date, None);
+    }
+
+    #[test]
+    fn test_set_contexts() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let contexts = vec![TodoContext {
+            name: "home".to_string(),
+        }];
+        let new_item = item.set_contexts(contexts.clone());
+        assert_eq!(new_item.contexts, contexts);
+        assert!(item.contexts.is_empty());
+    }
+
+    #[test]
+    fn test_item_equality() {
+        let item1 = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "Test".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let item2 = item1.clone();
+        assert_eq!(item1, item2);
+    }
+
+    #[test]
+    fn test_item_clone() {
+        let item1 = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: Some(1) },
+            completion_date: None,
+            creation_date: Some(NaiveDate::from_ymd_opt(2023, 5, 20).unwrap()),
+            description: "Test".to_string(),
+            projects: vec![TodoProject {
+                name: "Work".to_string(),
+            }],
+            contexts: vec![TodoContext {
+                name: "home".to_string(),
+            }],
+            due: Some(NaiveDate::from_ymd_opt(2023, 5, 30).unwrap()),
+            recurrence: Some(TodoRecurrence {
+                strict: false,
+                count: 1,
+                unit: TodoRecurrenceUnit::Daily,
+            }),
+            threshold: Some(NaiveDate::from_ymd_opt(2023, 5, 25).unwrap()),
+            uuid: Some(Uuid::new_v4()),
+            sub: None,
+        };
+        let item2 = item1.clone();
+        assert_eq!(item1, item2);
+    }
+
+    #[test]
+    fn test_roundtrip_with_all_fields() {
+        let original =
+            "(A) 2023-05-20 Complete task +Work @office due:2023-05-30 rec:1w t:2023-05-25";
+        let parsed: TodoItem = original.parse().unwrap();
+        let output = parsed.to_string();
+        assert!(output.contains("(A)"));
+        assert!(output.contains("Complete task"));
+        assert!(output.contains("+Work"));
+        assert!(output.contains("@office"));
+        assert!(output.contains("due:2023-05-30"));
+        assert!(output.contains("rec:w"));
+        assert!(output.contains("t:2023-05-25"));
+    }
+
+    #[test]
+    fn test_parse_only_description() {
+        let item: TodoItem = "Just a simple task".parse().unwrap();
+        assert_eq!(item.description, "Just a simple task");
+        assert!(!item.done);
+        assert_eq!(item.priority.priority, None);
+        assert!(item.projects.is_empty());
+        assert!(item.contexts.is_empty());
+        assert_eq!(item.due, None);
+    }
+
+    #[test]
+    fn test_parse_multiple_projects_and_contexts() {
+        let item: TodoItem = "Task +Project1 +Project2 @context1 @context2"
+            .parse()
+            .unwrap();
+        assert_eq!(item.projects.len(), 2);
+        assert_eq!(item.contexts.len(), 2);
+        assert_eq!(item.projects[0].name, "Project1");
+        assert_eq!(item.projects[1].name, "Project2");
+        assert_eq!(item.contexts[0].name, "context1");
+        assert_eq!(item.contexts[1].name, "context2");
+    }
+
+    #[test]
+    fn test_display_empty_item() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: None,
+            description: "".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        assert_eq!(item.to_string(), "");
     }
 }
