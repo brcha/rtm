@@ -149,32 +149,27 @@ body {
   background-color: #218838;
 }
 
-.btn-complete {
-  padding: 4px 10px;
-  background-color: #28a745;
-  color: white;
+.btn-complete,
+.btn-uncomplete {
+  background: none;
   border: none;
-  border-radius: 4px;
-  font-size: 0.8rem;
+  font-size: 1.25rem;
   cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  color: #6a737d;
 }
 
 .btn-complete:hover {
-  background-color: #218838;
+  color: #28a745;
 }
 
-.btn-edit {
-  padding: 4px 10px;
-  background-color: #6a737d;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  cursor: pointer;
+.btn-uncomplete {
+  color: #28a745;
 }
 
-.btn-edit:hover {
-  background-color: #586069;
+.btn-uncomplete:hover {
+  color: #6a737d;
 }
 
 .todo-list {
@@ -214,11 +209,19 @@ body {
 
 .item-complete-btn {
   flex-shrink: 0;
+  margin-right: 10px;
 }
 
 .item-text {
   flex: 1;
   word-break: break-word;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.item-text:hover {
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
 .priority {
@@ -244,6 +247,16 @@ body {
 .context {
   color: #6a737d;
   font-size: 0.85rem;
+}
+
+.recurrence {
+  color: #9b59b6;
+  font-size: 0.8rem;
+}
+
+.threshold {
+  color: #95a5a6;
+  font-size: 0.8rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -315,6 +328,14 @@ body {
 
   .due {
     color: #f85149;
+  }
+
+  .recurrence {
+    color: #bc8cff;
+  }
+
+  .threshold {
+    color: #8b949e;
   }
 }
 

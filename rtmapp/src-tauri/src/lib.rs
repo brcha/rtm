@@ -9,6 +9,7 @@ pub struct AppConfig {
     file_name: Option<String>,
     show_completed_items: bool,
     show_future_items: bool,
+    hide_no_date: bool,
     reverse_sort: bool,
 }
 
@@ -18,6 +19,7 @@ impl Default for AppConfig {
             file_name: None,
             show_completed_items: false,
             show_future_items: false,
+            hide_no_date: false,
             reverse_sort: false,
         }
     }
@@ -179,6 +181,7 @@ fn get_items(state: tauri::State<AppState>) -> Vec<TodoItemDto> {
             .filter(|(_, item)| {
                 !(item.due.map_or(false, |d| d > today) && !config.show_future_items)
                     && !(item.done && !config.show_completed_items)
+                    && !(config.hide_no_date && item.due.is_none())
             })
             .map(|item| TodoItemDto::from(item))
             .collect()
@@ -217,11 +220,28 @@ fn complete_item(index: usize, state: tauri::State<AppState>) -> Result<bool, St
     if let Some(ref mut lib) = *lib_guard {
         if let Some(has_recurrence) = lib.complete_item(index) {
             lib.save().map_err(|e| e.to_string())?;
-            // Reload to refresh (important for recurring tasks)
             lib.load().map_err(|e| e.to_string())?;
             Ok(has_recurrence)
         } else {
             Err("Failed to complete item".to_string())
+        }
+    } else {
+        Err("No file loaded".to_string())
+    }
+}
+
+#[tauri::command]
+fn uncomplete_item(index: usize, state: tauri::State<AppState>) -> Result<bool, String> {
+    let mut lib_guard = state.lib.lock().unwrap();
+    if let Some(ref mut lib) = *lib_guard {
+        if index < lib.items.len() {
+            let item = &mut lib.items[index];
+            let new_item = item.set_done(false);
+            *item = new_item;
+            lib.save().map_err(|e| e.to_string())?;
+            Ok(true)
+        } else {
+            Err("Invalid index".to_string())
         }
     } else {
         Err("No file loaded".to_string())
@@ -306,6 +326,7 @@ fn get_config(state: tauri::State<AppState>) -> AppConfig {
 fn save_config(
     show_completed_items: Option<bool>,
     show_future_items: Option<bool>,
+    hide_no_date: Option<bool>,
     reverse_sort: Option<bool>,
     state: tauri::State<AppState>,
 ) -> Result<bool, String> {
@@ -315,6 +336,9 @@ fn save_config(
     }
     if let Some(v) = show_future_items {
         config.show_future_items = v;
+    }
+    if let Some(v) = hide_no_date {
+        config.hide_no_date = v;
     }
     if let Some(v) = reverse_sort {
         config.reverse_sort = v;
@@ -339,6 +363,7 @@ pub fn run() {
             get_item_count,
             add_item,
             complete_item,
+            uncomplete_item,
             update_item,
             get_config,
             save_config,

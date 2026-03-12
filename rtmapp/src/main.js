@@ -83,12 +83,26 @@ async function addItem() {
 }
 
 async function completeItem(index) {
+  const item = items[index];
+  if (!item) return;
   try {
-    await invoke('complete_item', { index });
+    await invoke('complete_item', { index: item.index });
     await refreshItems();
   } catch (error) {
     console.error('Failed to complete item:', error);
     alert('Failed to complete item: ' + error);
+  }
+}
+
+async function uncompleteItem(index) {
+  const item = items[index];
+  if (!item) return;
+  try {
+    await invoke('uncomplete_item', { index: item.index });
+    await refreshItems();
+  } catch (error) {
+    console.error('Failed to uncomplete item:', error);
+    alert('Failed to uncomplete item: ' + error);
   }
 }
 
@@ -184,14 +198,17 @@ function renderItems() {
 
     return `
       <div class="todo-item ${item.done ? 'completed' : ''}">
-        ${!item.done ? `<button class="btn-complete" onclick="completeItem(${displayIndex})">Complete</button>` : ''}
-        <button class="btn-edit" onclick="openEditDialog(${displayIndex})">Edit</button>
-        <div class="item-text">
+        ${!item.done 
+          ? `<button class="btn-complete item-complete-btn" onclick="completeItem(${displayIndex})" title="Complete">☐</button>` 
+          : `<button class="btn-uncomplete item-complete-btn" onclick="uncompleteItem(${displayIndex})" title="Uncomplete">☑</button>`}
+        <div class="item-text" onclick="openEditDialog(${displayIndex})">
           ${item.priority !== null ? `<span class="priority ${priorityClass}">(${String.fromCharCode(65 + item.priority)})</span> ` : ''}
           ${escapeHtml(item.description)}
           ${item.projects.map(p => `<span class="project">+${escapeHtml(p)}</span>`).join(' ')}
           ${item.contexts.map(c => `<span class="context">@${escapeHtml(c)}</span>`).join(' ')}
           ${item.due ? `<span class="due">due:${item.due}</span>` : ''}
+          ${item.recurrence ? `<span class="recurrence">rec:${item.recurrence}</span>` : ''}
+          ${item.threshold ? `<span class="threshold">t:${item.threshold}</span>` : ''}
         </div>
       </div>
     `;
@@ -209,6 +226,7 @@ async function loadConfig() {
     const config = await invoke('get_config');
     document.getElementById('show-completed').checked = config.show_completed_items;
     document.getElementById('show-future').checked = config.show_future_items;
+    document.getElementById('hide-no-date').checked = config.hide_no_date;
     document.getElementById('reverse-sort').checked = config.reverse_sort;
   } catch (error) {
     console.error('Failed to load config:', error);
@@ -218,12 +236,14 @@ async function loadConfig() {
 async function saveConfig() {
   const showCompleted = document.getElementById('show-completed').checked;
   const showFuture = document.getElementById('show-future').checked;
+  const hideNoDate = document.getElementById('hide-no-date').checked;
   const reverseSort = document.getElementById('reverse-sort').checked;
 
   try {
     await invoke('save_config', {
       showCompletedItems: showCompleted,
       showFutureItems: showFuture,
+      hideNoDate: hideNoDate,
       reverseSort: reverseSort
     });
     await refreshItems();
@@ -257,6 +277,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('show-completed').addEventListener('change', saveConfig);
   document.getElementById('show-future').addEventListener('change', saveConfig);
+  document.getElementById('hide-no-date').addEventListener('change', saveConfig);
   document.getElementById('reverse-sort').addEventListener('change', saveConfig);
 
   document.getElementById('edit-cancel').addEventListener('click', closeEditDialog);
@@ -272,4 +293,5 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 window.completeItem = completeItem;
+window.uncompleteItem = uncompleteItem;
 window.openEditDialog = openEditDialog;
