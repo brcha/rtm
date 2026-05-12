@@ -14,6 +14,8 @@ pkgs.mkShell {
     gdk-pixbuf
     pango
     cairo
+    # WebKit/JavaScriptCore for Tauri webview
+    webkitgtk_4_1
 
     # X11 and graphics
     xorg.libxcb
@@ -34,6 +36,6 @@ pkgs.mkShell {
   buildInputs = with pkgs.pkgsi686Linux; [
   ];
   shellHook = with pkgs.xorg; ''
-    export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${makeLibraryPath (with pkgs.xorg; with pkgs; [ libX11 libXcursor libXrandr libXi libGL libxkbcommon libsoup_3 atk gdk-pixbuf pango cairo gtk3 glib wayland ])}
+    export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${makeLibraryPath (with pkgs.xorg; with pkgs; [ libX11 libXcursor libXrandr libXi libGL libxkbcommon libsoup_3 atk gdk-pixbuf pango cairo gtk3 glib wayland webkitgtk_4_1 ])}
   '';
 }
