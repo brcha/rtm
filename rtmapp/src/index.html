@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <link rel="stylesheet" href="/assets/flatpickr.min.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rusty Todo.txt Manager</title>
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="/assets/flatpickr.min.js" defer></script>
     <script type="module" src="/main.js" defer></script>
   </head>
 
@@ -19,7 +19,7 @@
       <div class="main-layout">
         <aside class="sidebar">
           <button id="load-btn" class="btn btn-primary">Load File</button>
-          
+
           <div class="file-info">
             <span id="file-name">No file loaded</span>
           </div>
@@ -50,17 +50,23 @@
 
         <main class="content">
           <div class="add-item">
-            <input type="text" id="new-item-input" placeholder="New item (e.g., (A) Task due:2024-01-15 +Project @context)" />
+            <input
+              type="text"
+              id="new-item-input"
+              placeholder="New item (e.g., (A) Task due:2024-01-15 +Project @context)"
+            />
             <button id="add-btn" class="btn btn-success">Add</button>
           </div>
 
           <div id="todo-list" class="todo-list">
-            <p class="no-file">No file loaded. Use 'Load File' to select a todo.txt file.</p>
+            <p class="no-file">
+              No file loaded. Use 'Load File' to select a todo.txt file.
+            </p>
           </div>
         </main>
       </div>
 
-      <div id="edit-dialog" class="dialog-overlay" style="display: none;">
+      <div id="edit-dialog" class="dialog-overlay" style="display: none">
         <div class="dialog">
           <h2>Edit Item</h2>
           <form id="edit-form">
@@ -86,7 +92,11 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="edit-recurrence">Recurrence</label>
-                <input type="text" id="edit-recurrence" placeholder="e.g., 1d, 1w, 1m" />
+                <input
+                  type="text"
+                  id="edit-recurrence"
+                  placeholder="e.g., 1d, 1w, 1m"
+                />
               </div>
               <div class="form-group">
                 <label for="edit-threshold">Threshold</label>
@@ -95,14 +105,24 @@
             </div>
             <div class="form-group">
               <label for="edit-projects">Projects (comma separated)</label>
-              <input type="text" id="edit-projects" placeholder="e.g., Work, Personal" />
+              <input
+                type="text"
+                id="edit-projects"
+                placeholder="e.g., Work, Personal"
+              />
             </div>
             <div class="form-group">
               <label for="edit-contexts">Contexts (comma separated)</label>
-              <input type="text" id="edit-contexts" placeholder="e.g., home, office" />
+              <input
+                type="text"
+                id="edit-contexts"
+                placeholder="e.g., home, office"
+              />
             </div>
             <div class="dialog-buttons">
-              <button type="button" id="edit-cancel" class="btn btn-secondary">Cancel</button>
+              <button type="button" id="edit-cancel" class="btn btn-secondary">
+                Cancel
+              </button>
               <button type="submit" class="btn btn-success">Save</button>
             </div>
           </form>
