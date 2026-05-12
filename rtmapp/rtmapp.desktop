@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Rusty Todo.txt Manager
+GenericName=Todo Manager
+Comment=Manage your todo.txt files
+Exec=rtmapp
+Icon=rtmapp
+Terminal=false
+Categories=Office;ProjectManagement;
+Keywords=todo;task;productivity;
+StartupNotify=true
+StartupWMClass=rtmapp

@@ -95,8 +95,27 @@ in {
     buildInputs = tauriDeps;
     WEBKIT_DISABLE_COMPOSITING_MODE = "1";
     postInstall = ''
+      # Frontend assets (served by the embedded WebKit view)
       mkdir -p $out/share/rtmapp
       cp -r $src/rtmapp/src $out/share/rtmapp/
+
+      # XDG desktop entry
+      mkdir -p $out/share/applications
+      cp $src/rtmapp/rtmapp.desktop $out/share/applications/rtmapp.desktop
+
+      # Icons — hicolor theme, standard sizes
+      mkdir -p $out/share/icons/hicolor/32x32/apps
+      mkdir -p $out/share/icons/hicolor/128x128/apps
+      mkdir -p $out/share/icons/hicolor/256x256/apps
+      cp $src/rtmapp/src-tauri/icons/32x32.png \
+         $out/share/icons/hicolor/32x32/apps/rtmapp.png
+      cp $src/rtmapp/src-tauri/icons/128x128.png \
+         $out/share/icons/hicolor/128x128/apps/rtmapp.png
+      cp $src/rtmapp/src-tauri/icons/128x128@2x.png \
+         $out/share/icons/hicolor/256x256/apps/rtmapp.png
+      mkdir -p $out/share/icons/hicolor/512x512/apps
+      cp $src/rtmapp/src-tauri/icons/icon.png \
+         $out/share/icons/hicolor/512x512/apps/rtmapp.png
     '';
     meta = with pkgs.lib; {
       description = "Rusty Todo.txt Manager — Tauri desktop app (best-effort)";
