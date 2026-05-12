@@ -60,6 +60,19 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
 
 ---
 
+## Nix Packaging
+
+- **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmgui`, `nix build .#rtmapp`.
+- **`default.nix`** — legacy entry point. `nix-build -A rtmcli`, `nix-build -A rtmgui`.
+- **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
+- **nixpkgs pin:** `nixos-unstable` (needs Rust ≥ 1.85 for edition 2024).
+- **`rtmapp` packaging is best-effort** — Tauri's bundler is bypassed; frontend assets are copied
+  into `$out/share/rtmapp/` via `postInstall`. Runtime behavior on NixOS may need further tuning.
+- **Dev shell:** `nix develop` (flake) or `nix-shell` (legacy). `.envrc` uses `use_nix`; change
+  to `use flake` if using nix-direnv ≥ 2.30.
+
+---
+
 ## Future Plans
 
 - Cloud sync via private git repo for todo.txt files

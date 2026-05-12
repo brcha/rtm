@@ -1,3 +1,13 @@
+# NOTE: The canonical development environment is now defined in flake.nix.
+#
+#   Preferred:  nix develop          (uses flake.nix devShells.default)
+#   Legacy:     nix-shell            (uses this file — kept for `use_nix` / direnv compatibility)
+#
+# If you use nix-direnv ≥ 2.30, change .envrc from `use_nix` to `use flake` to get a
+# faster, cached dev shell from the flake instead.
+#
+# This file is intentionally kept in sync with the buildInputs in flake.nix.
+
 let pkgs = import <nixpkgs> {};
 in
   with pkgs.stdenv;
