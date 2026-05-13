@@ -1,7 +1,6 @@
 # Legacy nix-build entry point. For flakes, use flake.nix.
 # Usage:
 #   nix-build -A rtmcli
-#   nix-build -A rtmgui
 #   nix-build -A rtmapp   # best-effort (Tauri, Linux only)
 
 { pkgs ? import <nixpkgs> {} }:
@@ -16,7 +15,7 @@ let
         [ "target" ".git" "node_modules" ".direnv" ]);
   };
 
-  # Shared GUI deps (rtmgui — GTK3 + X11/Wayland/OpenGL).
+  # Shared GUI deps for rtmapp (GTK3 + X11/Wayland/OpenGL).
   guiDeps = with pkgs; [
     gtk3
     glib
@@ -54,27 +53,6 @@ in {
       license     = licenses.mit;
       platforms   = platforms.all;
       mainProgram = "rtmcli";
-    };
-  };
-
-  # ── rtmgui ──────────────────────────────────────────────────────────────────
-  rtmgui = pkgs.rustPlatform.buildRustPackage {
-    pname   = "rtmgui";
-    version = "0.1.0";
-    inherit src;
-    cargoLock.lockFile = ./Cargo.lock;
-    cargoBuildFlags    = [ "-p" "rtmgui" ];
-    nativeBuildInputs  = with pkgs; [
-      pkg-config
-      gobject-introspection
-      wrapGAppsHook
-    ];
-    buildInputs = guiDeps;
-    meta = with pkgs.lib; {
-      description = "Rusty Todo.txt Manager — egui desktop GUI";
-      license     = licenses.mit;
-      platforms   = platforms.linux;
-      mainProgram = "rtmgui";
     };
   };
 

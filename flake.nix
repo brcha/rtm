@@ -21,7 +21,7 @@
               [ "target" ".git" "node_modules" ".direnv" ]);
         };
 
-        # Shared GUI deps (rtmgui — GTK3 + X11/Wayland/OpenGL).
+        # Shared GUI deps for rtmapp (GTK3 + X11/Wayland/OpenGL).
         guiDeps = with pkgs; [
           gtk3
           glib
@@ -45,7 +45,7 @@
           libsoup_3
         ]);
 
-        # Shared build arguments for all three crates.
+        # Shared build arguments for all crates.
         commonArgs = {
           inherit src;
           cargoLock.lockFile = ./Cargo.lock;
@@ -62,24 +62,6 @@
             license     = licenses.mit;
             platforms   = platforms.all;
             mainProgram = "rtmcli";
-          };
-        });
-
-        # ── rtmgui ────────────────────────────────────────────────────────────
-        rtmgui = pkgs.rustPlatform.buildRustPackage (commonArgs // {
-          pname = "rtmgui";
-          cargoBuildFlags = [ "-p" "rtmgui" ];
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            gobject-introspection  # build-time GObject type system tool
-            wrapGAppsHook          # GTK3 wrapper
-          ];
-          buildInputs = guiDeps;
-          meta = with pkgs.lib; {
-            description = "Rusty Todo.txt Manager — egui desktop GUI";
-            license     = licenses.mit;
-            platforms   = platforms.linux;
-            mainProgram = "rtmgui";
           };
         });
 
@@ -131,14 +113,13 @@
       in {
         # ── Packages ──────────────────────────────────────────────────────────
         packages = {
-          inherit rtmcli rtmgui rtmapp;
+          inherit rtmcli rtmapp;
           default = rtmcli;
         };
 
         # ── Apps ──────────────────────────────────────────────────────────────
         apps = {
           rtmcli = flake-utils.lib.mkApp { drv = rtmcli; };
-          rtmgui = flake-utils.lib.mkApp { drv = rtmgui; };
           rtmapp = flake-utils.lib.mkApp { drv = rtmapp; };
           default = flake-utils.lib.mkApp { drv = rtmcli; };
         };
@@ -153,7 +134,6 @@
             rust-analyzer
             pkg-config
             gobject-introspection
-            wrapGAppsHook
             nodejs
           ];
           buildInputs = tauriDeps;

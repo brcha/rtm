@@ -3,12 +3,11 @@
 ## What This Project Is
 
 A [Todo.txt](https://github.com/todotxt/todo.txt) manager written in Rust. Targets GNU/Linux,
-macOS, and Windows. Early development — core functionality works across three frontends.
+macOS, and Windows. Early development — core functionality works across two frontends.
 
 Subpart AGENTS.md files:
 - [`todotxt/AGENTS.md`](todotxt/AGENTS.md) — core library
 - [`rtmcli/AGENTS.md`](rtmcli/AGENTS.md) — CLI frontend
-- [`rtmgui/AGENTS.md`](rtmgui/AGENTS.md) — egui desktop GUI
 - [`rtmapp/AGENTS.md`](rtmapp/AGENTS.md) — Tauri web-based desktop app
 
 ---
@@ -19,7 +18,6 @@ Subpart AGENTS.md files:
 rtm/                        ← Cargo workspace root
 ├── todotxt/                ← Core library (no UI, no binary)
 ├── rtmcli/                 ← CLI (clap-based)
-├── rtmgui/                 ← Native desktop GUI (eframe/egui + rfd)
 ├── rtmapp/                 ← Tauri v2 desktop app
 │   ├── src/                ← Frontend: vanilla JS + HTML + CSS
 │   └── src-tauri/          ← Tauri Rust backend
@@ -36,7 +34,7 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
 
 ## Conventions
 
-- **Rust edition:** 2024 (todotxt, rtmcli, rtmgui); 2021 (rtmapp/src-tauri)
+- **Rust edition:** 2024 (todotxt, rtmcli); 2021 (rtmapp/src-tauri)
 - **No async** in the core library or CLI. Tauri backend is also synchronous (Mutex-guarded state).
 - **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file.
 - **Date format:** `%Y-%m-%d` everywhere (chrono `NaiveDate`).
@@ -52,18 +50,15 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
   likely `std::path::Path::canonicalize()` receiving a `file://` URI from the GTK file dialog, or
   a platform difference in the `tauri-plugin-dialog` return value. See
   `.opencode/plans/2026-05-12_fix-load-file-linux.md` for the full diagnosis and fix plan.
-- **rtmgui Wayland:** `rtmgui/src/main.rs` has a commented-out `WINIT_UNIX_BACKEND=x11` override —
-  uncomment if Wayland causes rendering issues.
 - **Nix shell:** `shell.nix` provides all GTK/WebKit/X11/Wayland libraries needed to build and run
   all frontends on NixOS or with `nix-shell`. Use `nix-shell` before running `cargo build`.
-- **`rtmgui` uses `rfd`** for file dialogs (not Tauri). `rtmapp` uses `tauri-plugin-dialog`.
 
 ---
 
 ## Nix Packaging
 
-- **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmgui`, `nix build .#rtmapp`.
-- **`default.nix`** — legacy entry point. `nix-build -A rtmcli`, `nix-build -A rtmgui`.
+- **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmapp`.
+- **`default.nix`** — legacy entry point. `nix-build -A rtmcli`.
 - **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
 - **nixpkgs pin:** `nixos-unstable` (needs Rust ≥ 1.85 for edition 2024).
 - **`rtmapp` packaging is best-effort** — Tauri's bundler is bypassed; frontend assets are copied
