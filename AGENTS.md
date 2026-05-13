@@ -52,6 +52,12 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
   `.opencode/plans/2026-05-12_fix-load-file-linux.md` for the full diagnosis and fix plan.
 - **Nix shell:** `shell.nix` provides all GTK/WebKit/X11/Wayland libraries needed to build and run
   all frontends on NixOS or with `nix-shell`. Use `nix-shell` before running `cargo build`.
+- **Native dependency sync:** When adding a new system/native library dependency to any crate in
+  the workspace, register it in **all three** of the following locations to keep CI, Nix flake
+  builds, and legacy nix-build in sync:
+  1. `.github/workflows/rust.yml` — the `apt-get install` step
+  2. `flake.nix` — `guiDeps` or `tauriDeps` list (and `devShells.default` if needed)
+  3. `default.nix` — matching `guiDeps` or `tauriDeps` list
 
 ---
 
