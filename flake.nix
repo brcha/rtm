@@ -29,11 +29,11 @@
           gdk-pixbuf
           pango
           cairo
-          xorg.libxcb
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXrandr
-          xorg.libXi
+          libxcb
+          libx11
+          libxcursor
+          libxrandr
+          libxi
           libGL
           libxkbcommon
           wayland
