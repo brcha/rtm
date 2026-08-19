@@ -6,7 +6,8 @@ pub struct TodoProject {
     pub name: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("project must start with '+' and be non-empty")]
 pub struct TodoProjectParseError;
 
 impl FromStr for TodoProject {
@@ -41,8 +42,14 @@ mod tests {
             }),
             TodoProject::from_str("+work")
         );
-        assert_eq!(Err(TodoProjectParseError), TodoProject::from_str("work"));
-        assert_eq!(Err(TodoProjectParseError), TodoProject::from_str("+"));
+        assert!(matches!(
+            TodoProject::from_str("work"),
+            Err(TodoProjectParseError)
+        ));
+        assert!(matches!(
+            TodoProject::from_str("+"),
+            Err(TodoProjectParseError)
+        ));
     }
 
     #[test]

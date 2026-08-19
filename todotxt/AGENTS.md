@@ -25,7 +25,10 @@ todotxt/src/
 ## Conventions
 
 - **Edition:** Rust 2024
-- **No external dependencies** except `chrono` (dates) and `uuid` (item identity).
+- **External dependencies:** `chrono` (dates), `uuid` (item identity), `thiserror` (parse
+  error types).
+- Parse errors are `thiserror` enums that preserve their source via `#[from]`; they derive
+  `Clone, Debug, Eq, PartialEq` alongside `thiserror::Error`.
 - `TodoItem` implements `FromStr` (parse from a todo.txt line) and `Display` (serialize back).
 - `TodoLibrary` owns a `Vec<TodoItem>` and a file path string. `load()` reads from disk,
   `save()` writes back. No async.

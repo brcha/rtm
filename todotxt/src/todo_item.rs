@@ -28,43 +28,20 @@ pub struct TodoItem {
     pub sub: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TodoItemParseError;
-
-impl From<uuid::Error> for TodoItemParseError {
-    fn from(_: uuid::Error) -> Self {
-        TodoItemParseError
-    }
-}
-
-impl From<chrono::ParseError> for TodoItemParseError {
-    fn from(_: chrono::ParseError) -> Self {
-        TodoItemParseError
-    }
-}
-
-impl From<TodoPriorityParseError> for TodoItemParseError {
-    fn from(_: TodoPriorityParseError) -> Self {
-        TodoItemParseError
-    }
-}
-
-impl From<TodoProjectParseError> for TodoItemParseError {
-    fn from(_: TodoProjectParseError) -> Self {
-        TodoItemParseError
-    }
-}
-
-impl From<TodoContextParseError> for TodoItemParseError {
-    fn from(_: TodoContextParseError) -> Self {
-        TodoItemParseError
-    }
-}
-
-impl From<TodoRecurrenceParseError> for TodoItemParseError {
-    fn from(_: TodoRecurrenceParseError) -> Self {
-        TodoItemParseError
-    }
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TodoItemParseError {
+    #[error("invalid uuid")]
+    Uuid(#[from] uuid::Error),
+    #[error("invalid date")]
+    Date(#[from] chrono::ParseError),
+    #[error("invalid priority")]
+    Priority(#[from] TodoPriorityParseError),
+    #[error("invalid project")]
+    Project(#[from] TodoProjectParseError),
+    #[error("invalid context")]
+    Context(#[from] TodoContextParseError),
+    #[error("invalid recurrence")]
+    Recurrence(#[from] TodoRecurrenceParseError),
 }
 
 impl FromStr for TodoItem {

@@ -16,8 +16,13 @@ pub enum TodoRecurrenceUnit {
     Yearly,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TodoRecurrenceParseError;
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TodoRecurrenceParseError {
+    #[error("invalid recurrence count")]
+    Count(#[from] std::num::ParseIntError),
+    #[error("unknown recurrence unit")]
+    Unit,
+}
 
 impl FromStr for TodoRecurrence {
     type Err = TodoRecurrenceParseError;
@@ -27,28 +32,23 @@ impl FromStr for TodoRecurrence {
         let count = if s.len() - (strict as usize) == 1 {
             1
         } else {
-            s[strict as usize..s.len() - 1]
-                .parse::<u16>()
-                .or(Err(TodoRecurrenceParseError))?
+            s[strict as usize..s.len() - 1].parse::<u16>()?
         };
 
         let unit = match s.as_bytes()[s.len() - 1] {
-            b'd' => Ok(TodoRecurrenceUnit::Daily),
-            b'b' => Ok(TodoRecurrenceUnit::BusinessDay),
-            b'w' => Ok(TodoRecurrenceUnit::Weekly),
-            b'm' => Ok(TodoRecurrenceUnit::Monthly),
-            b'y' => Ok(TodoRecurrenceUnit::Yearly),
-            _ => Err(TodoRecurrenceParseError),
+            b'd' => TodoRecurrenceUnit::Daily,
+            b'b' => TodoRecurrenceUnit::BusinessDay,
+            b'w' => TodoRecurrenceUnit::Weekly,
+            b'm' => TodoRecurrenceUnit::Monthly,
+            b'y' => TodoRecurrenceUnit::Yearly,
+            _ => return Err(TodoRecurrenceParseError::Unit),
         };
 
-        match unit {
-            Ok(unit) => Ok(TodoRecurrence {
-                strict,
-                count,
-                unit,
-            }),
-            Err(e) => Err(e),
-        }
+        Ok(TodoRecurrence {
+            strict,
+            count,
+            unit,
+        })
     }
 }
 
@@ -192,15 +192,18 @@ mod tests {
 
     #[test]
     fn parse_invalid() {
-        assert_eq!(Err(TodoRecurrenceParseError), TodoRecurrence::from_str("x"));
-        assert_eq!(
-            Err(TodoRecurrenceParseError),
-            TodoRecurrence::from_str("1x")
-        );
-        assert_eq!(
-            Err(TodoRecurrenceParseError),
-            TodoRecurrence::from_str("+1x")
-        );
+        assert!(matches!(
+            TodoRecurrence::from_str("x"),
+            Err(TodoRecurrenceParseError::Unit)
+        ));
+        assert!(matches!(
+            TodoRecurrence::from_str("1x"),
+            Err(TodoRecurrenceParseError::Unit)
+        ));
+        assert!(matches!(
+            TodoRecurrence::from_str("+1x"),
+            Err(TodoRecurrenceParseError::Unit)
+        ));
     }
 
     #[test]

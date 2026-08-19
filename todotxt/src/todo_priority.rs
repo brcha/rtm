@@ -7,8 +7,13 @@ pub struct TodoPriority {
     pub priority: Option<u8>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TodoPriorityParseError;
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TodoPriorityParseError {
+    #[error("priority must be wrapped in parentheses")]
+    NotParenthesized,
+    #[error("priority must be a single character in A-Z")]
+    InvalidLetter,
+}
 
 impl FromStr for TodoPriority {
     type Err = TodoPriorityParseError;
@@ -17,7 +22,7 @@ impl FromStr for TodoPriority {
         let prio_char = s
             .strip_prefix('(')
             .and_then(|s| s.strip_suffix(')'))
-            .ok_or(TodoPriorityParseError)?;
+            .ok_or(TodoPriorityParseError::NotParenthesized)?;
 
         if prio_char.len() == 1 {
             if let p @ b'A'..=b'Z' = prio_char.as_bytes()[0] {
@@ -25,10 +30,10 @@ impl FromStr for TodoPriority {
                     priority: Some(p - b'A'),
                 })
             } else {
-                Err(TodoPriorityParseError)
+                Err(TodoPriorityParseError::InvalidLetter)
             }
         } else {
-            Err(TodoPriorityParseError)
+            Err(TodoPriorityParseError::InvalidLetter)
         }
     }
 }
@@ -54,8 +59,14 @@ mod tests {
             Ok(TodoPriority { priority: Some(3) }),
             TodoPriority::from_str("(D)")
         );
-        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(g)"));
-        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("A"));
+        assert!(matches!(
+            TodoPriority::from_str("(g)"),
+            Err(TodoPriorityParseError::InvalidLetter)
+        ));
+        assert!(matches!(
+            TodoPriority::from_str("A"),
+            Err(TodoPriorityParseError::NotParenthesized)
+        ));
     }
 
     #[test]
@@ -94,12 +105,30 @@ mod tests {
 
     #[test]
     fn parse_invalid_priorities() {
-        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(a)"));
-        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(AA)"));
-        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(0)"));
-        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("()"));
-        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("(A"));
-        assert_eq!(Err(TodoPriorityParseError), TodoPriority::from_str("A)"));
+        assert!(matches!(
+            TodoPriority::from_str("(a)"),
+            Err(TodoPriorityParseError::InvalidLetter)
+        ));
+        assert!(matches!(
+            TodoPriority::from_str("(AA)"),
+            Err(TodoPriorityParseError::InvalidLetter)
+        ));
+        assert!(matches!(
+            TodoPriority::from_str("(0)"),
+            Err(TodoPriorityParseError::InvalidLetter)
+        ));
+        assert!(matches!(
+            TodoPriority::from_str("()"),
+            Err(TodoPriorityParseError::InvalidLetter)
+        ));
+        assert!(matches!(
+            TodoPriority::from_str("(A"),
+            Err(TodoPriorityParseError::NotParenthesized)
+        ));
+        assert!(matches!(
+            TodoPriority::from_str("A)"),
+            Err(TodoPriorityParseError::NotParenthesized)
+        ));
     }
 
     #[test]

@@ -6,7 +6,8 @@ pub struct TodoContext {
     pub name: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("context must start with '@' and be non-empty")]
 pub struct TodoContextParseError;
 
 impl FromStr for TodoContext {
@@ -41,8 +42,14 @@ mod tests {
             }),
             TodoContext::from_str("@home")
         );
-        assert_eq!(Err(TodoContextParseError), TodoContext::from_str("home"));
-        assert_eq!(Err(TodoContextParseError), TodoContext::from_str("@"));
+        assert!(matches!(
+            TodoContext::from_str("home"),
+            Err(TodoContextParseError)
+        ));
+        assert!(matches!(
+            TodoContext::from_str("@"),
+            Err(TodoContextParseError)
+        ));
     }
 
     #[test]
