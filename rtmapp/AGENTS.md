@@ -94,5 +94,4 @@ available.
 
 - **Load File fails on GNU/Linux.** The GTK file dialog (via `tauri-plugin-dialog`) may return a
   `file://` URI or an unexpected format, which causes `std::path::Path::canonicalize()` in
-  `load_file` to fail. Works correctly on Windows and macOS. Fix plan:
-  `.opencode/plans/2026-05-12_fix-load-file-linux.md`.
+  `load_file` to fail. Works correctly on Windows and macOS.

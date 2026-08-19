@@ -48,8 +48,7 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
 
 - **`load_file` on Linux (rtmapp):** Known bug — file loading fails on GNU/Linux. Root cause is
   likely `std::path::Path::canonicalize()` receiving a `file://` URI from the GTK file dialog, or
-  a platform difference in the `tauri-plugin-dialog` return value. See
-  `.opencode/plans/2026-05-12_fix-load-file-linux.md` for the full diagnosis and fix plan.
+  a platform difference in the `tauri-plugin-dialog` return value.
 - **Nix shell:** `shell.nix` provides all GTK/WebKit/X11/Wayland libraries needed to build and run
   all frontends on NixOS or with `nix-shell`. Use `nix-shell` before running `cargo build`.
 - **Native dependency sync:** When adding a new system/native library dependency to any crate in
