@@ -192,13 +192,20 @@ jobs:
       - name: Build rtmcli
         run: cargo build --release -p rtmcli
 
-      # --no-build reuses the binary from the step above. --deb-revision="" is intended to
-      # drop cargo-deb's default "-1" revision suffix, so the filename matches the rest of
-      # the release's `<name>_<version>_<arch>.deb` convention. Unconfirmed against a real
-      # run -- the staging step below globs for the result rather than assuming this worked,
-      # the same defensive pattern used for the MSI on Windows.
+      # --no-build reuses the binary from the step above. --deb-revision="" drops cargo-deb's
+      # default "-1" revision suffix. --output writes straight to the final staged name:
+      # cargo-deb's default output directory is `target/debian/` (NOT `target/release/debian/`
+      # -- RTM-30 failed on exactly that wrong assumption), so naming the destination
+      # explicitly removes any dependence on where it would otherwise land.
       - name: Package rtmcli deb
-        run: cargo deb -p rtmcli --no-build --deb-revision=""
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cargo deb -p rtmcli --no-build --deb-revision="" \
+            --output "dist/rtmcli_${VERSION}_amd64.deb"
 
       # Tauri's AppImage bundler downloads linuxdeploy and appimagetool at build time -- a
       # network dependency in the release path. The step timeout bounds that risk rather
@@ -217,125 +224,118 @@ jobs:
       # matching mainBinaryName and the Nix pname -- and repack directly to the final,
       # correctly named file.
       - name: Repack rtmapp deb with pinned package name
-        shell: pwsh
+        shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          set -euo pipefail
+          mkdir -p dist
+          shopt -s nullglob
+          raw_debs=(target/release/bundle/deb/*.deb)
+          if [ "${#raw_debs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one rtmapp .deb in target/release/bundle/deb, found ${#raw_debs[@]}."
+            exit 1
+          fi
 
-          $rawDebs = Get-ChildItem -Path 'target/release/bundle/deb' -Filter '*.deb' -ErrorAction Stop
-          if ($rawDebs.Count -ne 1) {
-            throw "Expected exactly one rtmapp .deb in target/release/bundle/deb, found $($rawDebs.Count)."
-          }
+          dpkg-deb -R "${raw_debs[0]}" rtmapp-deb-extract
+          if ! grep -q '^Package: ' rtmapp-deb-extract/DEBIAN/control; then
+            echo "::error::No 'Package:' line found in DEBIAN/control."
+            exit 1
+          fi
+          sed -i 's/^Package: .*/Package: rtmapp/' rtmapp-deb-extract/DEBIAN/control
 
-          $extractDir = 'rtmapp-deb-extract'
-          & dpkg-deb -R $rawDebs[0].FullName $extractDir
-          if ($LASTEXITCODE -ne 0) { throw "dpkg-deb -R failed with exit code $LASTEXITCODE." }
-
-          $controlPath = Join-Path $extractDir 'DEBIAN/control'
-          $control = Get-Content -Raw -Path $controlPath
-          if ($control -notmatch '(?m)^Package: .+$') {
-            throw "Could not find a 'Package:' line in $controlPath."
-          }
-          $control = $control -replace '(?m)^Package: .+$', 'Package: rtmapp'
-          Set-Content -Path $controlPath -Value $control -NoNewline -Encoding utf8NoBOM
-
-          & dpkg-deb -b $extractDir "dist/rtmapp_${env:VERSION}_amd64.deb"
-          if ($LASTEXITCODE -ne 0) { throw "dpkg-deb -b failed with exit code $LASTEXITCODE." }
-
-          if (-not (Test-Path -LiteralPath "dist/rtmapp_${env:VERSION}_amd64.deb")) {
-            throw "Repacked rtmapp .deb missing after dpkg-deb -b."
-          }
+          dpkg-deb -b rtmapp-deb-extract "dist/rtmapp_${VERSION}_amd64.deb"
+          if [ ! -f "dist/rtmapp_${VERSION}_amd64.deb" ]; then
+            echo "::error::Repacked rtmapp .deb missing after dpkg-deb -b."
+            exit 1
+          fi
 
       # Same fail-loudly discipline as the Windows staging step: a glob that matches nothing,
       # or more than one file, must fail the job rather than silently ship a stale or wrong
       # artifact.
       - name: Stage remaining release artifacts
-        shell: pwsh
+        shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          $cliDebs = Get-ChildItem -Path 'target/release/debian' -Filter 'rtmcli*.deb' -ErrorAction Stop
-          if ($cliDebs.Count -ne 1) {
-            throw "Expected exactly one rtmcli .deb in target/release/debian, found $($cliDebs.Count)."
-          }
-          Copy-Item $cliDebs[0].FullName "dist/rtmcli_${env:VERSION}_amd64.deb"
+          set -euo pipefail
+          shopt -s nullglob
+          appimages=(target/release/bundle/appimage/*.AppImage)
+          if [ "${#appimages[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one AppImage in target/release/bundle/appimage, found ${#appimages[@]}."
+            exit 1
+          fi
+          cp "${appimages[0]}" "dist/rtmapp_${VERSION}_amd64.AppImage"
 
-          $appImages = Get-ChildItem -Path 'target/release/bundle/appimage' -Filter '*.AppImage' -ErrorAction Stop
-          if ($appImages.Count -ne 1) {
-            throw "Expected exactly one AppImage in target/release/bundle/appimage, found $($appImages.Count)."
-          }
-          Copy-Item $appImages[0].FullName "dist/rtmapp_${env:VERSION}_amd64.AppImage"
+          for f in "dist/rtmapp_${VERSION}_amd64.deb" \
+                   "dist/rtmcli_${VERSION}_amd64.deb" \
+                   "dist/rtmapp_${VERSION}_amd64.AppImage"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Expected release artifact missing after staging: $f"
+              exit 1
+            fi
+          done
 
-          $expected = @(
-            "dist/rtmapp_${env:VERSION}_amd64.deb",
-            "dist/rtmcli_${env:VERSION}_amd64.deb",
-            "dist/rtmapp_${env:VERSION}_amd64.AppImage"
-          )
-          foreach ($f in $expected) {
-            if (-not (Test-Path -LiteralPath $f)) {
-              throw "Expected release artifact missing after staging: $f"
-            }
-          }
-
-          Write-Host 'Staged artifacts:'
-          Get-ChildItem dist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+          echo 'Staged artifacts:'
+          ls -la dist
 
       # Building a .deb is not evidence it installs. Prove both packages actually install on
       # a stock system, and prove the repack above really landed a package named "rtmapp"
       # rather than silently reverting to "rusty-todo-txt-manager".
       - name: Verify packages install
-        shell: pwsh
+        shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          $rtmappPackageName = & dpkg-deb --field "dist/rtmapp_${env:VERSION}_amd64.deb" Package
-          if ($rtmappPackageName.Trim() -ne 'rtmapp') {
-            throw "Expected repacked rtmapp .deb to report Package: rtmapp, got '$rtmappPackageName'."
-          }
+          set -euo pipefail
+          pkg=$(dpkg-deb --field "dist/rtmapp_${VERSION}_amd64.deb" Package)
+          if [ "$pkg" != "rtmapp" ]; then
+            echo "::error::Expected repacked rtmapp .deb to report Package: rtmapp, got '$pkg'."
+            exit 1
+          fi
 
-          sudo dpkg -i "dist/rtmcli_${env:VERSION}_amd64.deb"
-          sudo dpkg -i "dist/rtmapp_${env:VERSION}_amd64.deb"
+          # dpkg -i legitimately exits non-zero on unmet dependencies; apt-get -f install
+          # resolves them from the runner's apt cache in the next step.
+          sudo dpkg -i "dist/rtmcli_${VERSION}_amd64.deb" "dist/rtmapp_${VERSION}_amd64.deb" || true
           sudo apt-get -f install -y
 
-          & rtmcli --help
-          if ($LASTEXITCODE -ne 0) {
-            throw "rtmcli --help failed after install (exit code $LASTEXITCODE)."
-          }
+          rtmcli --help
 
-          if (-not (Test-Path -LiteralPath '/usr/bin/rtmapp')) {
-            throw "/usr/bin/rtmapp missing after install."
-          }
-          $desktopFiles = Get-ChildItem -Path '/usr/share/applications' -Filter '*.desktop'
-          $rtmappDesktop = $desktopFiles | Where-Object { (Get-Content -Raw $_.FullName) -match 'Exec=rtmapp' }
-          if (-not $rtmappDesktop) {
-            throw "No installed .desktop entry with Exec=rtmapp found under /usr/share/applications."
-          }
+          if [ ! -x /usr/bin/rtmapp ]; then
+            echo "::error::/usr/bin/rtmapp missing or not executable after install."
+            exit 1
+          fi
+          if ! grep -rq '^Exec=rtmapp' /usr/share/applications/*.desktop; then
+            echo "::error::No installed .desktop entry with Exec=rtmapp found under /usr/share/applications."
+            exit 1
+          fi
 
       # A launch requires a display server and is out of scope here. Extraction proves the
       # AppImage is well-formed rather than a truncated download from linuxdeploy/appimagetool.
       - name: Verify AppImage integrity
-        shell: pwsh
+        shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          $appImage = "dist/rtmapp_${env:VERSION}_amd64.AppImage"
-          chmod +x $appImage
-          $extractTestDir = New-Item -ItemType Directory -Force -Path 'appimage-extract-test'
-          Push-Location $extractTestDir.FullName
-          try {
-            & "../$appImage" --appimage-extract | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "--appimage-extract failed with exit code $LASTEXITCODE." }
-            if (-not (Test-Path -LiteralPath 'squashfs-root/AppRun')) {
-              throw "Extracted AppImage is missing AppRun."
-            }
-            $desktopInImage = Get-ChildItem -Path 'squashfs-root' -Filter '*.desktop'
-            if ($desktopInImage.Count -lt 1) {
-              throw "Extracted AppImage contains no .desktop entry."
-            }
-          } finally {
-            Pop-Location
-          }
+          set -euo pipefail
+          appimage="$PWD/dist/rtmapp_${VERSION}_amd64.AppImage"
+          chmod +x "$appimage"
+
+          rm -rf appimage-extract-test
+          mkdir -p appimage-extract-test
+          cd appimage-extract-test
+          "$appimage" --appimage-extract > /dev/null
+
+          if [ ! -f squashfs-root/AppRun ]; then
+            echo "::error::Extracted AppImage is missing AppRun."
+            exit 1
+          fi
+          shopt -s nullglob
+          desktops=(squashfs-root/*.desktop)
+          if [ "${#desktops[@]}" -lt 1 ]; then
+            echo "::error::Extracted AppImage contains no .desktop entry."
+            exit 1
+          fi
 
       - name: Upload linux artifacts
         uses: actions/upload-artifact@v4
