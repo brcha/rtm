@@ -176,62 +176,69 @@ impl FromStr for TodoItem {
 
 impl Display for TodoItem {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        // Built as tokens and joined with a single space, rather than interleaving
+        // conditional leading/trailing spaces, so an absent field (e.g. an empty
+        // description on a done item) can never produce a doubled-up space.
+        let mut parts: Vec<String> = Vec::new();
+
         if self.done {
-            write!(f, "x")?;
-            if self.priority.priority.is_some() {
-                write!(f, " {}", self.priority)?;
-            }
-            write!(f, " ")?;
-        } else {
-            if self.priority.priority.is_some() {
-                write!(f, "{} ", self.priority)?;
-            }
+            parts.push("x".to_string());
+        } else if self.priority.priority.is_some() {
+            parts.push(self.priority.to_string());
         }
 
         if self.done {
             if let Some(cd) = self.completion_date {
-                write!(f, "{} ", cd.format("%Y-%m-%d"))?;
+                parts.push(cd.format("%Y-%m-%d").to_string());
             }
             if let Some(cd) = self.creation_date {
-                write!(f, "{} ", cd.format("%Y-%m-%d"))?;
+                parts.push(cd.format("%Y-%m-%d").to_string());
             }
-        } else {
-            if let Some(cd) = self.creation_date {
-                write!(f, "{} ", cd.format("%Y-%m-%d"))?;
-            }
+        } else if let Some(cd) = self.creation_date {
+            parts.push(cd.format("%Y-%m-%d").to_string());
         }
 
-        write!(f, "{}", self.description)?;
+        if !self.description.is_empty() {
+            parts.push(self.description.clone());
+        }
+
+        // A completed item's priority is written as the pri: tag rather than the
+        // leading (X) form, which is reserved for open items.
+        if self.done
+            && let Some(p) = self.priority.priority
+        {
+            parts.push(format!("pri:{}", (p + b'A') as char));
+        }
 
         for p in &self.projects {
-            write!(f, " {}", p)?;
+            parts.push(p.to_string());
         }
 
         for c in &self.contexts {
-            write!(f, " {}", c)?;
+            parts.push(c.to_string());
         }
 
         if let Some(d) = self.due {
-            write!(f, " due:{}", d.format("%Y-%m-%d"))?;
+            parts.push(format!("due:{}", d.format("%Y-%m-%d")));
         }
 
         if let Some(ref r) = self.recurrence {
-            write!(f, " rec:{}", r)?;
+            parts.push(format!("rec:{}", r));
         }
 
         if let Some(t) = self.threshold {
-            write!(f, " t:{}", t.format("%Y-%m-%d"))?;
+            parts.push(format!("t:{}", t.format("%Y-%m-%d")));
         }
 
         if let Some(u) = self.uuid {
-            write!(f, " uuid:{}", u)?;
+            parts.push(format!("uuid:{}", u));
         }
 
         if let Some(s) = self.sub {
-            write!(f, " sub:{}", s)?;
+            parts.push(format!("sub:{}", s));
         }
 
-        Ok(())
+        write!(f, "{}", parts.join(" "))
     }
 }
 
@@ -594,6 +601,85 @@ mod tests {
             item.to_string(),
             "Buy groceries +Personal @home due:2023-05-30 rec:m t:2023-05-25"
         );
+    }
+
+    #[test]
+    fn display_completed_item_uses_pri_tag() {
+        let item: TodoItem =
+            "x 2024-10-07 2024-08-31 Стронгхолд pri:A +одржавање @фејнман @здравље due:2024-10-05 rec:5w"
+                .parse()
+                .unwrap();
+        assert_eq!(
+            item.to_string(),
+            "x 2024-10-07 2024-08-31 Стронгхолд pri:A +одржавање @фејнман @здравље due:2024-10-05 rec:5w"
+        );
+    }
+
+    #[test]
+    fn display_completed_item_round_trip_is_idempotent() {
+        let item: TodoItem =
+            "x 2024-10-07 2024-08-31 Стронгхолд pri:A +одржавање @фејнман @здравље due:2024-10-05 rec:5w"
+                .parse()
+                .unwrap();
+        let once = item.to_string();
+        let twice: TodoItem = once.parse().unwrap();
+        assert_eq!(twice.to_string(), once);
+    }
+
+    #[test]
+    fn display_open_item_with_priority_uses_parens_not_pri_tag() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: Some(0) },
+            completion_date: None,
+            creation_date: None,
+            description: "Call mom".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        assert_eq!(item.to_string(), "(A) Call mom");
+    }
+
+    #[test]
+    fn display_normalizes_pri_tag_on_open_item_to_parens() {
+        let item: TodoItem = "Task pri:B".parse().unwrap();
+        assert_eq!(item.to_string(), "(B) Task");
+    }
+
+    #[test]
+    fn display_normalizes_parens_on_completed_item_to_pri_tag() {
+        let item: TodoItem = "x (C) 2024-01-02 2024-01-01 Task".parse().unwrap();
+        assert_eq!(item.to_string(), "x 2024-01-02 2024-01-01 Task pri:C");
+    }
+
+    #[test]
+    fn display_legacy_bare_x_round_trip() {
+        let item: TodoItem = "x Task".parse().unwrap();
+        assert_eq!(item.to_string(), "x Task");
+    }
+
+    #[test]
+    fn display_completed_item_with_empty_description_has_no_double_space() {
+        let item = TodoItem {
+            done: true,
+            priority: TodoPriority { priority: Some(0) },
+            completion_date: None,
+            creation_date: None,
+            description: "".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        assert_eq!(item.to_string(), "x pri:A");
     }
 
     #[test]
