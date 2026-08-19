@@ -73,6 +73,42 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
 
 ---
 
+## Windows Release Process
+
+- **Workflow:** `.github/workflows/release.yml` — triggers on a `v*` tag push (publishes a draft
+  GitHub Release) or manual `workflow_dispatch` (dry run: builds and uploads to the Actions run,
+  publishes nothing, no tag required). Runs on `windows-latest` only. x64 only — no ARM64, no
+  32-bit.
+- **Versioning is CalVer:** `vYY.minor.patch` (first release `v26.1.0`). The committed
+  `rtmapp/src-tauri/tauri.conf.json` `version` field is the single source of truth — the release
+  workflow reads it and never writes to it. On a tag push, the tag is required to match that field
+  exactly; a mismatch fails the build loudly instead of shipping an MSI whose internal
+  `ProductVersion` silently disagrees with its own release filename.
+- **`scripts/set-version.ps1`** is a manual pre-release tool, not something CI invokes. Run it
+  locally to bump the version across `rtmapp/src-tauri/tauri.conf.json`,
+  `rtmapp/src-tauri/Cargo.toml`, `rtmcli/Cargo.toml`, `todotxt/Cargo.toml`, and
+  `rtmapp/package.json` in lockstep, review the diff, commit it, and only then tag. For Cargo.toml
+  files it scopes its match to the `[package]` table specifically, not just "the first line
+  starting with `version`" — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table with its
+  own `version` key, and a naive match would be correct only by accident of ordering.
+- **`mainBinaryName: "rtmapp"`** in `tauri.conf.json` is a load-bearing invariant, not cosmetic. It
+  keeps the Windows build's output filename aligned with `flake.nix`/`default.nix`
+  (`mainProgram = "rtmapp"`) and `rtmapp/rtmapp.desktop` (`Exec=rtmapp`), which would otherwise
+  drift from `productName` (the display string, `"Rusty Todo.txt Manager"`).
+- **`bundle.windows.wix.upgradeCode`** is pinned explicitly in `tauri.conf.json` rather than left
+  to Tauri's default derivation from `productName`. The MSI `UpgradeCode` GUID must never change
+  once an installer has shipped publicly; pinning it removes `productName` drift as a second, less
+  obvious way that could happen.
+- **Merges are squashes.** One PR becomes exactly one commit on `main`, so PR titles are the
+  changelog — the release workflow's `generate_release_notes: true` consumes them directly, and
+  `.github/workflows/pr-title.yml` already forces them to be conventional and RTM-tagged.
+- Only `msi` is built (`bundle.targets: ["msi"]`). Linux (`deb`/`appimage`) and macOS (`dmg`/`app`)
+  bundle types need their own runner OS and are separate, not-yet-scheduled work under the RTM-6
+  epic — listing them in `bundle.targets` would not build them here regardless, since Tauri's
+  bundler silently skips any target that doesn't match the host OS.
+
+---
+
 ## Future Plans
 
 - Cloud sync via private git repo for todo.txt files
