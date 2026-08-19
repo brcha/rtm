@@ -1,6 +1,13 @@
 use std::fs;
 use std::process::Command;
 
+fn today() -> String {
+    chrono::Local::now()
+        .date_naive()
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
 #[test]
 fn test_cli_add_single_task() {
     let temp_dir = std::env::temp_dir();
@@ -20,9 +27,9 @@ fn test_cli_add_single_task() {
 
     assert!(output.status.success());
 
-    // Check file content
+    // Check file content — add_item stamps today's date as the creation date
     let content = fs::read_to_string(&temp_file).unwrap();
-    assert!(content.trim() == "Buy milk");
+    assert_eq!(content.trim(), format!("{} Buy milk", today()));
 
     // Clean up
     fs::remove_file(&temp_file).unwrap();
@@ -52,12 +59,13 @@ fn test_cli_add_multiple_tasks() {
         .output()
         .expect("Failed to add second task");
 
-    // Check file has both
+    // Check file has both — add_item stamps today's date as the creation date
     let content = fs::read_to_string(&temp_file).unwrap();
     let lines: Vec<&str> = content.lines().collect();
     assert_eq!(lines.len(), 2);
-    assert!(lines.contains(&"Buy milk"));
-    assert!(lines.contains(&"Call mom"));
+    let today = today();
+    assert!(lines.contains(&format!("{} Buy milk", today).as_str()));
+    assert!(lines.contains(&format!("{} Call mom", today).as_str()));
 
     fs::remove_file(&temp_file).unwrap();
 }
@@ -92,8 +100,9 @@ fn test_cli_list_tasks() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("1. Task 1"));
-    assert!(stdout.contains("2. Task 2"));
+    let today = today();
+    assert!(stdout.contains(&format!("1. {} Task 1", today)));
+    assert!(stdout.contains(&format!("2. {} Task 2", today)));
 
     fs::remove_file(&temp_file).unwrap();
 }
@@ -131,13 +140,11 @@ fn test_cli_complete_task_by_index() {
 
     assert!(output.status.success());
 
-    // Check file has 'x' and today's completion date
+    // Check file has 'x', today's completion date, and today's creation date (stamped by
+    // add_item when the task was first added, moments before completion)
     let content = fs::read_to_string(&temp_file).unwrap();
-    let today = chrono::Local::now()
-        .date_naive()
-        .format("%Y-%m-%d")
-        .to_string();
-    assert!(content.starts_with(&format!("x {} Incomplete task", today)));
+    let today = today();
+    assert!(content.starts_with(&format!("x {} {} Incomplete task", today, today)));
 
     fs::remove_file(&temp_file).unwrap();
 }
@@ -203,11 +210,8 @@ fn test_cli_list_completed_tasks() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    let today = chrono::Local::now()
-        .date_naive()
-        .format("%Y-%m-%d")
-        .to_string();
-    assert!(stdout.contains(&format!("x {} Complete this", today)));
+    let today = today();
+    assert!(stdout.contains(&format!("x {} {} Complete this", today, today)));
     assert!(!stdout.contains("Keep uncompleted"));
 
     fs::remove_file(&temp_file).unwrap();
