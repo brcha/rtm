@@ -1,5 +1,5 @@
-use crate::todoitem::TodoItem;
-use crate::todorecurrence::TodoRecurrenceUnit;
+use crate::todo_item::TodoItem;
+use crate::todo_recurrence::TodoRecurrenceUnit;
 use chrono::{Duration, Local};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -258,9 +258,9 @@ mod tests {
         let today = chrono::Local::now().date_naive();
         let mut item = "Test rec daily".parse::<TodoItem>().unwrap();
         item.due = Some(today - chrono::Duration::days(2)); // Set past due for non-strict test
-        item.recurrence = Some(crate::todorecurrence::TodoRecurrence {
+        item.recurrence = Some(crate::todo_recurrence::TodoRecurrence {
             count: 1,
-            unit: crate::todorecurrence::TodoRecurrenceUnit::Daily,
+            unit: crate::todo_recurrence::TodoRecurrenceUnit::Daily,
             strict: false,
         });
         lib.add_item(item);
@@ -281,9 +281,9 @@ mod tests {
         let today = chrono::Local::now().date_naive();
         let mut item = "Test rec weekly".parse::<TodoItem>().unwrap();
         item.due = Some(today);
-        item.recurrence = Some(crate::todorecurrence::TodoRecurrence {
+        item.recurrence = Some(crate::todo_recurrence::TodoRecurrence {
             count: 2,
-            unit: crate::todorecurrence::TodoRecurrenceUnit::Weekly,
+            unit: crate::todo_recurrence::TodoRecurrenceUnit::Weekly,
             strict: false,
         });
         lib.add_item(item);

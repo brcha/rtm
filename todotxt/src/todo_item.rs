@@ -1,15 +1,15 @@
-use crate::todocontext::TodoContext;
-use crate::todopriority::TodoPriority;
-use crate::todoproject::TodoProject;
-use crate::todorecurrence::TodoRecurrence;
+use crate::todo_context::TodoContext;
+use crate::todo_priority::TodoPriority;
+use crate::todo_project::TodoProject;
+use crate::todo_recurrence::TodoRecurrence;
 use chrono::NaiveDate;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
-use crate::todocontext::TodoContextParseError;
-use crate::todopriority::TodoPriorityParseError;
-use crate::todoproject::TodoProjectParseError;
-use crate::todorecurrence::TodoRecurrenceParseError;
+use crate::todo_context::TodoContextParseError;
+use crate::todo_priority::TodoPriorityParseError;
+use crate::todo_project::TodoProjectParseError;
+use crate::todo_recurrence::TodoRecurrenceParseError;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -375,7 +375,7 @@ impl TodoItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::todorecurrence::TodoRecurrenceUnit;
+    use crate::todo_recurrence::TodoRecurrenceUnit;
     use chrono::NaiveDate;
 
     #[test]

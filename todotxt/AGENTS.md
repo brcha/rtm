@@ -11,13 +11,13 @@ All three frontends depend on this crate via `path` dependency.
 
 ```
 todotxt/src/
-├── lib.rs              ← Public API re-exports
-├── todoitem.rs         ← TodoItem struct + FromStr + Display
-├── todolibrary.rs      ← TodoLibrary (load/save/CRUD)
-├── todocontext.rs      ← @context tag
-├── todoproject.rs      ← +project tag
-├── todopriority.rs     ← (A)-(Z) priority
-└── todorecurrence.rs   ← rec: tag (daily/weekly/monthly/yearly/business-day)
+├── lib.rs               ← Public API re-exports
+├── todo_item.rs         ← TodoItem struct + FromStr + Display
+├── todo_library.rs      ← TodoLibrary (load/save/CRUD)
+├── todo_context.rs      ← @context tag
+├── todo_project.rs      ← +project tag
+├── todo_priority.rs     ← (A)-(Z) priority
+└── todo_recurrence.rs   ← rec: tag (daily/weekly/monthly/yearly/business-day)
 ```
 
 ---
@@ -42,4 +42,4 @@ todotxt/src/
 
 - `uuid` and `sub` fields exist in the data model for future subtask support but are not yet
   surfaced in any UI.
-- Tests live in `todolibrary.rs` (inline `#[cfg(test)]` module). Run with `cargo test -p todotxt`.
+- Tests live inline in each module's `#[cfg(test)]` block. Run with `cargo test -p todotxt`.

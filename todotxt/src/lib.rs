@@ -1,12 +1,12 @@
-pub mod todocontext;
-pub mod todoitem;
-pub mod todolibrary;
-pub mod todopriority;
-pub mod todoproject;
-pub mod todorecurrence;
+pub mod todo_context;
+pub mod todo_item;
+pub mod todo_library;
+pub mod todo_priority;
+pub mod todo_project;
+pub mod todo_recurrence;
 
-pub use todocontext::TodoContext;
-pub use todoitem::TodoItem;
-pub use todolibrary::TodoLibrary;
-pub use todopriority::TodoPriority;
-pub use todoproject::TodoProject;
+pub use todo_context::TodoContext;
+pub use todo_item::TodoItem;
+pub use todo_library::TodoLibrary;
+pub use todo_priority::TodoPriority;
+pub use todo_project::TodoProject;
