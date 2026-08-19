@@ -44,3 +44,21 @@ cargo build -p rtmcli
 cargo run -p rtmcli -- -f ~/todo.txt list today
 cargo test -p rtmcli
 ```
+
+---
+
+## Debian Packaging (RTM-8)
+
+- `Cargo.toml` carries `description`, `license = "MIT"`, and `repository` in `[package]` —
+  `cargo-deb` requires them and errors without. Do not remove these as "unused" metadata; they
+  are load-bearing for the release build, not decorative.
+- `[package.metadata.deb]` pins `name = "rtmcli"` explicitly (matching the crate name, but not
+  left to derive by accident), `section = "utils"`, `priority = "optional"`, and an `assets`
+  list mapping the release binary to `/usr/bin/rtmcli` and the workspace-root `LICENSE` to
+  `/usr/share/doc/rtmcli/copyright` — the Debian-conventional location.
+- Built via `cargo deb -p rtmcli --no-build` in the release workflow, after a separate
+  `cargo build --release -p rtmcli` step (so the binary being packaged is exactly the one
+  already built and tested, not a second, independently-triggered build).
+- `scripts/set-version.ps1` already scopes its edit to `rtmcli/Cargo.toml`'s `[package]` table
+  (see root `AGENTS.md`), so a CalVer bump reaches the Debian package version with no extra
+  step.

@@ -89,39 +89,94 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
 
 ---
 
-## Windows Release Process
+## Release Process
 
-- **Workflow:** `.github/workflows/release.yml` — triggers on a `v*` tag push (publishes a draft
-  GitHub Release) or manual `workflow_dispatch` (dry run: builds and uploads to the Actions run,
-  publishes nothing, no tag required). Runs on `windows-latest` only. x64 only — no ARM64, no
-  32-bit.
+- **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
+  (publishes a draft GitHub Release) or manual `workflow_dispatch` (dry run: builds and uploads
+  to the Actions run, publishes nothing, no tag required). x64 only — no ARM64, no 32-bit, on
+  either platform.
+- **Job structure:** `version` (resolves and verifies the release version once, on
+  `ubuntu-latest`) → `windows` and `linux` (build in parallel, each `needs: version`, each
+  uploading its own `dist/` as a plain build artifact — `dist-windows` / `dist-linux`) →
+  `publish` (`needs: [version, windows, linux]`, downloads both artifact sets and performs the
+  dry-run upload or draft-release publish exactly once). Both platform jobs deliberately do
+  **not** call `softprops/action-gh-release` themselves — two independent jobs calling it
+  concurrently would race to create/update the same tagged release.
 - **Versioning is CalVer:** `vYY.minor.patch` (first release `v26.1.0`). The committed
   `rtmapp/src-tauri/tauri.conf.json` `version` field is the single source of truth — the release
   workflow reads it and never writes to it. On a tag push, the tag is required to match that field
-  exactly; a mismatch fails the build loudly instead of shipping an MSI whose internal
-  `ProductVersion` silently disagrees with its own release filename.
+  exactly; a mismatch fails the build loudly instead of shipping installers whose internal
+  version metadata silently disagrees with its own release filename.
 - **`scripts/set-version.ps1`** is a manual pre-release tool, not something CI invokes. Run it
   locally to bump the version across `rtmapp/src-tauri/tauri.conf.json`,
   `rtmapp/src-tauri/Cargo.toml`, `rtmcli/Cargo.toml`, `todotxt/Cargo.toml`, and
   `rtmapp/package.json` in lockstep, review the diff, commit it, and only then tag. For Cargo.toml
   files it scopes its match to the `[package]` table specifically, not just "the first line
   starting with `version`" — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table with its
-  own `version` key, and a naive match would be correct only by accident of ordering.
+  own `version` key, and a naive match would be correct only by accident of ordering. This
+  already covers `rtmcli/Cargo.toml`, so the Debian package version tracks the CalVer bump with
+  no separate step.
 - **`mainBinaryName: "rtmapp"`** in `tauri.conf.json` is a load-bearing invariant, not cosmetic. It
-  keeps the Windows build's output filename aligned with `flake.nix`/`default.nix`
+  keeps the build's output filename aligned with `flake.nix`/`default.nix`
   (`mainProgram = "rtmapp"`) and `rtmapp/rtmapp.desktop` (`Exec=rtmapp`), which would otherwise
   drift from `productName` (the display string, `"Rusty Todo.txt Manager"`).
+- **Merges are squashes.** One PR becomes exactly one commit on `main`, so PR titles are the
+  changelog — the release workflow's `generate_release_notes: true` consumes them directly, and
+  `.github/workflows/pr-title.yml` already forces them to be conventional and RTM-tagged.
+- **No raw platform binaries are published redundantly with their installer.** `rtmapp.exe` is
+  not staged on Windows — the MSI installs the identical binary, so shipping it loose adds
+  nothing. `rtmcli.exe` **is** staged, because neither the MSI nor (on Linux) the `rtmapp` deb
+  package the CLI; it is the only channel for `rtmcli` on Windows. This asymmetry is deliberate,
+  not an oversight — do not "fix" it for symmetry.
+
+### Windows
+
 - **`bundle.windows.wix.upgradeCode`** is pinned explicitly in `tauri.conf.json` rather than left
   to Tauri's default derivation from `productName`. The MSI `UpgradeCode` GUID must never change
   once an installer has shipped publicly; pinning it removes `productName` drift as a second, less
   obvious way that could happen.
-- **Merges are squashes.** One PR becomes exactly one commit on `main`, so PR titles are the
-  changelog — the release workflow's `generate_release_notes: true` consumes them directly, and
-  `.github/workflows/pr-title.yml` already forces them to be conventional and RTM-tagged.
 - Only `msi` is built (`bundle.targets: ["msi"]`). Linux (`deb`/`appimage`) and macOS (`dmg`/`app`)
-  bundle types need their own runner OS and are separate, not-yet-scheduled work under the RTM-6
-  epic — listing them in `bundle.targets` would not build them here regardless, since Tauri's
-  bundler silently skips any target that doesn't match the host OS.
+  bundle types need their own runner OS — listing them in `bundle.targets` would not build them
+  here regardless, since Tauri's bundler silently skips any target that doesn't match the host
+  OS. The release workflow passes `--bundles` explicitly per platform instead.
+
+### Linux (RTM-8)
+
+- **Runner floor: `ubuntu-22.04`, not `ubuntu-latest`.** A `.deb`/AppImage built against
+  `noble`'s (24.04) WebKitGTK and glibc would not install on Debian bookworm or older Ubuntu
+  LTS releases. Building on the older jammy floor maximizes where the artifacts actually work.
+- **Tool split:** Tauri's own bundler produces the `rtmapp` `.deb` and `.AppImage`
+  (`--bundles deb,appimage`); `cargo-deb` packages `rtmcli` separately, since Tauri's bundler has
+  no concept of packaging a plain, non-Tauri binary. `rtmcli`'s packaging metadata lives in
+  `rtmcli/Cargo.toml` under `[package.metadata.deb]`.
+- **The `rtmapp` deb's package name is pinned in CI, not in config — there is no config field
+  for it.** `bundle.linux.deb` in `tauri.conf.json` (checked against the full schema and the
+  `tauri-bundler` source) has no `name` property. Tauri derives the dpkg `Package:` field by
+  kebab-casing `productName`, and the `.deb` filename from `productName` completely unmodified —
+  for `"Rusty Todo.txt Manager"` that is `rusty-todo-txt-manager` internally and
+  `Rusty Todo.txt Manager_<version>_amd64.deb` on disk. The Linux release job unpacks the built
+  `.deb` with `dpkg-deb -R`, rewrites `DEBIAN/control`'s `Package:` line to `rtmapp`, and repacks
+  with `dpkg-deb -b` directly to the correct filename. This is a load-bearing step, same
+  category as `mainBinaryName` and the pinned `upgradeCode` — if it is ever removed, the package
+  silently reverts to shipping as `rusty-todo-txt-manager` with no error, only a `dpkg-deb --field`
+  assertion in the release job's own verification step catching it.
+  `bundle.linux.deb.depends` is still declared explicitly in `tauri.conf.json`
+  (`libwebkit2gtk-4.1-0`, `libgtk-3-0`, verified against `packages.ubuntu.com/jammy`), so the
+  package fails loudly at install time on a system without WebKitGTK rather than at first launch.
+- **Desktop entry: Tauri's generated `.desktop` file ships in the deb and the AppImage.**
+  `rtmapp/rtmapp.desktop` is not used for either — it exists solely for the Nix packaging path
+  (see `rtmapp/AGENTS.md`). The two must be kept in agreement on `Exec=rtmapp`, `Icon=rtmapp`,
+  and `StartupWMClass=rtmapp` even though only one of them is Tauri's actual output.
+- **AppImage build-time network dependency:** Tauri's AppImage bundler downloads `linuxdeploy`
+  and `appimagetool` during the build. This is the same class of failure the apt hardening below
+  exists to bound, so the build step carries its own `timeout-minutes`.
+- **Apt hardening is reused, not reinvented.** The Linux release job pins the same
+  `archive.ubuntu.com` mirror and `Acquire::Retries`/timeout options as `rust.yml` — see
+  "Linux CI apt hardening (RTM-28)" under Important Notes above. Do not let the two drift apart
+  without a reason.
+- **No raw Linux binaries are published.** Only the `.deb` packages and the `.AppImage`. RPM
+  (RTM-9) and non-Debian distros more generally have no release artifact for `rtmcli` as a
+  result — accepted for now, revisit if RTM-9 is scheduled.
 
 ---
 

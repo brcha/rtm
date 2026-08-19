@@ -110,9 +110,37 @@ available.
   left to derive from `productName`.
 - **`bundle.targets: ["msi"]`** — no NSIS. Tauri's `"all"` target set also emits an NSIS `.exe`
   installer on Windows, which is deliberately out of scope here.
-- The release workflow (`.github/workflows/release.yml`) builds `rtmapp.exe`, `rtmcli.exe`, and
-  the MSI on `windows-latest`. It never modifies `tauri.conf.json` — see root `AGENTS.md` for the
-  versioning convention and `scripts/set-version.ps1`.
+- The release workflow (`.github/workflows/release.yml`) builds the MSI and `rtmcli.exe` on
+  `windows-latest`. `rtmapp.exe` is not staged as a separate download — the MSI installs the
+  identical binary, so shipping it loose is redundant. It never modifies `tauri.conf.json` —
+  see root `AGENTS.md` for the versioning convention and `scripts/set-version.ps1`.
+
+---
+
+## Linux Packaging (RTM-8)
+
+- **Two artifact types, one bundler invocation:** `npm run tauri build -- --bundles deb,appimage`
+  on `ubuntu-22.04` (see root `AGENTS.md` for why that floor, not `ubuntu-latest`) produces both
+  a `.deb` and a `.AppImage` in the same build.
+- **`bundle.linux.deb.depends`** in `tauri.conf.json` is declared explicitly
+  (`libwebkit2gtk-4.1-0`, `libgtk-3-0`) rather than left to Tauri's `ldd`-based auto-detection,
+  so a missing runtime dependency fails at `dpkg -i` rather than at first launch.
+  `bundle.linux.deb` has **no field to override the package name** — checked against the full
+  schema and the `tauri-bundler` source. The release job pins it to `rtmapp` by unpacking and
+  repacking the built `.deb` in CI; see root `AGENTS.md`'s "Linux (RTM-8)" section for the full
+  mechanism. Do not assume a config-only fix exists for this without re-checking the source —
+  it did not exist as of `tauri-bundler` targeting config schema v2.
+- **Desktop entry: this build's own generated `.desktop` file ships in the `.deb` and the
+  `.AppImage`.** `rtmapp/rtmapp.desktop` (checked into this directory) is **not** used by either
+  — it exists only for the Nix packaging path (`flake.nix` / `default.nix`, see their
+  `postInstall`). Both files must agree on `Exec=rtmapp`, `Icon=rtmapp`, and
+  `StartupWMClass=rtmapp`; if one changes, check the other.
+- **AppImage bundling downloads tooling at build time.** Tauri fetches `linuxdeploy` and
+  `appimagetool` during the AppImage build step — a network dependency in the release path,
+  budgeted with its own `timeout-minutes` in the release workflow rather than left unbounded.
+- **No raw Linux binaries are published** — only the `.deb` and `.AppImage`. Mirrors the Windows
+  decision to drop the redundant `rtmapp.exe`, for a different reason: on Linux there is no
+  "install without a package manager" story worth shipping loose binaries for.
 
 ---
 
