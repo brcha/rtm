@@ -176,12 +176,18 @@ jobs:
         working-directory: rtmapp
         run: npm ci
 
-      # Prebuilt-binary install rather than `cargo install cargo-deb`, which would otherwise
-      # compile it from source on every run with nothing to cache it against.
+      # Compiled from source, not installed via a prebuilt-binary action (RTM-29). cargo-deb's
+      # only published asset is a single amd64 .deb, built by upstream CI on ubuntu-latest --
+      # which has been noble (24.04, glibc 2.39) since GitHub's runner migration. This runner
+      # is jammy (22.04, glibc 2.35) by deliberate choice (see "Linux (RTM-8)" in root
+      # AGENTS.md), so that prebuilt binary cannot run here: `GLIBC_2.39' not found`. No older
+      # cargo-deb release fixes this either -- upstream has built on ubuntu-latest since well
+      # before the runner migration, so every recent release has the same mismatch. Compiling
+      # locally is correct by construction, since it links against this runner's own glibc.
+      # Version pinned so a future cargo-deb release can't silently change behaviour mid-run;
+      # --locked uses cargo-deb's own Cargo.lock for reproducible dependency resolution.
       - name: Install cargo-deb
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deb
+        run: cargo install cargo-deb --locked --version 3.7.0
 
       - name: Build rtmcli
         run: cargo build --release -p rtmcli
