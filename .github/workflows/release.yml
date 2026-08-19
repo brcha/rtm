@@ -1,4 +1,4 @@
-name: Release Windows
+name: Release
 
 on:
   push:
@@ -13,8 +13,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  # Extracted into its own job so a second platform job (Linux) can depend on the same
+  # tag-vs-manifest check via `needs:` instead of duplicating the PowerShell. Runs on
+  # ubuntu-latest purely as a cheap host for pwsh; it builds nothing.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +59,13 @@ jobs:
 
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
 
+  windows:
+    needs: version
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -81,14 +93,16 @@ jobs:
         working-directory: rtmapp
         run: npm run tauri build -- --bundles msi
 
-      # Stages the three release assets under stable, predictable names, and asserts each one
+      # Stages the two release assets under stable, predictable names, and asserts each one
       # exists before upload. A glob that silently matches nothing (or a stale binary from an
       # earlier, differently-configured build) must fail the job, not produce a green release
-      # with missing or wrong assets.
+      # with missing or wrong assets. rtmapp.exe is deliberately not staged here — the MSI
+      # installs the same binary, so shipping it loose is redundant. rtmcli.exe stays: the MSI
+      # only packages rtmapp, so the raw binary is the sole channel for the CLI on Windows.
       - name: Stage release artifacts
         shell: pwsh
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
@@ -97,12 +111,10 @@ jobs:
             throw "Expected exactly one MSI in target/release/bundle/msi, found $($msiCandidates.Count)."
           }
           Copy-Item $msiCandidates[0].FullName "dist/rtmapp_${env:VERSION}_x64_en-US.msi"
-          Copy-Item 'target/release/rtmapp.exe' "dist/rtmapp-${env:VERSION}-x64.exe" -ErrorAction Stop
           Copy-Item 'target/release/rtmcli.exe' "dist/rtmcli-${env:VERSION}-x64.exe" -ErrorAction Stop
 
           $expected = @(
             "dist/rtmapp_${env:VERSION}_x64_en-US.msi",
-            "dist/rtmapp-${env:VERSION}-x64.exe",
             "dist/rtmcli-${env:VERSION}-x64.exe"
           )
           foreach ($f in $expected) {
@@ -120,7 +132,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: rtm-windows-${{ steps.version.outputs.version }}
+          name: rtm-windows-${{ needs.version.outputs.version }}
           path: dist/*
           if-no-files-found: error
 
