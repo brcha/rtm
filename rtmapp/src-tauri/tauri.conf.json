@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Rusty Todo.txt Manager",
   "mainBinaryName": "rtmapp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.brcha.rtm",
   "build": {
     "frontendDist": "../src"
