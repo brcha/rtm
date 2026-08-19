@@ -177,6 +177,18 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
 - **No raw Linux binaries are published.** Only the `.deb` packages and the `.AppImage`. RPM
   (RTM-9) and non-Debian distros more generally have no release artifact for `rtmcli` as a
   result — accepted for now, revisit if RTM-9 is scheduled.
+- **Prebuilt-binary install actions are a trap on this runner (RTM-29).** `cargo-deb` was
+  originally installed via `taiki-e/install-action`, which fetched upstream's only published
+  asset — built by upstream CI on `ubuntu-latest`, which has meant **noble** (24.04, glibc
+  2.39) since GitHub's runner migration. This runner is jammy (22.04, glibc 2.35) by the
+  deliberate choice above, so the binary failed immediately: `` GLIBC_2.39' not found ``. No
+  older `cargo-deb` release fixes this — upstream has built on `ubuntu-latest` since well
+  before the migration, so the mismatch isn't a version-specific regression. Fixed by
+  compiling with `cargo install cargo-deb --locked --version 3.7.0` instead, which links
+  against the runner's own glibc by construction. **This generalizes:** any future
+  prebuilt-binary installer action added to the `linux` job can reintroduce the same failure.
+  Prefer `cargo install --locked` for Rust tooling on this job unless a tool's release process
+  is confirmed to target the jammy floor specifically.
 
 ---
 
