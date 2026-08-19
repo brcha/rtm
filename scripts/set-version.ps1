@@ -1,10 +1,15 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Sets the release version across all version-carrying manifests in the workspace, ahead of
-    a Windows release build.
+    Manual pre-release tool: sets the release version across all version-carrying manifests in
+    the workspace. Run this locally, commit the result, and only then tag the release.
 
 .DESCRIPTION
+    The release workflow (.github/workflows/release.yml) treats the committed manifests as the
+    single source of truth for the release version — it never writes to them, and on a tag push
+    it fails the build if the tag doesn't match what's already committed. This script is how you
+    make that be true: run it, review the diff, commit it, then `git tag`.
+
     Rewrites the `version` field in:
       - rtmapp/src-tauri/tauri.conf.json  (drives MSI ProductVersion and exe metadata)
       - rtmapp/src-tauri/Cargo.toml
