@@ -127,6 +127,19 @@ impl TodoLibrary {
         }
         Some(has_recurrence)
     }
+
+    pub fn uncomplete_item(&mut self, index: usize) -> Option<()> {
+        if index >= self.items.len() {
+            return None;
+        }
+        self.items[index].done = false;
+        self.items[index].completion_date = None;
+        // Priority and creation_date are left untouched: the priority re-serializes as
+        // (X) instead of pri:X automatically, since TodoItem::Display keys that choice off
+        // `done`; the creation date, if any, is a fact about the item that un-completing it
+        // does not change.
+        Some(())
+    }
 }
 
 #[cfg(test)]
@@ -309,6 +322,44 @@ mod tests {
         let result = lib.complete_item(0);
         assert_eq!(result, None);
         assert_eq!(lib.items.len(), 0);
+    }
+
+    #[test]
+    fn test_uncomplete_item_clears_done_and_completion_date() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let item: TodoItem = "(C) Task".parse().unwrap();
+        lib.add_item(item);
+        lib.complete_item(0);
+        assert!(lib.items[0].done);
+        assert!(lib.items[0].completion_date.is_some());
+
+        let result = lib.uncomplete_item(0);
+        assert_eq!(result, Some(()));
+        assert!(!lib.items[0].done);
+        assert_eq!(lib.items[0].completion_date, None);
+    }
+
+    #[test]
+    fn test_uncomplete_item_out_of_bounds() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let result = lib.uncomplete_item(0);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_complete_then_uncomplete_round_trips_to_original_line() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let original = "(C) Task +p @c";
+        lib.add_item(original.parse().unwrap());
+        // Neutralize the creation date add_item just stamped, so the line is directly
+        // comparable to the un-decorated original after the round trip.
+        lib.items[0].creation_date = None;
+
+        lib.complete_item(0);
+        assert_ne!(lib.items[0].to_string(), original);
+
+        lib.uncomplete_item(0);
+        assert_eq!(lib.items[0].to_string(), original);
     }
 
     #[test]
