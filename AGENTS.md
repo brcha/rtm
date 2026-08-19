@@ -58,6 +58,22 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
   2. `flake.nix` — `guiDeps` or `tauriDeps` list (and `devShells.default` if needed)
   3. `default.nix` — matching `guiDeps` or `tauriDeps` list
 
+  This rule governs **additions**. It does not invert: apt's `-dev` packages pull each other in
+  transitively (e.g. `libgtk-3-dev` alone brings in a dozen others), so `rust.yml`'s explicit
+  list is intentionally a minimal subset of what Nix's `guiDeps`/`tauriDeps` declare. Do not trim
+  the Nix lists to match — Nix `buildInputs` do not propagate `pkg-config` search paths the way
+  apt's package interdependencies do, and removing an "apparently redundant" entry there breaks
+  the build.
+- **Linux CI apt hardening (RTM-28):** GitHub-hosted Ubuntu runners resolve apt through a
+  mirrorlist that tries `azure.archive.ubuntu.com` before falling back to `archive.ubuntu.com`.
+  When the Azure-local mirror degrades — dropping connections rather than refusing them — apt
+  retries it per index file across roughly twenty files, which can stall a job for hours with no
+  bound. The Linux leg of `rust.yml` now overwrites `/etc/apt/apt-mirrors.txt` with the canonical
+  archive before updating, and passes explicit `Acquire::Retries`/timeout options to both
+  `apt-get update` and `apt-get install` as defence in depth. **Do not revert this for a
+  marginally faster "good day" run** — it trades a small, predictable slowdown for an unbounded
+  hang becoming a fast, loud failure instead.
+
 ---
 
 ## Nix Packaging
