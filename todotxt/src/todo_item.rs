@@ -42,6 +42,8 @@ pub enum TodoItemParseError {
     Context(#[from] TodoContextParseError),
     #[error("invalid recurrence")]
     Recurrence(#[from] TodoRecurrenceParseError),
+    #[error("conflicting priorities: ({0}) and pri:{1}")]
+    ConflictingPriority(char, char),
 }
 
 impl FromStr for TodoItem {
@@ -57,7 +59,7 @@ impl FromStr for TodoItem {
             index += 1;
         }
 
-        let priority = if let Some(prio_str) = parts.get(index) {
+        let mut priority = if let Some(prio_str) = parts.get(index) {
             if prio_str.starts_with('(') && prio_str.ends_with(')') && prio_str.len() == 3 {
                 let prio = TodoPriority::from_str(prio_str)?;
                 index += 1;
@@ -68,6 +70,8 @@ impl FromStr for TodoItem {
         } else {
             TodoPriority { priority: None }
         };
+        // Whether the leading `(X)` form was seen, to detect a conflict with a `pri:Y` tag.
+        let priority_from_parens = priority.priority.is_some();
 
         let mut completion_date = None;
         let mut creation_date = None;
@@ -130,6 +134,22 @@ impl FromStr for TodoItem {
                 let sub_str = &word[4..];
                 let parsed_sub = Uuid::parse_str(sub_str)?;
                 sub = Some(parsed_sub);
+            } else if word.starts_with("pri:") && word.len() > 4 {
+                let prio_str = &word[4..];
+                // Unlike the other tags, an unparseable pri: value is not a hard error: it
+                // falls through to plain description text, so a malformed tag never causes
+                // TodoLibrary::load to silently drop the whole line.
+                match TodoPriority::from_tag_value(prio_str) {
+                    Ok(parsed) => {
+                        if priority_from_parens && priority.priority != parsed.priority {
+                            let existing = (priority.priority.unwrap() + b'A') as char;
+                            let new = (parsed.priority.unwrap() + b'A') as char;
+                            return Err(TodoItemParseError::ConflictingPriority(existing, new));
+                        }
+                        priority = parsed;
+                    }
+                    Err(_) => clean_description_parts.push(word.to_string()),
+                }
             } else {
                 clean_description_parts.push(word.to_string());
             }
@@ -416,6 +436,85 @@ mod tests {
             Some(NaiveDate::from_ymd_opt(2023, 5, 20).unwrap())
         );
         assert_eq!(item.description, "Review code");
+    }
+
+    #[test]
+    fn parse_pri_tag_on_completed_item() {
+        let item: TodoItem = "x 2024-10-07 2024-08-31 Task pri:A +p @c due:2024-10-05 rec:5w"
+            .parse()
+            .unwrap();
+        assert!(item.done);
+        assert_eq!(item.priority.priority, Some(0));
+        assert_eq!(
+            item.completion_date,
+            Some(NaiveDate::from_ymd_opt(2024, 10, 7).unwrap())
+        );
+        assert_eq!(
+            item.creation_date,
+            Some(NaiveDate::from_ymd_opt(2024, 8, 31).unwrap())
+        );
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_pri_tag_on_open_item() {
+        let item: TodoItem = "Task pri:B".parse().unwrap();
+        assert!(!item.done);
+        assert_eq!(item.priority.priority, Some(1));
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_pri_tag_agreeing_with_parens() {
+        let item: TodoItem = "x (C) 2024-01-02 2024-01-01 Task pri:C".parse().unwrap();
+        assert_eq!(item.priority.priority, Some(2));
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_pri_tag_conflicting_with_parens() {
+        let result: Result<TodoItem, _> = "x (C) 2024-01-02 2024-01-01 Task pri:A".parse();
+        assert_eq!(
+            result,
+            Err(TodoItemParseError::ConflictingPriority('C', 'A'))
+        );
+    }
+
+    #[test]
+    fn parse_pri_tag_malformed_falls_through_to_description() {
+        let item: TodoItem = "Task pri:xyz".parse().unwrap();
+        assert_eq!(item.priority.priority, None);
+        assert_eq!(item.description, "Task pri:xyz");
+    }
+
+    #[test]
+    fn parse_legacy_bare_x_no_dates() {
+        let item: TodoItem = "x Task".parse().unwrap();
+        assert!(item.done);
+        assert_eq!(item.completion_date, None);
+        assert_eq!(item.creation_date, None);
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_legacy_bare_x_with_priority_no_dates() {
+        let item: TodoItem = "x (A) Task".parse().unwrap();
+        assert!(item.done);
+        assert_eq!(item.priority.priority, Some(0));
+        assert_eq!(item.completion_date, None);
+        assert_eq!(item.creation_date, None);
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_reported_issue_line() {
+        let item: TodoItem =
+            "x (C) 2026-05-23 Инфостан pri:C +рачуни @кућа due:2026-05-09 rec:+m t:2026-03-15"
+                .parse()
+                .unwrap();
+        assert!(item.done);
+        assert_eq!(item.priority.priority, Some(2));
+        assert_eq!(item.description, "Инфостан");
     }
 
     #[test]
