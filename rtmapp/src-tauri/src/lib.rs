@@ -234,10 +234,7 @@ fn complete_item(index: usize, state: tauri::State<AppState>) -> Result<bool, St
 fn uncomplete_item(index: usize, state: tauri::State<AppState>) -> Result<bool, String> {
     let mut lib_guard = state.lib.lock().unwrap();
     if let Some(ref mut lib) = *lib_guard {
-        if index < lib.items.len() {
-            let item = &mut lib.items[index];
-            let new_item = item.set_done(false);
-            *item = new_item;
+        if lib.uncomplete_item(index).is_some() {
             lib.save().map_err(|e| e.to_string())?;
             Ok(true)
         } else {
