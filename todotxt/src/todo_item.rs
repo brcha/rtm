@@ -42,6 +42,8 @@ pub enum TodoItemParseError {
     Context(#[from] TodoContextParseError),
     #[error("invalid recurrence")]
     Recurrence(#[from] TodoRecurrenceParseError),
+    #[error("conflicting priorities: ({0}) and pri:{1}")]
+    ConflictingPriority(char, char),
 }
 
 impl FromStr for TodoItem {
@@ -57,7 +59,7 @@ impl FromStr for TodoItem {
             index += 1;
         }
 
-        let priority = if let Some(prio_str) = parts.get(index) {
+        let mut priority = if let Some(prio_str) = parts.get(index) {
             if prio_str.starts_with('(') && prio_str.ends_with(')') && prio_str.len() == 3 {
                 let prio = TodoPriority::from_str(prio_str)?;
                 index += 1;
@@ -68,6 +70,8 @@ impl FromStr for TodoItem {
         } else {
             TodoPriority { priority: None }
         };
+        // Whether the leading `(X)` form was seen, to detect a conflict with a `pri:Y` tag.
+        let priority_from_parens = priority.priority.is_some();
 
         let mut completion_date = None;
         let mut creation_date = None;
@@ -130,6 +134,22 @@ impl FromStr for TodoItem {
                 let sub_str = &word[4..];
                 let parsed_sub = Uuid::parse_str(sub_str)?;
                 sub = Some(parsed_sub);
+            } else if word.starts_with("pri:") && word.len() > 4 {
+                let prio_str = &word[4..];
+                // Unlike the other tags, an unparseable pri: value is not a hard error: it
+                // falls through to plain description text, so a malformed tag never causes
+                // TodoLibrary::load to silently drop the whole line.
+                match TodoPriority::from_tag_value(prio_str) {
+                    Ok(parsed) => {
+                        if priority_from_parens && priority.priority != parsed.priority {
+                            let existing = (priority.priority.unwrap() + b'A') as char;
+                            let new = (parsed.priority.unwrap() + b'A') as char;
+                            return Err(TodoItemParseError::ConflictingPriority(existing, new));
+                        }
+                        priority = parsed;
+                    }
+                    Err(_) => clean_description_parts.push(word.to_string()),
+                }
             } else {
                 clean_description_parts.push(word.to_string());
             }
@@ -156,62 +176,74 @@ impl FromStr for TodoItem {
 
 impl Display for TodoItem {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        // Built as tokens and joined with a single space, rather than interleaving
+        // conditional leading/trailing spaces, so an absent field (e.g. an empty
+        // description on a done item) can never produce a doubled-up space.
+        let mut parts: Vec<String> = Vec::new();
+
         if self.done {
-            write!(f, "x")?;
-            if self.priority.priority.is_some() {
-                write!(f, " {}", self.priority)?;
-            }
-            write!(f, " ")?;
-        } else {
-            if self.priority.priority.is_some() {
-                write!(f, "{} ", self.priority)?;
-            }
+            parts.push("x".to_string());
+        } else if self.priority.priority.is_some() {
+            parts.push(self.priority.to_string());
         }
 
         if self.done {
+            // The creation date is only ever emitted alongside a completion date, in that
+            // order. Per the todo.txt spec a done line's completion date comes first and
+            // its (optional) creation date must follow it; a lone date on a done line would
+            // otherwise be re-read as the completion date on the next parse, silently
+            // discarding the creation date it actually was.
             if let Some(cd) = self.completion_date {
-                write!(f, "{} ", cd.format("%Y-%m-%d"))?;
+                parts.push(cd.format("%Y-%m-%d").to_string());
+                if let Some(cd) = self.creation_date {
+                    parts.push(cd.format("%Y-%m-%d").to_string());
+                }
             }
-            if let Some(cd) = self.creation_date {
-                write!(f, "{} ", cd.format("%Y-%m-%d"))?;
-            }
-        } else {
-            if let Some(cd) = self.creation_date {
-                write!(f, "{} ", cd.format("%Y-%m-%d"))?;
-            }
+        } else if let Some(cd) = self.creation_date {
+            parts.push(cd.format("%Y-%m-%d").to_string());
         }
 
-        write!(f, "{}", self.description)?;
+        if !self.description.is_empty() {
+            parts.push(self.description.clone());
+        }
+
+        // A completed item's priority is written as the pri: tag rather than the
+        // leading (X) form, which is reserved for open items.
+        if self.done
+            && let Some(p) = self.priority.priority
+        {
+            parts.push(format!("pri:{}", (p + b'A') as char));
+        }
 
         for p in &self.projects {
-            write!(f, " {}", p)?;
+            parts.push(p.to_string());
         }
 
         for c in &self.contexts {
-            write!(f, " {}", c)?;
+            parts.push(c.to_string());
         }
 
         if let Some(d) = self.due {
-            write!(f, " due:{}", d.format("%Y-%m-%d"))?;
+            parts.push(format!("due:{}", d.format("%Y-%m-%d")));
         }
 
         if let Some(ref r) = self.recurrence {
-            write!(f, " rec:{}", r)?;
+            parts.push(format!("rec:{}", r));
         }
 
         if let Some(t) = self.threshold {
-            write!(f, " t:{}", t.format("%Y-%m-%d"))?;
+            parts.push(format!("t:{}", t.format("%Y-%m-%d")));
         }
 
         if let Some(u) = self.uuid {
-            write!(f, " uuid:{}", u)?;
+            parts.push(format!("uuid:{}", u));
         }
 
         if let Some(s) = self.sub {
-            write!(f, " sub:{}", s)?;
+            parts.push(format!("sub:{}", s));
         }
 
-        Ok(())
+        write!(f, "{}", parts.join(" "))
     }
 }
 
@@ -419,6 +451,85 @@ mod tests {
     }
 
     #[test]
+    fn parse_pri_tag_on_completed_item() {
+        let item: TodoItem = "x 2024-10-07 2024-08-31 Task pri:A +p @c due:2024-10-05 rec:5w"
+            .parse()
+            .unwrap();
+        assert!(item.done);
+        assert_eq!(item.priority.priority, Some(0));
+        assert_eq!(
+            item.completion_date,
+            Some(NaiveDate::from_ymd_opt(2024, 10, 7).unwrap())
+        );
+        assert_eq!(
+            item.creation_date,
+            Some(NaiveDate::from_ymd_opt(2024, 8, 31).unwrap())
+        );
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_pri_tag_on_open_item() {
+        let item: TodoItem = "Task pri:B".parse().unwrap();
+        assert!(!item.done);
+        assert_eq!(item.priority.priority, Some(1));
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_pri_tag_agreeing_with_parens() {
+        let item: TodoItem = "x (C) 2024-01-02 2024-01-01 Task pri:C".parse().unwrap();
+        assert_eq!(item.priority.priority, Some(2));
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_pri_tag_conflicting_with_parens() {
+        let result: Result<TodoItem, _> = "x (C) 2024-01-02 2024-01-01 Task pri:A".parse();
+        assert_eq!(
+            result,
+            Err(TodoItemParseError::ConflictingPriority('C', 'A'))
+        );
+    }
+
+    #[test]
+    fn parse_pri_tag_malformed_falls_through_to_description() {
+        let item: TodoItem = "Task pri:xyz".parse().unwrap();
+        assert_eq!(item.priority.priority, None);
+        assert_eq!(item.description, "Task pri:xyz");
+    }
+
+    #[test]
+    fn parse_legacy_bare_x_no_dates() {
+        let item: TodoItem = "x Task".parse().unwrap();
+        assert!(item.done);
+        assert_eq!(item.completion_date, None);
+        assert_eq!(item.creation_date, None);
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_legacy_bare_x_with_priority_no_dates() {
+        let item: TodoItem = "x (A) Task".parse().unwrap();
+        assert!(item.done);
+        assert_eq!(item.priority.priority, Some(0));
+        assert_eq!(item.completion_date, None);
+        assert_eq!(item.creation_date, None);
+        assert_eq!(item.description, "Task");
+    }
+
+    #[test]
+    fn parse_reported_issue_line() {
+        let item: TodoItem =
+            "x (C) 2026-05-23 Инфостан pri:C +рачуни @кућа due:2026-05-09 rec:+m t:2026-03-15"
+                .parse()
+                .unwrap();
+        assert!(item.done);
+        assert_eq!(item.priority.priority, Some(2));
+        assert_eq!(item.description, "Инфостан");
+    }
+
+    #[test]
     fn display_simple() {
         let item = TodoItem {
             done: false,
@@ -495,6 +606,136 @@ mod tests {
             item.to_string(),
             "Buy groceries +Personal @home due:2023-05-30 rec:m t:2023-05-25"
         );
+    }
+
+    #[test]
+    fn display_completed_item_uses_pri_tag() {
+        let item: TodoItem =
+            "x 2024-10-07 2024-08-31 Стронгхолд pri:A +одржавање @фејнман @здравље due:2024-10-05 rec:5w"
+                .parse()
+                .unwrap();
+        assert_eq!(
+            item.to_string(),
+            "x 2024-10-07 2024-08-31 Стронгхолд pri:A +одржавање @фејнман @здравље due:2024-10-05 rec:5w"
+        );
+    }
+
+    #[test]
+    fn display_completed_item_round_trip_is_idempotent() {
+        let item: TodoItem =
+            "x 2024-10-07 2024-08-31 Стронгхолд pri:A +одржавање @фејнман @здравље due:2024-10-05 rec:5w"
+                .parse()
+                .unwrap();
+        let once = item.to_string();
+        let twice: TodoItem = once.parse().unwrap();
+        assert_eq!(twice.to_string(), once);
+    }
+
+    #[test]
+    fn display_open_item_with_priority_uses_parens_not_pri_tag() {
+        let item = TodoItem {
+            done: false,
+            priority: TodoPriority { priority: Some(0) },
+            completion_date: None,
+            creation_date: None,
+            description: "Call mom".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        assert_eq!(item.to_string(), "(A) Call mom");
+    }
+
+    #[test]
+    fn display_normalizes_pri_tag_on_open_item_to_parens() {
+        let item: TodoItem = "Task pri:B".parse().unwrap();
+        assert_eq!(item.to_string(), "(B) Task");
+    }
+
+    #[test]
+    fn display_normalizes_parens_on_completed_item_to_pri_tag() {
+        let item: TodoItem = "x (C) 2024-01-02 2024-01-01 Task".parse().unwrap();
+        assert_eq!(item.to_string(), "x 2024-01-02 2024-01-01 Task pri:C");
+    }
+
+    #[test]
+    fn display_legacy_bare_x_round_trip() {
+        let item: TodoItem = "x Task".parse().unwrap();
+        assert_eq!(item.to_string(), "x Task");
+    }
+
+    #[test]
+    fn display_done_item_with_creation_date_but_no_completion_date_omits_it() {
+        // A done item can end up with a creation date and no completion date only via
+        // direct construction (e.g. a pre-fix file, or manual struct construction) since
+        // TodoLibrary::complete_item always sets a completion date. Display must never
+        // emit that lone creation date on a done line: FromStr would read it back as the
+        // completion date, silently turning it into a different fact on the next load.
+        let item = TodoItem {
+            done: true,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: Some(NaiveDate::from_ymd_opt(2023, 5, 20).unwrap()),
+            description: "Review code".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        assert_eq!(item.to_string(), "x Review code");
+    }
+
+    #[test]
+    fn display_done_item_date_handling_is_a_parse_display_fixed_point() {
+        // Guards the defect directly: constructing the corrupting shape by hand and
+        // round-tripping it must converge to a stable, information-preserving line rather
+        // than silently reinterpreting the lone date as something it is not.
+        let corrupting_shape = TodoItem {
+            done: true,
+            priority: TodoPriority { priority: None },
+            completion_date: None,
+            creation_date: Some(NaiveDate::from_ymd_opt(2023, 5, 20).unwrap()),
+            description: "Review code".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        let once = corrupting_shape.to_string();
+        let reparsed: TodoItem = once.parse().unwrap();
+        let twice = reparsed.to_string();
+        assert_eq!(once, twice);
+        assert_eq!(reparsed.completion_date, None);
+        assert_eq!(reparsed.creation_date, None);
+    }
+
+    #[test]
+    fn display_completed_item_with_empty_description_has_no_double_space() {
+        let item = TodoItem {
+            done: true,
+            priority: TodoPriority { priority: Some(0) },
+            completion_date: None,
+            creation_date: None,
+            description: "".to_string(),
+            projects: vec![],
+            contexts: vec![],
+            due: None,
+            recurrence: None,
+            threshold: None,
+            uuid: None,
+            sub: None,
+        };
+        assert_eq!(item.to_string(), "x pri:A");
     }
 
     #[test]

@@ -36,7 +36,15 @@ impl TodoLibrary {
         Ok(())
     }
 
-    pub fn add_item(&mut self, item: TodoItem) {
+    pub fn add_item(&mut self, mut item: TodoItem) {
+        // The todo.txt spec allows an item with no creation date, but then a completed item
+        // can never carry one either (Display refuses to emit a lone creation date; see
+        // TodoItem's Display impl). Guaranteeing a creation date here, at the single point
+        // items enter the library, is what makes that possible without inventing dates
+        // during parsing or completion. An item that already specifies one is left alone.
+        if item.creation_date.is_none() {
+            item.creation_date = Some(Local::now().date_naive());
+        }
         self.items.push(item);
     }
 
@@ -60,6 +68,13 @@ impl TodoLibrary {
     pub fn complete_item(&mut self, index: usize) -> Option<bool> {
         if index >= self.items.len() {
             return None;
+        }
+        // Per the todo.txt spec the completion date is mandatory on a done line, so set it
+        // here rather than at Display time. Never fabricate a creation date to go with it —
+        // that is TodoLibrary::add_item's job, at item creation. Idempotent: completing an
+        // already-done item does not clobber its existing completion date.
+        if !self.items[index].done {
+            self.items[index].completion_date = Some(Local::now().date_naive());
         }
         self.items[index].done = true;
         // Check for recurrence and create new item
@@ -112,6 +127,19 @@ impl TodoLibrary {
         }
         Some(has_recurrence)
     }
+
+    pub fn uncomplete_item(&mut self, index: usize) -> Option<()> {
+        if index >= self.items.len() {
+            return None;
+        }
+        self.items[index].done = false;
+        self.items[index].completion_date = None;
+        // Priority and creation_date are left untouched: the priority re-serializes as
+        // (X) instead of pri:X automatically, since TodoItem::Display keys that choice off
+        // `done`; the creation date, if any, is a fact about the item that un-completing it
+        // does not change.
+        Some(())
+    }
 }
 
 #[cfg(test)]
@@ -133,6 +161,38 @@ mod tests {
         lib.add_item(item);
         assert_eq!(lib.items.len(), 1);
         assert_eq!(lib.items[0].description, "Test item");
+    }
+
+    #[test]
+    fn test_add_item_stamps_creation_date() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let today = chrono::Local::now().date_naive();
+        let item: TodoItem = "Test item".parse().unwrap();
+        assert_eq!(item.creation_date, None);
+        lib.add_item(item);
+        assert_eq!(lib.items[0].creation_date, Some(today));
+    }
+
+    #[test]
+    fn test_add_item_preserves_existing_creation_date() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let creation = chrono::NaiveDate::from_ymd_opt(2023, 5, 20).unwrap();
+        let mut item: TodoItem = "Test item".parse().unwrap();
+        item.creation_date = Some(creation);
+        lib.add_item(item);
+        assert_eq!(lib.items[0].creation_date, Some(creation));
+    }
+
+    #[test]
+    fn test_load_leaves_dateless_lines_dateless() {
+        let temp_dir = std::env::temp_dir();
+        let file_name = format!("{}.txt", uuid::Uuid::new_v4());
+        let path = temp_dir.join(file_name);
+        fs::write(&path, "Buy milk\n").unwrap();
+        let mut lib = TodoLibrary::new(path.to_str().unwrap().to_string());
+        lib.load().unwrap();
+        assert_eq!(lib.items[0].creation_date, None);
+        fs::remove_file(&path).unwrap();
     }
 
     #[test]
@@ -179,11 +239,127 @@ mod tests {
     }
 
     #[test]
+    fn test_complete_item_sets_completion_date() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let today = chrono::Local::now().date_naive();
+        lib.add_item("Incomplete".parse().unwrap());
+        lib.complete_item(0);
+        assert_eq!(lib.items[0].completion_date, Some(today));
+    }
+
+    #[test]
+    fn test_complete_item_preserves_existing_creation_date() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let today = chrono::Local::now().date_naive();
+        let creation = chrono::NaiveDate::from_ymd_opt(2023, 5, 20).unwrap();
+        let mut item: TodoItem = "Task".parse().unwrap();
+        item.creation_date = Some(creation);
+        lib.add_item(item);
+        lib.complete_item(0);
+        assert_eq!(lib.items[0].completion_date, Some(today));
+        assert_eq!(lib.items[0].creation_date, Some(creation));
+        assert_eq!(
+            lib.items[0].to_string(),
+            format!(
+                "x {} {} Task",
+                today.format("%Y-%m-%d"),
+                creation.format("%Y-%m-%d")
+            )
+        );
+    }
+
+    #[test]
+    fn test_complete_item_with_no_creation_date_emits_one_date() {
+        // add_item always stamps a creation date (see test_add_item_stamps_creation_date),
+        // so the only way an item lacks one at completion time is if it entered the library
+        // some other way — e.g. loaded from a pre-existing file. Push directly to bypass
+        // add_item and exercise that path.
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let today = chrono::Local::now().date_naive();
+        let item: TodoItem = "Task".parse().unwrap();
+        assert_eq!(item.creation_date, None);
+        lib.items.push(item);
+        lib.complete_item(0);
+        assert_eq!(lib.items[0].creation_date, None);
+        assert_eq!(
+            lib.items[0].to_string(),
+            format!("x {} Task", today.format("%Y-%m-%d"))
+        );
+    }
+
+    #[test]
+    fn test_complete_item_with_priority_writes_pri_tag() {
+        // add_item stamps today as the creation date, and completing it the same instant
+        // stamps today as the completion date too, so both dates appear.
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let today = chrono::Local::now().date_naive();
+        let item: TodoItem = "(A) Task".parse().unwrap();
+        lib.add_item(item);
+        lib.complete_item(0);
+        assert_eq!(
+            lib.items[0].to_string(),
+            format!(
+                "x {} {} Task pri:A",
+                today.format("%Y-%m-%d"),
+                today.format("%Y-%m-%d")
+            )
+        );
+    }
+
+    #[test]
+    fn test_complete_item_is_idempotent_on_completion_date() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        lib.add_item("Task".parse().unwrap());
+        lib.complete_item(0);
+        let first_completion = lib.items[0].completion_date;
+        lib.complete_item(0);
+        assert_eq!(lib.items[0].completion_date, first_completion);
+    }
+
+    #[test]
     fn test_complete_item_out_of_bounds() {
         let mut lib = TodoLibrary::new("dummy.txt".to_string());
         let result = lib.complete_item(0);
         assert_eq!(result, None);
         assert_eq!(lib.items.len(), 0);
+    }
+
+    #[test]
+    fn test_uncomplete_item_clears_done_and_completion_date() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let item: TodoItem = "(C) Task".parse().unwrap();
+        lib.add_item(item);
+        lib.complete_item(0);
+        assert!(lib.items[0].done);
+        assert!(lib.items[0].completion_date.is_some());
+
+        let result = lib.uncomplete_item(0);
+        assert_eq!(result, Some(()));
+        assert!(!lib.items[0].done);
+        assert_eq!(lib.items[0].completion_date, None);
+    }
+
+    #[test]
+    fn test_uncomplete_item_out_of_bounds() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let result = lib.uncomplete_item(0);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_complete_then_uncomplete_round_trips_to_original_line() {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        let original = "(C) Task +p @c";
+        lib.add_item(original.parse().unwrap());
+        // Neutralize the creation date add_item just stamped, so the line is directly
+        // comparable to the un-decorated original after the round trip.
+        lib.items[0].creation_date = None;
+
+        lib.complete_item(0);
+        assert_ne!(lib.items[0].to_string(), original);
+
+        lib.uncomplete_item(0);
+        assert_eq!(lib.items[0].to_string(), original);
     }
 
     #[test]
@@ -269,7 +445,10 @@ mod tests {
         assert_eq!(result, Some(true));
         assert_eq!(lib.item_count(), 2);
         assert!(lib.items[0].done);
+        assert_eq!(lib.items[0].completion_date, Some(today));
         assert!(!lib.items[1].done);
+        assert_eq!(lib.items[1].completion_date, None);
+        assert_eq!(lib.items[1].creation_date, Some(today));
         // For non-strict, next due is today + 1 day, not original_due + 1 day
         assert_eq!(lib.items[1].due, Some(today + chrono::Duration::days(1)));
         assert_eq!(lib.items[1].description, "Test rec daily");

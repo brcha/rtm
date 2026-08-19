@@ -37,8 +37,8 @@ rtmapp/
 | `get_items`       | Return filtered+sorted `Vec<TodoItemDto>`        |
 | `get_item_count`  | Return total item count (unfiltered)             |
 | `add_item`        | Parse + append item, auto-save                   |
-| `complete_item`   | Mark done, handle recurrence, auto-save+reload   |
-| `uncomplete_item` | Mark undone, auto-save                           |
+| `complete_item`   | Mark done, set completion date, handle recurrence, auto-save+reload |
+| `uncomplete_item` | Mark undone, clear completion date, auto-save    |
 | `update_item`     | Replace item fields, auto-save                   |
 | `get_config`      | Return `AppConfig`                               |
 | `save_config`     | Update display settings, persist                 |
