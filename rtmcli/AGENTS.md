@@ -56,9 +56,20 @@ cargo test -p rtmcli
   left to derive by accident), `section = "utils"`, `priority = "optional"`, and an `assets`
   list mapping the release binary to `/usr/bin/rtmcli` and the workspace-root `LICENSE` to
   `/usr/share/doc/rtmcli/copyright` — the Debian-conventional location.
-- Built via `cargo deb -p rtmcli --no-build` in the release workflow, after a separate
-  `cargo build --release -p rtmcli` step (so the binary being packaged is exactly the one
-  already built and tested, not a second, independently-triggered build).
+- **The `assets` source path (`target/release/rtmcli`) is hardcoded like that on purpose — do
+  not "fix" it.** Per `cargo-deb`'s own documentation, it always wants the `target/release/`
+  prefix in asset source paths, *even when that isn't the crate's real target directory* — it
+  detects that literal prefix and substitutes the actual path, correctly handling workspaces,
+  cross-compilation, and `CARGO_TARGET_DIR`. Replacing it with a workspace-relative path (e.g.
+  because this crate is a workspace member and its real output lives at the workspace root)
+  breaks packaging: cargo-deb will build stale files and mishandle debug info.
+- Built via `cargo deb -p rtmcli --no-build --output <path>` in the release workflow, after a
+  separate `cargo build --release -p rtmcli` step (so the binary being packaged is exactly the
+  one already built and tested, not a second, independently-triggered build). **`--output` is
+  required, not cosmetic (RTM-30):** `cargo deb`'s default output directory is `target/debian/`
+  — not `target/release/debian/`, which is where an initial version of this workflow
+  incorrectly assumed. Naming the destination explicitly removes any dependence on guessing
+  cargo-deb's internal default.
 - `scripts/set-version.ps1` already scopes its edit to `rtmcli/Cargo.toml`'s `[package]` table
   (see root `AGENTS.md`), so a CalVer bump reaches the Debian package version with no extra
   step.
