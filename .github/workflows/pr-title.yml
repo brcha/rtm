@@ -1,0 +1,51 @@
+name: PR Title
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    types: [ opened, edited, synchronize, reopened ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      # If the branch name carries an RTM-NN reference (e.g. issues/RTM-27/foo) and the PR
+      # title doesn't already end with " -- RTM-NN", append it automatically. This edits the
+      # title via the API, which fires a new `edited` event; the validate step below is skipped
+      # on the stale-title run so it doesn't fail against a title we're about to fix.
+      - name: Autofix PR title from branch name
+        id: autofix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          if printf '%s' "$PR_TITLE" | grep -qE -- ' -- RTM-[0-9]+$'; then
+            echo "patched=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ticket=$(printf '%s' "$PR_BRANCH" | grep -oE 'RTM-[0-9]+' | head -n1 || true)
+          if [ -z "$ticket" ]; then
+            echo "patched=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          gh pr edit "$PR_NUMBER" --repo "${{ github.repository }}" \
+            --title "${PR_TITLE} -- ${ticket}"
+          echo "patched=true" >> "$GITHUB_OUTPUT"
+
+      - name: Validate PR title
+        if: steps.autofix.outputs.patched != 'true'
+        uses: ytanikin/pr-conventional-commits@639145d78959c53c43112365837e3abd21ed67c1 # 1.5.2
+        with:
+          task_types: '["feat","fix","docs","test","ci","build","refactor","perf","style","chore","revert"]'
+          title_regex: ' -- RTM-\d+$'
+          add_label: 'true'
