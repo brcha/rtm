@@ -10,6 +10,28 @@ and of the CLI:
 
 ![screenshot_cli](screenshot_cli.png "RTM CLI")
 
+## Installing
+
+### Windows (x64)
+
+Grab the latest release from [GitHub Releases](https://github.com/brcha/rtm/releases):
+
+- **`rtmapp_<version>_x64_en-US.msi`** — installer for the desktop GUI. Requires administrator
+  rights (installs to `Program Files`) and downloads [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
+  automatically if it isn't already present. The installer is currently unsigned, so Windows
+  SmartScreen and the UAC prompt will show an "Unknown publisher" warning — this is expected for
+  now.
+- **`rtmapp-<version>-x64.exe`** — portable GUI binary, no installer. Requires WebView2 to already
+  be installed (the MSI installs it for you; this portable exe does not).
+- **`rtmcli-<version>-x64.exe`** — portable CLI binary.
+
+ARM64 and 32-bit Windows builds are not currently produced.
+
+### GNU/Linux and macOS
+
+Not yet packaged for release. Build from source (see `AGENTS.md` and the per-component
+`AGENTS.md` files) or use the Nix flake (`nix build .#rtmcli` / `nix build .#rtmapp`).
+
 ## General plan
 
 - [ ] Implement basic functionality of the Todo.txt manager with CLI and desktop GUI (for GNU/Linux, Mac OS X and Windows, since I use all of those).

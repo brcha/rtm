@@ -90,6 +90,32 @@ available.
 
 ---
 
+## Windows Packaging
+
+- **Install scope: per-machine.** The MSI installs to `Program Files` and requires administrator
+  rights — the UAC prompt this triggers is expected, not a bug. There is no per-user/no-admin
+  install mode.
+- **Shortcuts: Start Menu, and an unconditional Desktop shortcut.** Both come from Tauri's stock
+  WiX template, completely unmodified — `bundle.windows.wix.template` is not set, and there is no
+  vendored `wix/` directory in this repo. Tauri's default MSI template creates the Desktop
+  shortcut unconditionally with no config toggle to suppress it (checked against the full
+  `bundle.windows.wix` schema: it exposes `template`, `fragmentPaths`,
+  `componentRefs`/`componentGroupRefs`/`featureRefs`, `upgradeCode`, `version`, and banner/dialog
+  image paths — nothing shortcut-related). Suppressing it would require vendoring and hand-editing
+  `main.wxs` to delete the `DesktopFolder` component; that tradeoff was considered and declined in
+  favor of simplicity. If revisited, fork the template from the exact `@tauri-apps/cli` version
+  pinned in `rtmapp/package-lock.json` (not `dev` — the Handlebars variables drift between
+  releases) and delete only the `DesktopFolder` block.
+- **`bundle.windows.wix.upgradeCode`** is pinned explicitly (see root `AGENTS.md`) rather than
+  left to derive from `productName`.
+- **`bundle.targets: ["msi"]`** — no NSIS. Tauri's `"all"` target set also emits an NSIS `.exe`
+  installer on Windows, which is deliberately out of scope here.
+- The release workflow (`.github/workflows/release.yml`) builds `rtmapp.exe`, `rtmcli.exe`, and
+  the MSI on `windows-latest`. It never modifies `tauri.conf.json` — see root `AGENTS.md` for the
+  versioning convention and `scripts/set-version.ps1`.
+
+---
+
 ## Known Issues
 
 - **Load File fails on GNU/Linux.** The GTK file dialog (via `tauri-plugin-dialog`) may return a

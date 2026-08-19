@@ -1,0 +1,136 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The committed manifest is the single source of truth for the release version — this
+      # workflow never writes to it. rtmapp/src-tauri/tauri.conf.json is read directly (it's what
+      # drives MSI ProductVersion and exe metadata); on a tag push, the tag is required to match
+      # exactly, so a forgotten version bump fails the build loudly instead of shipping an MSI
+      # whose ProductVersion silently disagrees with its own release filename.
+      - name: Determine and verify release version
+        id: version
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $confPath = 'rtmapp/src-tauri/tauri.conf.json'
+          $content = Get-Content -Raw -Path $confPath
+          $match = [regex]::Match($content, '(?m)^  "version": "([^"]*)"')
+          if (-not $match.Success) {
+            throw "Could not find a top-level `"version`" key in $confPath."
+          }
+          $version = $match.Groups[1].Value
+          Write-Host "Committed version (from ${confPath}): $version"
+
+          if ($env:EVENT_NAME -eq 'push') {
+            $tagVersion = $env:TAG_NAME -replace '^[vV]', ''
+            if ($tagVersion -ne $version) {
+              throw "Tag '$env:TAG_NAME' (version '$tagVersion') does not match the version " +
+                    "committed in $confPath ('$version'). Bump the version with " +
+                    "scripts/set-version.ps1, commit it, and only then tag the release."
+            }
+            Write-Host "Tag matches committed version."
+          } else {
+            Write-Host "workflow_dispatch dry run: building committed version as-is, no tag to verify against."
+          }
+
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: npm
+          cache-dependency-path: rtmapp/package-lock.json
+
+      - name: Install frontend/CLI dependencies
+        working-directory: rtmapp
+        run: npm ci
+
+      - name: Build rtmcli
+        run: cargo build --release -p rtmcli
+
+      # Unsigned for now (RTM-10). To sign later: add `bundle.windows.signCommand` or
+      # `certificateThumbprint` to rtmapp/src-tauri/tauri.conf.json, feed the certificate and
+      # password through repository secrets, and reference them here via an `env:` block, e.g.
+      #   env:
+      #     WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      #     WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      - name: Build rtmapp MSI
+        working-directory: rtmapp
+        run: npm run tauri build -- --bundles msi
+
+      # Stages the three release assets under stable, predictable names, and asserts each one
+      # exists before upload. A glob that silently matches nothing (or a stale binary from an
+      # earlier, differently-configured build) must fail the job, not produce a green release
+      # with missing or wrong assets.
+      - name: Stage release artifacts
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          $msiCandidates = Get-ChildItem -Path 'target/release/bundle/msi' -Filter '*.msi' -ErrorAction Stop
+          if ($msiCandidates.Count -ne 1) {
+            throw "Expected exactly one MSI in target/release/bundle/msi, found $($msiCandidates.Count)."
+          }
+          Copy-Item $msiCandidates[0].FullName "dist/rtmapp_${env:VERSION}_x64_en-US.msi"
+          Copy-Item 'target/release/rtmapp.exe' "dist/rtmapp-${env:VERSION}-x64.exe" -ErrorAction Stop
+          Copy-Item 'target/release/rtmcli.exe' "dist/rtmcli-${env:VERSION}-x64.exe" -ErrorAction Stop
+
+          $expected = @(
+            "dist/rtmapp_${env:VERSION}_x64_en-US.msi",
+            "dist/rtmapp-${env:VERSION}-x64.exe",
+            "dist/rtmcli-${env:VERSION}-x64.exe"
+          )
+          foreach ($f in $expected) {
+            if (-not (Test-Path -LiteralPath $f)) {
+              throw "Expected release artifact missing after staging: $f"
+            }
+          }
+
+          Write-Host 'Staged artifacts:'
+          Get-ChildItem dist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+
+      # workflow_dispatch: dry run. Upload for inspection, do not touch Releases, do not burn a
+      # version tag.
+      - name: Upload dry-run artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtm-windows-${{ steps.version.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+
+      # Tag push: publish as a draft. Master reviews and promotes manually, so a broken first
+      # release can never become permanent. Release notes are generated from squashed PR titles,
+      # which pr-title.yml already forces to be conventional and RTM-tagged.
+      - name: Publish draft release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist/*
