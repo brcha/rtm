@@ -15,17 +15,11 @@ pub enum TodoPriorityParseError {
     InvalidLetter,
 }
 
-impl FromStr for TodoPriority {
-    type Err = TodoPriorityParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let prio_char = s
-            .strip_prefix('(')
-            .and_then(|s| s.strip_suffix(')'))
-            .ok_or(TodoPriorityParseError::NotParenthesized)?;
-
-        if prio_char.len() == 1 {
-            if let p @ b'A'..=b'Z' = prio_char.as_bytes()[0] {
+impl TodoPriority {
+    /// Parses a bare priority letter, e.g. the `X` in a `pri:X` tag, with no parentheses.
+    pub fn from_tag_value(s: &str) -> Result<Self, TodoPriorityParseError> {
+        if s.len() == 1 {
+            if let p @ b'A'..=b'Z' = s.as_bytes()[0] {
                 Ok(TodoPriority {
                     priority: Some(p - b'A'),
                 })
@@ -35,6 +29,19 @@ impl FromStr for TodoPriority {
         } else {
             Err(TodoPriorityParseError::InvalidLetter)
         }
+    }
+}
+
+impl FromStr for TodoPriority {
+    type Err = TodoPriorityParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let prio_char = s
+            .strip_prefix('(')
+            .and_then(|s| s.strip_suffix(')'))
+            .ok_or(TodoPriorityParseError::NotParenthesized)?;
+
+        Self::from_tag_value(prio_char)
     }
 }
 
@@ -147,5 +154,33 @@ mod tests {
         let p1 = TodoPriority { priority: Some(5) };
         let p2 = p1.clone();
         assert_eq!(p1, p2);
+    }
+
+    #[test]
+    fn from_tag_value_valid() {
+        assert_eq!(
+            Ok(TodoPriority { priority: Some(0) }),
+            TodoPriority::from_tag_value("A")
+        );
+        assert_eq!(
+            Ok(TodoPriority { priority: Some(25) }),
+            TodoPriority::from_tag_value("Z")
+        );
+    }
+
+    #[test]
+    fn from_tag_value_invalid() {
+        assert!(matches!(
+            TodoPriority::from_tag_value("a"),
+            Err(TodoPriorityParseError::InvalidLetter)
+        ));
+        assert!(matches!(
+            TodoPriority::from_tag_value("AA"),
+            Err(TodoPriorityParseError::InvalidLetter)
+        ));
+        assert!(matches!(
+            TodoPriority::from_tag_value(""),
+            Err(TodoPriorityParseError::InvalidLetter)
+        ));
     }
 }
