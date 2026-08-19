@@ -1,4 +1,4 @@
-name: Release Windows
+name: Release
 
 on:
   push:
@@ -13,8 +13,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  # Extracted into its own job so a second platform job (Linux) can depend on the same
+  # tag-vs-manifest check via `needs:` instead of duplicating the PowerShell. Runs on
+  # ubuntu-latest purely as a cheap host for pwsh; it builds nothing.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +59,13 @@ jobs:
 
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
 
+  windows:
+    needs: version
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -81,14 +93,16 @@ jobs:
         working-directory: rtmapp
         run: npm run tauri build -- --bundles msi
 
-      # Stages the three release assets under stable, predictable names, and asserts each one
+      # Stages the two release assets under stable, predictable names, and asserts each one
       # exists before upload. A glob that silently matches nothing (or a stale binary from an
       # earlier, differently-configured build) must fail the job, not produce a green release
-      # with missing or wrong assets.
+      # with missing or wrong assets. rtmapp.exe is deliberately not staged here — the MSI
+      # installs the same binary, so shipping it loose is redundant. rtmcli.exe stays: the MSI
+      # only packages rtmapp, so the raw binary is the sole channel for the CLI on Windows.
       - name: Stage release artifacts
         shell: pwsh
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
@@ -97,12 +111,10 @@ jobs:
             throw "Expected exactly one MSI in target/release/bundle/msi, found $($msiCandidates.Count)."
           }
           Copy-Item $msiCandidates[0].FullName "dist/rtmapp_${env:VERSION}_x64_en-US.msi"
-          Copy-Item 'target/release/rtmapp.exe' "dist/rtmapp-${env:VERSION}-x64.exe" -ErrorAction Stop
           Copy-Item 'target/release/rtmcli.exe' "dist/rtmcli-${env:VERSION}-x64.exe" -ErrorAction Stop
 
           $expected = @(
             "dist/rtmapp_${env:VERSION}_x64_en-US.msi",
-            "dist/rtmapp-${env:VERSION}-x64.exe",
             "dist/rtmcli-${env:VERSION}-x64.exe"
           )
           foreach ($f in $expected) {
@@ -114,13 +126,242 @@ jobs:
           Write-Host 'Staged artifacts:'
           Get-ChildItem dist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
 
+      # Handed off to the shared `publish` job rather than uploaded/released here directly.
+      # With a second platform job (linux) producing its own dist/, calling
+      # softprops/action-gh-release independently from both would race to create the same
+      # tagged release -- publish happens exactly once, after both platforms finish.
+      - name: Upload windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/*
+          if-no-files-found: error
+
+  linux:
+    needs: version
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same hardened apt pattern as .github/workflows/rust.yml (RTM-28) -- pin the mirror,
+      # bound retries/timeouts. Do not let this list drift from rust.yml's without a reason.
+      # libfuse2 is additional: Tauri's AppImage bundler needs it to run the linuxdeploy
+      # AppImage it downloads at build time.
+      - name: Install system dependencies
+        timeout-minutes: 10
+        run: |
+          echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
+            pkg-config \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libgirepository1.0-dev \
+            libgl1-mesa-dev \
+            libfuse2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: npm
+          cache-dependency-path: rtmapp/package-lock.json
+
+      - name: Install frontend/CLI dependencies
+        working-directory: rtmapp
+        run: npm ci
+
+      # Prebuilt-binary install rather than `cargo install cargo-deb`, which would otherwise
+      # compile it from source on every run with nothing to cache it against.
+      - name: Install cargo-deb
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
+      - name: Build rtmcli
+        run: cargo build --release -p rtmcli
+
+      # --no-build reuses the binary from the step above. --deb-revision="" is intended to
+      # drop cargo-deb's default "-1" revision suffix, so the filename matches the rest of
+      # the release's `<name>_<version>_<arch>.deb` convention. Unconfirmed against a real
+      # run -- the staging step below globs for the result rather than assuming this worked,
+      # the same defensive pattern used for the MSI on Windows.
+      - name: Package rtmcli deb
+        run: cargo deb -p rtmcli --no-build --deb-revision=""
+
+      # Tauri's AppImage bundler downloads linuxdeploy and appimagetool at build time -- a
+      # network dependency in the release path. The step timeout bounds that risk rather
+      # than letting it hang the whole job.
+      - name: Build rtmapp deb and AppImage
+        working-directory: rtmapp
+        timeout-minutes: 15
+        run: npm run tauri build -- --bundles deb,appimage
+
+      # Tauri has no config option to set the deb's Package: name (verified against the
+      # tauri-bundler source, not assumed -- see the implementation plan). It kebab-cases
+      # productName for the internal Package: field and uses productName completely
+      # unmodified for the filename, so the file Tauri produces here is something like
+      # "Rusty Todo.txt Manager_0.1.0_amd64.deb" with internal name
+      # "rusty-todo-txt-manager". Glob for it, unpack, retarget Package: to "rtmapp" --
+      # matching mainBinaryName and the Nix pname -- and repack directly to the final,
+      # correctly named file.
+      - name: Repack rtmapp deb with pinned package name
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          $rawDebs = Get-ChildItem -Path 'target/release/bundle/deb' -Filter '*.deb' -ErrorAction Stop
+          if ($rawDebs.Count -ne 1) {
+            throw "Expected exactly one rtmapp .deb in target/release/bundle/deb, found $($rawDebs.Count)."
+          }
+
+          $extractDir = 'rtmapp-deb-extract'
+          & dpkg-deb -R $rawDebs[0].FullName $extractDir
+          if ($LASTEXITCODE -ne 0) { throw "dpkg-deb -R failed with exit code $LASTEXITCODE." }
+
+          $controlPath = Join-Path $extractDir 'DEBIAN/control'
+          $control = Get-Content -Raw -Path $controlPath
+          if ($control -notmatch '(?m)^Package: .+$') {
+            throw "Could not find a 'Package:' line in $controlPath."
+          }
+          $control = $control -replace '(?m)^Package: .+$', 'Package: rtmapp'
+          Set-Content -Path $controlPath -Value $control -NoNewline -Encoding utf8NoBOM
+
+          & dpkg-deb -b $extractDir "dist/rtmapp_${env:VERSION}_amd64.deb"
+          if ($LASTEXITCODE -ne 0) { throw "dpkg-deb -b failed with exit code $LASTEXITCODE." }
+
+          if (-not (Test-Path -LiteralPath "dist/rtmapp_${env:VERSION}_amd64.deb")) {
+            throw "Repacked rtmapp .deb missing after dpkg-deb -b."
+          }
+
+      # Same fail-loudly discipline as the Windows staging step: a glob that matches nothing,
+      # or more than one file, must fail the job rather than silently ship a stale or wrong
+      # artifact.
+      - name: Stage remaining release artifacts
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $cliDebs = Get-ChildItem -Path 'target/release/debian' -Filter 'rtmcli*.deb' -ErrorAction Stop
+          if ($cliDebs.Count -ne 1) {
+            throw "Expected exactly one rtmcli .deb in target/release/debian, found $($cliDebs.Count)."
+          }
+          Copy-Item $cliDebs[0].FullName "dist/rtmcli_${env:VERSION}_amd64.deb"
+
+          $appImages = Get-ChildItem -Path 'target/release/bundle/appimage' -Filter '*.AppImage' -ErrorAction Stop
+          if ($appImages.Count -ne 1) {
+            throw "Expected exactly one AppImage in target/release/bundle/appimage, found $($appImages.Count)."
+          }
+          Copy-Item $appImages[0].FullName "dist/rtmapp_${env:VERSION}_amd64.AppImage"
+
+          $expected = @(
+            "dist/rtmapp_${env:VERSION}_amd64.deb",
+            "dist/rtmcli_${env:VERSION}_amd64.deb",
+            "dist/rtmapp_${env:VERSION}_amd64.AppImage"
+          )
+          foreach ($f in $expected) {
+            if (-not (Test-Path -LiteralPath $f)) {
+              throw "Expected release artifact missing after staging: $f"
+            }
+          }
+
+          Write-Host 'Staged artifacts:'
+          Get-ChildItem dist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+
+      # Building a .deb is not evidence it installs. Prove both packages actually install on
+      # a stock system, and prove the repack above really landed a package named "rtmapp"
+      # rather than silently reverting to "rusty-todo-txt-manager".
+      - name: Verify packages install
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $rtmappPackageName = & dpkg-deb --field "dist/rtmapp_${env:VERSION}_amd64.deb" Package
+          if ($rtmappPackageName.Trim() -ne 'rtmapp') {
+            throw "Expected repacked rtmapp .deb to report Package: rtmapp, got '$rtmappPackageName'."
+          }
+
+          sudo dpkg -i "dist/rtmcli_${env:VERSION}_amd64.deb"
+          sudo dpkg -i "dist/rtmapp_${env:VERSION}_amd64.deb"
+          sudo apt-get -f install -y
+
+          & rtmcli --help
+          if ($LASTEXITCODE -ne 0) {
+            throw "rtmcli --help failed after install (exit code $LASTEXITCODE)."
+          }
+
+          if (-not (Test-Path -LiteralPath '/usr/bin/rtmapp')) {
+            throw "/usr/bin/rtmapp missing after install."
+          }
+          $desktopFiles = Get-ChildItem -Path '/usr/share/applications' -Filter '*.desktop'
+          $rtmappDesktop = $desktopFiles | Where-Object { (Get-Content -Raw $_.FullName) -match 'Exec=rtmapp' }
+          if (-not $rtmappDesktop) {
+            throw "No installed .desktop entry with Exec=rtmapp found under /usr/share/applications."
+          }
+
+      # A launch requires a display server and is out of scope here. Extraction proves the
+      # AppImage is well-formed rather than a truncated download from linuxdeploy/appimagetool.
+      - name: Verify AppImage integrity
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $appImage = "dist/rtmapp_${env:VERSION}_amd64.AppImage"
+          chmod +x $appImage
+          $extractTestDir = New-Item -ItemType Directory -Force -Path 'appimage-extract-test'
+          Push-Location $extractTestDir.FullName
+          try {
+            & "../$appImage" --appimage-extract | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "--appimage-extract failed with exit code $LASTEXITCODE." }
+            if (-not (Test-Path -LiteralPath 'squashfs-root/AppRun')) {
+              throw "Extracted AppImage is missing AppRun."
+            }
+            $desktopInImage = Get-ChildItem -Path 'squashfs-root' -Filter '*.desktop'
+            if ($desktopInImage.Count -lt 1) {
+              throw "Extracted AppImage contains no .desktop entry."
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Upload linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/*
+          if-no-files-found: error
+
+  # Single point of publication for both platforms -- avoids two concurrent jobs racing to
+  # create or update the same tagged GitHub Release.
+  publish:
+    needs: [version, windows, linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: List staged artifacts
+        run: ls -la dist
+
       # workflow_dispatch: dry run. Upload for inspection, do not touch Releases, do not burn a
       # version tag.
       - name: Upload dry-run artifacts
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: rtm-windows-${{ steps.version.outputs.version }}
+          name: rtm-${{ needs.version.outputs.version }}
           path: dist/*
           if-no-files-found: error
 

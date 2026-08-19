@@ -37,6 +37,11 @@
         "language": ["en-US"],
         "upgradeCode": "e0e423d1-1101-50d4-baee-4a27fa127509"
       }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
     }
   }
 }
