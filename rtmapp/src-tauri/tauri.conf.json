@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "rtm",
+  "productName": "Rusty Todo.txt Manager",
+  "mainBinaryName": "rtmapp",
   "version": "0.1.0",
-  "identifier": "rtm.brcha.com",
+  "identifier": "com.brcha.rtm",
   "build": {
     "frontendDist": "../src"
   },
@@ -30,6 +31,11 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "upgradeCode": "e0e423d1-1101-50d4-baee-4a27fa127509"
+      }
+    }
   }
 }
