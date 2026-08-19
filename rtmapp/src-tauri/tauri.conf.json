@@ -24,7 +24,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "deb", "appimage", "dmg", "app"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -34,6 +34,7 @@
     ],
     "windows": {
       "wix": {
+        "language": ["en-US"],
         "upgradeCode": "e0e423d1-1101-50d4-baee-4a27fa127509"
       }
     }
