@@ -1,8 +1,8 @@
 //! The edit dialog: the form behind it (`EditForm`) and the modal (`show`), laid out like `rtmapp`'s
 //! `#edit-dialog`. Saving follows `rtmapp`'s `update_item`, with deliberate differences: the priority
-//! can be any letter A to Z, invalid dates, recurrence or tag names are refused instead of being
-//! silently dropped, and a typed `+` or `@` in front of a tag name is dropped. Dates are plain text
-//! until the calendar popup (RTM-40).
+//! can be any letter A to Z, invalid dates or recurrence are refused instead of being silently
+//! dropped, tag names with whitespace are refused instead of being written as typed, and a typed `+`
+//! or `@` in front of a tag name is dropped. Dates are plain text until the calendar popup (RTM-40).
 
 use chrono::NaiveDate;
 use eframe::egui::{self, Align, Color32, Frame, Key, Layout, Modal, RichText, Stroke, Ui};
