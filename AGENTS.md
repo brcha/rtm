@@ -53,6 +53,7 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
 - **Priority encoding:** stored as `u8` (0 = A, 1 = B, …); serialized as `i32` in DTOs for JS compatibility.
 - **No framework** in the Tauri frontend — plain HTML/CSS/JS with flatpickr for date pickers.
 - All `save()` calls happen immediately after mutations (no deferred/batched writes).
+- **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`.
 
 ---
 
