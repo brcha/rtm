@@ -28,19 +28,23 @@ impl FromStr for TodoRecurrence {
     type Err = TodoRecurrenceParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let strict = s.starts_with('+');
-        let count = if s.len() - (strict as usize) == 1 {
-            1
-        } else {
-            s[strict as usize..s.len() - 1].parse::<u16>()?
+        let (strict, rest) = match s.strip_prefix('+') {
+            Some(rest) => (true, rest),
+            None => (false, s),
+        };
+        let mut chars = rest.chars();
+        let unit_char = chars.next_back().ok_or(TodoRecurrenceParseError::Unit)?;
+        let count = match chars.as_str() {
+            "" => 1,
+            digits => digits.parse::<u16>()?,
         };
 
-        let unit = match s.as_bytes()[s.len() - 1] {
-            b'd' => TodoRecurrenceUnit::Daily,
-            b'b' => TodoRecurrenceUnit::BusinessDay,
-            b'w' => TodoRecurrenceUnit::Weekly,
-            b'm' => TodoRecurrenceUnit::Monthly,
-            b'y' => TodoRecurrenceUnit::Yearly,
+        let unit = match unit_char {
+            'd' => TodoRecurrenceUnit::Daily,
+            'b' => TodoRecurrenceUnit::BusinessDay,
+            'w' => TodoRecurrenceUnit::Weekly,
+            'm' => TodoRecurrenceUnit::Monthly,
+            'y' => TodoRecurrenceUnit::Yearly,
             _ => return Err(TodoRecurrenceParseError::Unit),
         };
 
@@ -204,6 +208,26 @@ mod tests {
             TodoRecurrence::from_str("+1x"),
             Err(TodoRecurrenceParseError::Unit)
         ));
+    }
+
+    #[test]
+    fn parse_malformed_does_not_panic() {
+        for s in ["", "+", "é", "+é"] {
+            assert_eq!(
+                TodoRecurrence::from_str(s),
+                Err(TodoRecurrenceParseError::Unit),
+                "{s:?}"
+            );
+        }
+        for s in ["1é", "éd", "+éw"] {
+            assert!(
+                matches!(
+                    TodoRecurrence::from_str(s),
+                    Err(TodoRecurrenceParseError::Count(_) | TodoRecurrenceParseError::Unit)
+                ),
+                "{s:?}"
+            );
+        }
     }
 
     #[test]
