@@ -46,6 +46,21 @@
           libsoup_3
         ]);
 
+        # Run-time libraries for rtmgui (egui/winit/wgpu). It loads all of them with dlopen, so they
+        # are not build inputs but go on the binary's rpath.
+        eguiDeps = with pkgs; [
+          wayland
+          libxkbcommon
+          libGL
+          vulkan-loader
+          libxcb
+          libx11
+          libxcursor
+          libxrandr
+          libxi
+          fontconfig
+        ];
+
         # Shared build arguments for all crates.
         commonArgs = {
           inherit src;
@@ -111,10 +126,37 @@
           };
         });
 
+        # ── rtmgui ────────────────────────────────────────────────────────────
+        # A standalone Cargo workspace with its own lock (see rtmgui/AGENTS.md), so it does not
+        # use commonArgs. No native build inputs: every library is loaded at run time.
+        rtmgui = pkgs.rustPlatform.buildRustPackage {
+          pname = "rtmgui";
+          version = (pkgs.lib.importTOML ./rtmgui/Cargo.toml).package.version;
+          inherit src;
+          cargoRoot = "rtmgui";
+          buildAndTestSubdir = "rtmgui";
+          cargoLock.lockFile = ./rtmgui/Cargo.lock;
+          postInstall = ''
+            # The embedded Inter fonts' licence (SIL OFL) must ship with every copy.
+            install -Dm644 $src/rtmgui/assets/fonts/Inter-LICENSE.txt \
+              $out/share/licenses/rtmgui/Inter-LICENSE.txt
+          '';
+          # After the rpath shrinking in fixupPhase, which would drop these unused-at-link entries.
+          postFixup = ''
+            patchelf --add-rpath ${pkgs.lib.makeLibraryPath eguiDeps} $out/bin/rtmgui
+          '';
+          meta = with pkgs.lib; {
+            description = "Rusty Todo.txt Manager — egui desktop app";
+            license     = licenses.mit;
+            platforms   = platforms.linux;
+            mainProgram = "rtmgui";
+          };
+        };
+
       in {
         # ── Packages ──────────────────────────────────────────────────────────
         packages = {
-          inherit rtmcli rtmapp;
+          inherit rtmcli rtmapp rtmgui;
           default = rtmcli;
         };
 
@@ -122,6 +164,7 @@
         apps = {
           rtmcli = flake-utils.lib.mkApp { drv = rtmcli; };
           rtmapp = flake-utils.lib.mkApp { drv = rtmapp; };
+          rtmgui = flake-utils.lib.mkApp { drv = rtmgui; };
           default = flake-utils.lib.mkApp { drv = rtmcli; };
         };
 
