@@ -37,13 +37,16 @@ pub fn visible(items: &[TodoItem], config: &AppConfig, today: NaiveDate) -> Vec<
     indices
 }
 
-/// Read-only rows for `visible`, the file indices of the items to show, in that order.
-pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) {
+/// Rows for `visible`, the file indices of the items to show, in that order. Returns the file index
+/// of the item whose checkbox was clicked this frame.
+pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) -> Option<usize> {
+    let mut clicked = None;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            for (i, item) in visible.iter().map(|&index| &items[index]).enumerate() {
+            for (i, &index) in visible.iter().enumerate() {
+                let item = &items[index];
                 let fill = if item.done {
                     p.done_bg
                 } else {
@@ -58,7 +61,9 @@ pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) {
                         ui.set_min_height(25.0);
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = 10.0;
-                            checkbox(ui, p, item.done);
+                            if checkbox(ui, p, item.done, index) {
+                                clicked = Some(index);
+                            }
                             ui.add_space(10.0);
                             let wrap = ui.available_width() - 8.0;
                             // Labels inside a horizontal layout do not wrap unless told to.
@@ -78,12 +83,29 @@ pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) {
                 }
             }
         });
+    clicked
 }
 
 /// Painted, because the ☐ and ☑ glyphs are missing from most fonts (see the spike's findings).
-fn checkbox(ui: &mut Ui, p: &Palette, done: bool) {
+/// Returns whether it was clicked. `index` is the item's file index, for a stable widget id.
+fn checkbox(ui: &mut Ui, p: &Palette, done: bool, index: usize) -> bool {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
-    let color = if done { theme::GREEN } else { p.done_text };
+    // The CSS button is padded around its glyph: a larger hit area that leaves the layout alone.
+    let response = ui
+        .interact(
+            rect.expand(3.0),
+            ui.make_persistent_id(("toggle", index)),
+            Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(if done { "Uncomplete" } else { "Complete" });
+    // CSS: grey turns green on hover, and green turns grey.
+    let (normal, hovered) = if done {
+        (theme::GREEN, p.done_text)
+    } else {
+        (p.done_text, theme::GREEN)
+    };
+    let color = if response.hovered() { hovered } else { normal };
     ui.painter()
         .rect_stroke(rect, 2.0, Stroke::new(1.3, color), StrokeKind::Inside);
     if done {
@@ -97,6 +119,7 @@ fn checkbox(ui: &mut Ui, p: &Palette, done: bool) {
             Stroke::new(1.6, color),
         ));
     }
+    response.clicked()
 }
 
 /// The text of a row: priority, description and the `+project @context due: rec: t:` chips. A done

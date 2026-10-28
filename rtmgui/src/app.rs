@@ -125,7 +125,28 @@ impl App {
         });
     }
 
-    fn content(&self, ui: &mut Ui, p: &Palette) {
+    /// Completes or uncompletes the item at file index `index` and saves at once, as `rtmapp` does,
+    /// including its re-read of the file after a successful completion.
+    fn toggle(&mut self, index: usize) {
+        let Some(library) = &mut self.library else {
+            return;
+        };
+        let Some(item) = library.items.get(index) else {
+            return;
+        };
+        let result = if item.done {
+            library.uncomplete_item(index);
+            library.save()
+        } else {
+            // Appends the next occurrence of a recurring item.
+            library.complete_item(index);
+            library.save().and_then(|()| library.load())
+        };
+        self.error = result.err().map(|e| format!("{}: {e}", library.file_name));
+    }
+
+    /// The error line and the list. Returns the file index of a clicked checkbox.
+    fn content(&self, ui: &mut Ui, p: &Palette) -> Option<usize> {
         if let Some(error) = &self.error {
             ui.label(RichText::new(error).color(p.due));
             ui.add_space(8.0);
@@ -143,17 +164,19 @@ impl App {
                         p,
                         "No file loaded. Use 'Load File' to select a todo.txt file.",
                     );
-                    return;
+                    return None;
                 };
                 let today = chrono::Local::now().date_naive();
                 let visible = list::visible(&library.items, &self.config, today);
                 if visible.is_empty() {
                     // Also when every item is filtered out, as in `rtmapp`.
                     empty_state(ui, p, "No items found.");
+                    None
                 } else {
-                    list::show(ui, p, &library.items, &visible);
+                    list::show(ui, p, &library.items, &visible)
                 }
-            });
+            })
+            .inner
     }
 }
 
@@ -178,9 +201,13 @@ impl eframe::App for App {
                     Stroke::new(1.0, p.border),
                 );
             });
-        egui::CentralPanel::default()
+        let clicked = egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg).inner_margin(16.0))
-            .show(ui, |ui| self.content(ui, p));
+            .show(ui, |ui| self.content(ui, p))
+            .inner;
+        if let Some(index) = clicked {
+            self.toggle(index);
+        }
     }
 }
 
@@ -263,6 +290,73 @@ mod tests {
         let dir = temp_dir("empty");
         std::fs::write(dir.join("todo.txt"), "").unwrap();
         assert_eq!(load_library(&dir.join("todo.txt")).unwrap().item_count(), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// An app on a temp todo.txt with `contents`. The config path is in the temp dir too, so a
+    /// test can never write the user's real config.
+    fn app_with(dir: &Path, contents: &str) -> App {
+        let file = dir.join("todo.txt");
+        std::fs::write(&file, contents).unwrap();
+        App {
+            config: AppConfig::default(),
+            config_path: dir.join("config.toml"),
+            library: Some(load_library(&file).unwrap()),
+            error: None,
+        }
+    }
+
+    fn file_lines(dir: &Path) -> Vec<String> {
+        std::fs::read_to_string(dir.join("todo.txt"))
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn completing_a_recurring_item_saves_it_and_the_next_occurrence() {
+        let dir = temp_dir("complete");
+        // Strict recurrence, so the next due date follows the old one, not today.
+        let mut app = app_with(&dir, "Pay rent due:2026-11-01 rec:+1w\n");
+
+        app.toggle(0);
+
+        assert_eq!(app.error, None);
+        let lines = file_lines(&dir);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].starts_with("x ") && lines[0].contains("due:2026-11-01"));
+        assert!(!lines[1].starts_with("x ") && lines[1].contains("due:2026-11-08"));
+        // Re-read after completing, as in rtmapp.
+        assert_eq!(app.library.as_ref().unwrap().item_count(), 2);
+        assert!(!dir.join("config.toml").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn uncompleting_clears_the_completion_date_on_disk() {
+        let dir = temp_dir("uncomplete");
+        let mut app = app_with(&dir, "x 2026-10-20 2026-10-19 Done thing\n");
+
+        app.toggle(0);
+
+        assert_eq!(app.error, None);
+        let lines = file_lines(&dir);
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].starts_with("x ") && !lines[0].contains("2026-10-20"));
+        assert!(lines[0].contains("2026-10-19 Done thing"), "{}", lines[0]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn toggling_an_index_past_the_end_changes_nothing() {
+        let dir = temp_dir("past-end");
+        let mut app = app_with(&dir, "Only item\n");
+
+        app.toggle(1);
+
+        assert_eq!(app.error, None);
+        assert_eq!(file_lines(&dir), ["Only item"]);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
