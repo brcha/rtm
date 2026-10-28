@@ -9,6 +9,8 @@ Subpart AGENTS.md files:
 - [`todotxt/AGENTS.md`](todotxt/AGENTS.md) — core library
 - [`rtmcli/AGENTS.md`](rtmcli/AGENTS.md) — CLI frontend
 - [`rtmapp/AGENTS.md`](rtmapp/AGENTS.md) — Tauri web-based desktop app
+- [`rtmgui/AGENTS.md`](rtmgui/AGENTS.md) — egui desktop app that will replace `rtmapp` (working name,
+  see below)
 
 ---
 
@@ -21,20 +23,30 @@ rtm/                        ← Cargo workspace root
 ├── rtmapp/                 ← Tauri v2 desktop app
 │   ├── src/                ← Frontend: vanilla JS + HTML + CSS
 │   └── src-tauri/          ← Tauri Rust backend
+├── rtmgui/                 ← egui desktop app (working name; standalone workspace, own Cargo.lock)
 └── shell.nix               ← Nix dev shell (GTK, WebKit, X11/Wayland)
 ```
 
-All Rust crates share a single Cargo workspace (`Cargo.lock` at root). The `todotxt` library is the
-single source of truth for parsing, serialization, and business logic. Frontends depend on it via
-`path` dependency.
+`todotxt`, `rtmcli` and `rtmapp/src-tauri` share the root Cargo workspace (`Cargo.lock` at root).
+`rtmgui` is the exception: it is a standalone workspace with its own `rtmgui/Cargo.lock`, and the root
+`cargo build` and `cargo test` do not cover it (CI builds and tests it with
+`--manifest-path rtmgui/Cargo.toml`). The reason is that `rfd`'s `build.rs` rejects the `gtk3` and
+`xdg-portal` features together, and Tauri's dialog plugin enables `gtk3` while `rtmgui` uses
+`xdg-portal`. It joins the root workspace when the Tauri app is removed (RTM-39). The `todotxt` library
+is the single source of truth for parsing, serialization, and business logic. Frontends depend on it
+via `path` dependency.
 
-Config is stored per-frontend in the OS config directory (`dirs::config_dir()`), under `rtm/config.toml`.
+`rtmgui` is a working name: it replaces `rtmapp` and is renamed to `rtmapp` once it reaches feature
+parity (epic RTM-32). Until then both apps read and write the same `rtm/config.toml`.
+
+`rtmapp` and `rtmgui` store config in the OS config directory (`dirs::config_dir()`), under
+`rtm/config.toml`. `rtmcli` has no config file (file from `-f` or `$TODOTXT`).
 
 ---
 
 ## Conventions
 
-- **Rust edition:** 2024 (todotxt, rtmcli); 2021 (rtmapp/src-tauri)
+- **Rust edition:** 2024 (todotxt, rtmcli, rtmgui); 2021 (rtmapp/src-tauri)
 - **No async** in the core library or CLI. Tauri backend is also synchronous (Mutex-guarded state).
 - **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file.
 - **Date format:** `%Y-%m-%d` everywhere (chrono `NaiveDate`).
@@ -80,7 +92,8 @@ Config is stored per-frontend in the OS config directory (`dirs::config_dir()`),
 
 - **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmapp`.
 - **`default.nix`** — legacy entry point. `nix-build -A rtmcli`.
-- **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
+- **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it. This
+  includes `rtmgui/Cargo.lock`, which a future `rtmgui` derivation will use (RTM-37).
 - **nixpkgs pin:** `nixos-unstable` (needs Rust ≥ 1.85 for edition 2024).
 - **`rtmapp` packaging is best-effort** — Tauri's bundler is bypassed; frontend assets are copied
   into `$out/share/rtmapp/` via `postInstall`. Runtime behavior on NixOS may need further tuning.
