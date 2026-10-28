@@ -7,10 +7,10 @@ a **working name**: it replaces `rtmapp` and is renamed to `rtmapp` when it reac
 which point the Tauri crate is removed (epic RTM-32; the cut-over is RTM-39). Targets GNU/Linux, macOS and
 Windows.
 
-Done so far (RTM-34): window shell in the Inter-based theme, config loading, "Load File" through a
-native dialog, and a read-only item list. Still to come: filters, sorting, add, complete and edit
-(RTM-35, RTM-36), a custom calendar date picker (RTM-40), native dependencies in CI and Nix (RTM-37) and
-installers (RTM-38).
+Done so far: window shell in the Inter-based theme, config loading, "Load File" through a native dialog
+and the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
+complete/uncomplete (RTM-35). Still to come: the edit dialog (RTM-36), a custom calendar date picker
+(RTM-40), native dependencies in CI and Nix (RTM-37) and installers (RTM-38).
 
 ---
 
@@ -23,9 +23,9 @@ rtmgui/
 ├── assets/fonts/           ← Inter Regular and SemiBold (OTF) and the licence
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
-    ├── app.rs              ← App state, panels, Load File, load_library
+    ├── app.rs              ← App state, panels, Load File, filters, quick-add, complete/uncomplete
     ├── config.rs           ← AppConfig and rtm/config.toml
-    ├── list.rs             ← Item rows
+    ├── list.rs             ← Filtering and sorting (`visible`), item rows
     └── theme.rs            ← Palettes, fonts, egui styling
 ```
 
@@ -73,8 +73,8 @@ Consequences:
 
 - **Rust edition:** 2024. No async.
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`, shared with `rtmapp` until RTM-39, so field
-  names and defaults must not diverge (`#[serde(default)]` on `AppConfig`). The file is written only
-  after a successful file load, never at startup.
+  names and defaults must not diverge (`#[serde(default)]` on `AppConfig`). The file is written after a
+  successful file load or a filter change (as `rtmapp` does), never at startup.
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
   is set.
@@ -83,10 +83,26 @@ Consequences:
   fields are added as widgets are ported. egui has no font weights: Inter Regular is the text face and
   SemiBold is the `bold` family (title, headings, priorities). The ☐ and ☑ glyphs are missing from most
   fonts, so checkboxes are painted.
-- **Item rows** are read-only and in file order until RTM-35. A done item is struck through entirely, as
-  the CSS does. Recurrence is shown through `TodoRecurrence`'s `Display` (`rec:+1m` appears as `rec:+m`),
-  like `rtmapp`.
-- Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window.
+- **Filtering and sorting** (`list::visible`) follow `rtmapp`'s `get_items`, and a test checks the
+  filters against its predicate, copied verbatim, for every flag combination. Sorting puts items
+  without a due date first, then dated items, with priority as the tie-break (none last). **One
+  deliberate difference:** dates run earliest first and `reverse_sort` gives latest first; `rtmapp` has
+  it the other way round, so until RTM-39 the shared `reverse_sort` setting gives opposite orders in the
+  two apps.
+- **Item rows** show the visible items in that order. A done item is struck through entirely, as the CSS
+  does. Recurrence is shown through `TodoRecurrence`'s `Display` (`rec:+1m` appears as `rec:+m`), like
+  `rtmapp`. The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as
+  the CSS has it. Rows report the clicked item's index in the file, never its position in the filtered
+  list.
+- **Mutations** call the same `TodoLibrary` methods in the same order as `rtmapp` and save at once:
+  add is `add_item` (which sets a creation date when the item has none) then `save`; uncomplete is
+  `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
+  recurring item that has a due date) then `save`, then `load` once the save succeeded. Errors go to
+  the error line above the list, not to a dialog; the quick-add input is cleared only after a
+  successful save.
+- Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
+  build `App { .. }` directly with a temp `config_path` (see `app_with`), never
+  `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.
 
 ---
 
