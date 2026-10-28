@@ -6,6 +6,8 @@ mod theme;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    // rfd reports file dialog failures (no portal, no zenity) only through `log`.
+    env_logger::init();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Rusty Todo.txt Manager")

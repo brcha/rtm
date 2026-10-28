@@ -21,6 +21,7 @@ serde = { version = "1", features = ["derive"] }
 dirs = "5"
 toml = "0.8"
 rfd = "0.16"
+env_logger = { version = "0.11.11", default-features = false }
 
 # Profiles only apply at a workspace root, so repeat the root workspace's release profile.
 [profile.release]

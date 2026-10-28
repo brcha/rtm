@@ -63,6 +63,7 @@ Consequences:
 | serde, toml 0.8 | Config file                                          |
 | dirs 5          | OS config directory                                  |
 | chrono          | Dates (same as the core library)                     |
+| env_logger 0.11 | Logs to stderr (`rfd`'s file dialog errors)          |
 
 `dirs` and `toml` are pinned to the versions `rtmapp` uses, because both apps write the same file.
 
@@ -102,9 +103,13 @@ every redistributed copy, so **installers and packages must ship `Inter-LICENSE.
 
 `rfd` uses the `xdg-portal` backend on Linux, so a running `xdg-desktop-portal` with a FileChooser
 backend (for example `-gtk` or `-kde`) is needed at runtime. If the portal fails, `rfd` tries `zenity`
-and then returns `None`, which is also what a cancelled dialog returns; no message can be shown for it.
-The fallback is the `gtk3` feature (`rfd = { version = "0.16", default-features = false, features =
+and then returns `None`, which is also what a cancelled dialog returns, so the UI cannot tell the two
+apart. The fallback is the `gtk3` feature (`rfd = { version = "0.16", default-features = false, features =
 ["gtk3"] }`), which needs GTK 3 at runtime.
+
+`rfd` logs both failures at `error` level, and `env_logger` prints them to stderr: run the app from a
+terminal to see why "Load File" did nothing. A cancel logs nothing. `RUST_LOG=warn` (or `debug`) shows
+more.
 
 A load error (unreadable file, missing path) is shown above the list.
 
@@ -132,4 +137,4 @@ To try it without touching your own config, point `XDG_CONFIG_HOME` at a scratch
   the shell can need a glibc fix-up to start; both problems are described in
   `spikes/egui-theme/FINDINGS.md`. `shell.nix` has no clippy: run it through
   `nix-shell -p clippy` inside the shell. These belong to RTM-37.
-- Dialog failures look like a cancel (see File dialog above).
+- Dialog failures look like a cancel in the UI; the cause is on stderr (see File dialog above).
