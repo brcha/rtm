@@ -22,6 +22,10 @@ dirs = "5"
 toml = "0.8"
 rfd = "0.16"
 env_logger = { version = "0.11.11", default-features = false }
+# The calendar's first day of the week: the OS locale, and CLDR's week data for it.
+sys-locale = "0.3"
+icu_calendar = "2.4"
+icu_locale_core = "2.4"
 
 # Profiles only apply at a workspace root, so repeat the root workspace's release profile.
 [profile.release]

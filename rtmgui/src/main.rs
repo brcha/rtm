@@ -1,4 +1,5 @@
 mod app;
+mod calendar;
 mod config;
 mod edit;
 mod list;
