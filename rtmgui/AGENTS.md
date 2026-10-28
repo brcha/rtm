@@ -9,8 +9,8 @@ Windows.
 
 Done so far: window shell in the Inter-based theme, config loading, "Load File" through a native dialog
 and the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
-complete/uncomplete (RTM-35); the edit dialog (RTM-36). Still to come: a custom calendar date picker
-(RTM-40), native dependencies in CI and Nix (RTM-37) and installers (RTM-38).
+complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40). Still to
+come: native dependencies in CI and Nix (RTM-37) and installers (RTM-38).
 
 ---
 
@@ -25,6 +25,7 @@ rtmgui/
     ├── main.rs             ← Window options, eframe::run_native
     ├── app.rs              ← App state, panels, Load File, filters, quick-add, complete/uncomplete,
     │                         saving an edit
+    ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
     ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`)
@@ -66,6 +67,9 @@ Consequences:
 | dirs 5          | OS config directory                                  |
 | chrono          | Dates (same as the core library)                     |
 | env_logger 0.11 | Logs to stderr (`rfd`'s file dialog errors)          |
+| sys-locale 0.3  | The OS locale, for the calendar's week start         |
+| icu_calendar 2.4 | CLDR first day of the week for a locale          |
+| icu_locale_core 2.4 | Parses the locale for `icu_calendar`          |
 
 `dirs` and `toml` are pinned to the versions `rtmapp` uses, because both apps write the same file.
 
@@ -79,7 +83,9 @@ Consequences:
   successful file load or a filter change (as `rtmapp` does), never at startup.
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
-  is set.
+  is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
+  (`ctx.set_sublayer`), or a click in the dialog draws the dialog over it. `Sense::click()` includes
+  `FOCUSABLE`: hit areas inside a popup use `Sense::CLICK`, so Tab does not walk into them.
 - **Look:** palettes and sizes come from `rtmapp/src/styles.css`, as worked out in
   `spikes/egui-theme/` (see its `FINDINGS.md`; `shots.sh` there takes comparison screenshots). Palette
   fields are added as widgets are ported. egui has no font weights: Inter Regular is the text face and
@@ -110,8 +116,21 @@ Consequences:
   date or recurrence keeps the dialog open with a message and writes nothing, where `rtmapp` drops the
   field silently; one leading `+` or `@` on a project or context name is stripped, and a name with
   whitespace is refused, where `rtmapp` writes it as typed and it splits into several words on reload;
-  Escape and a click outside the dialog cancel, where `rtmapp` closes only on its buttons. Dates are
-  plain text fields until the calendar (RTM-40).
+  Escape and a click outside the dialog cancel, where `rtmapp` closes only on its buttons.
+- **Calendar** (`calendar.rs`): Due Date and Threshold are text fields (typing still works, as
+  flatpickr's `allowInput`) with a popup drawn at flatpickr's sizes (`rtmapp/src/assets/flatpickr.min.css`).
+  It opens on a click or focus and closes on a pick, Clear, Escape, Tab or a click outside. Escape and a
+  click elsewhere in the dialog close only the calendar; a click on the backdrop still cancels the
+  dialog (egui's `Modal` does not hold that back for open popups, as with the priority dropdown).
+  **Deliberate differences from flatpickr:** dark theme from the app's dark palette (flatpickr is
+  light only); a Clear button; the week starts on the locale's first day, not always Sunday; month
+  arrows instead of the month dropdown; the mouse wheel over the year steps it (touchpad scrolling is
+  gathered into whole notches); names stay English; no keyboard navigation of the day grid.
+- **Week start:** the locale is `LC_ALL`, then `LC_TIME`, then `LANG` when set (`#[cfg(unix)]`, so this
+  includes macOS started from a terminal), otherwise `sys-locale` (Windows, and macOS started from
+  Finder); `icu_calendar`'s CLDR week data gives the first day for it. `C`, `POSIX`, an empty or
+  unparsable locale start on Sunday. The explicit "first day of week" setting of macOS and Windows is
+  not read yet (RTM-44).
 - Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
   build `App { .. }` directly with a temp `config_path` (see `app_with`), never
   `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.

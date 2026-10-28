@@ -28,6 +28,21 @@ pub struct Palette {
     pub dialog_bg: Color32,
     /// Transparent in light: only the dark CSS gives the dialog a border.
     pub dialog_border: Color32,
+    /// The calendar popup. Light copies flatpickr's CSS (its translucent colours blended over white);
+    /// dark uses the app's dark palette, as flatpickr has no dark theme.
+    pub cal_bg: Color32,
+    pub cal_border: Color32,
+    /// Month name, year and arrows.
+    pub cal_header: Color32,
+    pub cal_weekday: Color32,
+    pub cal_text: Color32,
+    /// Days of the previous and next month.
+    pub cal_dim: Color32,
+    pub cal_hover: Color32,
+    /// Today's ring, and its fill on hover.
+    pub cal_today: Color32,
+    pub cal_selected: Color32,
+    pub cal_selected_text: Color32,
 }
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
@@ -54,6 +69,16 @@ const LIGHT: Palette = Palette {
     focus: BLUE,
     dialog_bg: rgb(0xff, 0xff, 0xff),
     dialog_border: Color32::TRANSPARENT,
+    cal_bg: rgb(0xff, 0xff, 0xff),
+    cal_border: rgb(0xe6, 0xe6, 0xe6),
+    cal_header: rgb(0x1a, 0x1a, 0x1a),
+    cal_weekday: rgb(0x75, 0x75, 0x75),
+    cal_text: rgb(0x39, 0x39, 0x39),
+    cal_dim: rgb(0xc4, 0xc4, 0xc4),
+    cal_hover: rgb(0xe6, 0xe6, 0xe6),
+    cal_today: rgb(0x95, 0x9e, 0xa9),
+    cal_selected: rgb(0x56, 0x9f, 0xf7),
+    cal_selected_text: rgb(0xff, 0xff, 0xff),
 };
 
 const DARK: Palette = Palette {
@@ -76,6 +101,16 @@ const DARK: Palette = Palette {
     focus: rgb(0x58, 0xa6, 0xff),
     dialog_bg: rgb(0x16, 0x1b, 0x22),
     dialog_border: rgb(0x30, 0x36, 0x3d),
+    cal_bg: rgb(0x16, 0x1b, 0x22),
+    cal_border: rgb(0x30, 0x36, 0x3d),
+    cal_header: rgb(0xc9, 0xd1, 0xd9),
+    cal_weekday: rgb(0x8b, 0x94, 0x9e),
+    cal_text: rgb(0xc9, 0xd1, 0xd9),
+    cal_dim: rgb(0x4c, 0x52, 0x5a),
+    cal_hover: rgb(0x21, 0x26, 0x2d),
+    cal_today: rgb(0x8b, 0x94, 0x9e),
+    cal_selected: rgb(0x58, 0xa6, 0xff),
+    cal_selected_text: rgb(0x0d, 0x11, 0x17),
 };
 
 /// Done-item checkbox colour; the same in both themes.

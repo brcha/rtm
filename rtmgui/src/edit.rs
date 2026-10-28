@@ -2,13 +2,14 @@
 //! `#edit-dialog`. Saving follows `rtmapp`'s `update_item`, with deliberate differences: the priority
 //! can be any letter A to Z, invalid dates or recurrence are refused instead of being silently
 //! dropped, tag names with whitespace are refused instead of being written as typed, and a typed `+`
-//! or `@` in front of a tag name is dropped. Dates are plain text until the calendar popup (RTM-40).
+//! or `@` in front of a tag name is dropped. The date fields have a calendar popup (`calendar`).
 
 use chrono::NaiveDate;
 use eframe::egui::{self, Align, Color32, Frame, Key, Layout, Modal, RichText, Stroke, Ui};
 use todotxt::todo_recurrence::TodoRecurrence;
 use todotxt::{TodoContext, TodoItem, TodoPriority, TodoProject};
 
+use crate::calendar;
 use crate::theme::{self, Palette};
 
 const DATE_FORMAT: &str = "%Y-%m-%d";
@@ -195,7 +196,7 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
         group(&mut c[0], "Priority", |ui| {
             priority_combo(ui, p, &mut form.priority)
         });
-        submit |= field(&mut c[1], p, "Due Date", &mut form.due, "Select due date");
+        submit |= date_field(&mut c[1], p, "Due Date", &mut form.due, "Select due date");
     });
     ui.columns(2, |c| {
         submit |= field(
@@ -205,7 +206,7 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
             &mut form.recurrence,
             "e.g., 1d, 1w, 1m",
         );
-        submit |= field(
+        submit |= date_field(
             &mut c[1],
             p,
             "Threshold",
@@ -264,6 +265,14 @@ fn field(ui: &mut Ui, p: &Palette, label: &str, text: &mut String, hint: &str) -
     group(ui, label, |ui| {
         // 9 px rather than the CSS 8 px, so the fields are as tall as the priority select.
         let response = theme::text_input(ui, p, text, hint, 9, p.focus);
+        response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
+    })
+}
+
+/// A labelled date field with the calendar popup. Returns whether Enter was pressed in it.
+fn date_field(ui: &mut Ui, p: &Palette, label: &str, text: &mut String, hint: &str) -> bool {
+    group(ui, label, |ui| {
+        let response = calendar::date_field(ui, p, text, hint);
         response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
     })
 }
