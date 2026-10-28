@@ -9,7 +9,7 @@ Windows.
 
 Done so far: window shell in the Inter-based theme, config loading, "Load File" through a native dialog
 and the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
-complete/uncomplete (RTM-35). Still to come: the edit dialog (RTM-36), a custom calendar date picker
+complete/uncomplete (RTM-35); the edit dialog (RTM-36). Still to come: a custom calendar date picker
 (RTM-40), native dependencies in CI and Nix (RTM-37) and installers (RTM-38).
 
 ---
@@ -23,9 +23,11 @@ rtmgui/
 ├── assets/fonts/           ← Inter Regular and SemiBold (OTF) and the licence
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
-    ├── app.rs              ← App state, panels, Load File, filters, quick-add, complete/uncomplete
+    ├── app.rs              ← App state, panels, Load File, filters, quick-add, complete/uncomplete,
+    │                         saving an edit
     ├── config.rs           ← AppConfig and rtm/config.toml
-    ├── list.rs             ← Filtering and sorting (`visible`), item rows
+    ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
+    ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`)
     └── theme.rs            ← Palettes, fonts, egui styling
 ```
 
@@ -99,7 +101,17 @@ Consequences:
   `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
   recurring item that has a due date) then `save`, then `load` once the save succeeded. Errors go to
   the error line above the list, not to a dialog; the quick-add input is cleared only after a
-  successful save.
+  successful save. Every save rewrites the whole file, and recurrence goes through `Display`, so a
+  count of 1 is written in its short form (`rec:+1m` becomes `rec:+m`); this is intended.
+- **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled as `rtmapp`'s
+  `openEditDialog` does; Save (or Enter in a field) writes the fields as `rtmapp`'s `update_item` does,
+  then `save`. Fields the dialog does not show (done, dates of completion and creation, `uuid`, `sub`)
+  are kept. **Deliberate differences:** the priority dropdown offers A to Z, not just A to C; an invalid
+  date or recurrence keeps the dialog open with a message and writes nothing, where `rtmapp` drops the
+  field silently; one leading `+` or `@` on a project or context name is stripped, and a name with
+  whitespace is refused, where `rtmapp` writes it as typed and it splits into several words on reload;
+  Escape and a click outside the dialog cancel, where `rtmapp` closes only on its buttons. Dates are
+  plain text fields until the calendar (RTM-40).
 - Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
   build `App { .. }` directly with a temp `config_path` (see `app_with`), never
   `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.
@@ -144,6 +156,9 @@ cargo test --manifest-path rtmgui/Cargo.toml
 To try it without touching your own config, point `XDG_CONFIG_HOME` at a scratch directory that has an
 `rtm/config.toml` with a `file_name` line.
 
+`RTMGUI_THEME=light` or `RTMGUI_THEME=dark` forces a theme instead of following the system, for
+screenshots of both themes; any other value is ignored.
+
 ---
 
 ## Known Issues
@@ -154,3 +169,5 @@ To try it without touching your own config, point `XDG_CONFIG_HOME` at a scratch
   `spikes/egui-theme/FINDINGS.md`. `shell.nix` has no clippy: run it through
   `nix-shell -p clippy` inside the shell. These belong to RTM-37.
 - Dialog failures look like a cancel in the UI; the cause is on stderr (see File dialog above).
+- The edit dialog does not scroll: a `ScrollArea` inside egui's `Modal` stays too short. The form fits
+  the default window; revisit if it grows (see the `shortcut:` comment in `edit::show`).

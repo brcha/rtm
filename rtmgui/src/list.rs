@@ -37,9 +37,17 @@ pub fn visible(items: &[TodoItem], config: &AppConfig, today: NaiveDate) -> Vec<
     indices
 }
 
-/// Rows for `visible`, the file indices of the items to show, in that order. Returns the file index
-/// of the item whose checkbox was clicked this frame.
-pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) -> Option<usize> {
+/// What a click on a row asks for, by the item's index in the file.
+pub enum RowAction {
+    /// The checkbox: complete or uncomplete.
+    Toggle(usize),
+    /// The text: open the edit dialog.
+    Edit(usize),
+}
+
+/// Rows for `visible`, the file indices of the items to show, in that order. Returns what was
+/// clicked this frame.
+pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) -> Option<RowAction> {
     let mut clicked = None;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     egui::ScrollArea::vertical()
@@ -62,15 +70,36 @@ pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) -> 
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = 10.0;
                             if checkbox(ui, p, item.done, index) {
-                                clicked = Some(index);
+                                clicked = Some(RowAction::Toggle(index));
                             }
                             ui.add_space(10.0);
+                            // Filled in below once the label's rect is known.
+                            let hover_bg = ui.painter().add(Shape::Noop);
                             let wrap = ui.available_width() - 8.0;
-                            // Labels inside a horizontal layout do not wrap unless told to.
-                            ui.add(
-                                egui::Label::new(row_job(p, item, wrap))
-                                    .wrap_mode(egui::TextWrapMode::Wrap),
-                            );
+                            // Labels inside a horizontal layout do not wrap unless told to. Not
+                            // selectable, or a click would start a text selection instead.
+                            let text = ui
+                                .add(
+                                    egui::Label::new(row_job(p, item, wrap))
+                                        .wrap_mode(egui::TextWrapMode::Wrap)
+                                        .selectable(false)
+                                        .sense(Sense::click()),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if text.hovered() {
+                                // CSS `.item-text:hover`: 3 % black behind the text.
+                                ui.painter().set(
+                                    hover_bg,
+                                    Shape::rect_filled(
+                                        text.rect.expand(2.0),
+                                        2.0,
+                                        Color32::from_black_alpha(8),
+                                    ),
+                                );
+                            }
+                            if text.clicked() {
+                                clicked = Some(RowAction::Edit(index));
+                            }
                         });
                     });
                 if i + 1 < visible.len() {

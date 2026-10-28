@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod edit;
 mod list;
 mod theme;
 
@@ -17,6 +18,20 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "rtmgui",
         options,
-        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
+        Box::new(|cc| {
+            theme_override(&cc.egui_ctx);
+            Ok(Box::new(app::App::new(cc)))
+        }),
     )
+}
+
+/// `RTMGUI_THEME=light` or `dark` forces that theme, so both can be screenshotted without changing
+/// the system setting. Anything else, or unset, follows the system.
+fn theme_override(ctx: &egui::Context) {
+    let theme = match std::env::var("RTMGUI_THEME").as_deref() {
+        Ok("light") => egui::ThemePreference::Light,
+        Ok("dark") => egui::ThemePreference::Dark,
+        _ => return,
+    };
+    ctx.set_theme(theme);
 }
