@@ -14,6 +14,7 @@
       - rtmapp/src-tauri/tauri.conf.json  (drives MSI ProductVersion and exe metadata)
       - rtmapp/src-tauri/Cargo.toml
       - rtmcli/Cargo.toml
+      - rtmgui/Cargo.toml
       - todotxt/Cargo.toml
       - rtmapp/package.json               (cosmetic, kept in sync for consistency)
 
@@ -161,6 +162,7 @@ $targets = @(
     @{ Path = Join-Path $RepoRoot 'rtmapp/src-tauri/tauri.conf.json'; Handler = ${function:Set-JsonTopLevelVersion} },
     @{ Path = Join-Path $RepoRoot 'rtmapp/src-tauri/Cargo.toml';       Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'rtmcli/Cargo.toml';                 Handler = ${function:Set-TomlPackageVersion} },
+    @{ Path = Join-Path $RepoRoot 'rtmgui/Cargo.toml';                 Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'todotxt/Cargo.toml';                Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'rtmapp/package.json';               Handler = ${function:Set-JsonTopLevelVersion} }
 )
