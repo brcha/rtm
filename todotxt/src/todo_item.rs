@@ -530,6 +530,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_malformed_recurrence_is_error() {
+        for line in ["Task rec:+", "Task rec:é", "Task rec:1é"] {
+            assert!(
+                matches!(
+                    line.parse::<TodoItem>(),
+                    Err(TodoItemParseError::Recurrence(_))
+                ),
+                "{line:?}"
+            );
+        }
+    }
+
+    #[test]
     fn display_simple() {
         let item = TodoItem {
             done: false,
