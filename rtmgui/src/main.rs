@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod edit;
 mod list;
 mod theme;
 

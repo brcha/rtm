@@ -23,6 +23,11 @@ pub struct Palette {
     pub threshold: Color32,
     pub input_bg: Color32,
     pub input_border: Color32,
+    /// Focused form field border and glow (`.form-group input:focus`).
+    pub focus: Color32,
+    pub dialog_bg: Color32,
+    /// Transparent in light: only the dark CSS gives the dialog a border.
+    pub dialog_border: Color32,
 }
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
@@ -46,6 +51,9 @@ const LIGHT: Palette = Palette {
     threshold: rgb(0x95, 0xa5, 0xa6),
     input_bg: rgb(0xff, 0xff, 0xff),
     input_border: rgb(0xd1, 0xd5, 0xda),
+    focus: BLUE,
+    dialog_bg: rgb(0xff, 0xff, 0xff),
+    dialog_border: Color32::TRANSPARENT,
 };
 
 const DARK: Palette = Palette {
@@ -65,6 +73,9 @@ const DARK: Palette = Palette {
     threshold: rgb(0x8b, 0x94, 0x9e),
     input_bg: rgb(0x0d, 0x11, 0x17),
     input_border: rgb(0x30, 0x36, 0x3d),
+    focus: rgb(0x58, 0xa6, 0xff),
+    dialog_bg: rgb(0x16, 0x1b, 0x22),
+    dialog_border: rgb(0x30, 0x36, 0x3d),
 };
 
 /// Done-item checkbox colour; the same in both themes.
@@ -80,8 +91,8 @@ pub fn priority_color(priority: u8) -> Option<Color32> {
     }
 }
 
-/// CSS `#0366d6`: the primary button and the focused input border.
-const BLUE: Color32 = rgb(0x03, 0x66, 0xd6);
+/// CSS `#0366d6`: the primary button and the focused input border (both themes for the add row).
+pub const BLUE: Color32 = rgb(0x03, 0x66, 0xd6);
 
 /// The blue "Load File" button with its CSS hover colour.
 pub fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
@@ -93,13 +104,25 @@ pub fn success_button(ui: &mut Ui, text: &str) -> egui::Response {
     filled_button(ui, text, GREEN, rgb(0x21, 0x88, 0x38))
 }
 
-/// CSS `.add-item input`: a single-line input with a 1 px border, 6 px corners and, when focused,
-/// a blue border with a soft 3 px glow.
-pub fn add_input(ui: &mut Ui, p: &Palette, text: &mut String, hint: &str) -> egui::Response {
+/// The grey "Cancel" button with its CSS hover colour (`.btn-secondary`, the same in both themes).
+pub fn secondary_button(ui: &mut Ui, text: &str) -> egui::Response {
+    filled_button(ui, text, rgb(0x6a, 0x73, 0x7d), rgb(0x58, 0x60, 0x69))
+}
+
+/// A single-line input like the CSS ones: 1 px border, 6 px corners, 12 px side padding and
+/// `pad_y` above and below, and when focused a `focus` border with a soft 3 px glow.
+pub fn text_input(
+    ui: &mut Ui,
+    p: &Palette,
+    text: &mut String,
+    hint: &str,
+    pad_y: i8,
+    focus: Color32,
+) -> egui::Response {
     let response = ui
         .scope(|ui| {
             let visuals = ui.visuals_mut();
-            visuals.selection.stroke = Stroke::new(1.0, BLUE);
+            visuals.selection.stroke = Stroke::new(1.0, focus);
             let widgets = &mut visuals.widgets;
             for state in [
                 &mut widgets.inactive,
@@ -114,17 +137,18 @@ pub fn add_input(ui: &mut Ui, p: &Palette, text: &mut String, hint: &str) -> egu
                 egui::TextEdit::singleline(text)
                     .hint_text(hint)
                     .font(FontId::proportional(13.3))
-                    .margin(egui::Margin::symmetric(12, 10))
+                    .margin(egui::Margin::symmetric(12, pad_y))
                     .background_color(p.input_bg)
                     .desired_width(ui.available_width()),
             )
         })
         .inner;
     if response.has_focus() {
+        let glow = Color32::from_rgba_unmultiplied(focus.r(), focus.g(), focus.b(), 77);
         ui.painter().rect_stroke(
             response.rect,
             6.0,
-            Stroke::new(3.0, Color32::from_rgba_unmultiplied(0x03, 0x66, 0xd6, 77)),
+            Stroke::new(3.0, glow),
             egui::StrokeKind::Outside,
         );
     }

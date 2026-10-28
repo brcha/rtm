@@ -7,7 +7,8 @@ use eframe::egui::{
 use todotxt::{TodoItem, TodoLibrary};
 
 use crate::config::{self, AppConfig};
-use crate::list;
+use crate::edit::{self, EditForm, Outcome};
+use crate::list::{self, RowAction};
 use crate::theme::{self, Palette};
 
 pub struct App {
@@ -18,6 +19,8 @@ pub struct App {
     error: Option<String>,
     /// The quick-add input.
     new_item: String,
+    /// The open edit dialog, if any.
+    editing: Option<EditForm>,
 }
 
 impl App {
@@ -42,6 +45,7 @@ impl App {
             library,
             error,
             new_item: String::new(),
+            editing: None,
         }
     }
 
@@ -73,13 +77,20 @@ impl App {
     }
 
     /// The four view settings. A change is saved at once, as in `rtmapp`.
-    fn filters(&mut self, ui: &mut Ui) {
+    fn filters(&mut self, ui: &mut Ui, p: &Palette) {
         let mut changed = false;
         ui.scope(|ui| {
             // CSS: 16 px boxes, 8 px gaps, 0.9rem labels.
             ui.spacing_mut().item_spacing.y = 8.0;
             ui.spacing_mut().icon_width = 16.0;
             ui.spacing_mut().icon_spacing = 8.0;
+            // egui's light theme draws the box with no border, nearly invisible on white; give it
+            // the grey outline of a native checkbox.
+            let widgets = &mut ui.visuals_mut().widgets;
+            for state in [&mut widgets.inactive, &mut widgets.hovered] {
+                state.bg_fill = p.input_bg;
+                state.bg_stroke = Stroke::new(1.0, p.done_text);
+            }
             let config = &mut self.config;
             for (value, label) in [
                 (&mut config.show_completed_items, "Show completed items"),
@@ -117,7 +128,7 @@ impl App {
                 job.wrap.break_anywhere = true;
                 ui.add(egui::Label::new(job));
             });
-        self.filters(ui);
+        self.filters(ui, p);
         let count = self.library.as_ref().map_or(0, TodoLibrary::item_count);
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             ui.label(
@@ -185,11 +196,14 @@ impl App {
             // Lines the button up with the input, as the CSS flex row does.
             ui.spacing_mut().interact_size.y = 38.0;
             submit |= theme::success_button(ui, "Add").clicked();
-            let input = theme::add_input(
+            // The CSS has no dark focus colour for this input, so it stays blue in both themes.
+            let input = theme::text_input(
                 ui,
                 p,
                 &mut self.new_item,
                 "New item (e.g., (A) Task due:2024-01-15 +Project @context)",
+                10,
+                theme::BLUE,
             );
             // Enter ends the edit and drops focus; give it back for the next item.
             if input.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -203,8 +217,30 @@ impl App {
         }
     }
 
-    /// The error line, the add row and the list. Returns the file index of a clicked checkbox.
-    fn content(&mut self, ui: &mut Ui, p: &Palette) -> Option<usize> {
+    /// Applies the edit dialog to its item and saves at once, as `rtmapp`'s `update_item` does. An
+    /// invalid field keeps the dialog open with the reason; nothing is written.
+    fn save_edit(&mut self) {
+        let (Some(form), Some(library)) = (&mut self.editing, &mut self.library) else {
+            self.editing = None;
+            return;
+        };
+        let Some(item) = library.items.get_mut(form.index) else {
+            self.editing = None;
+            return;
+        };
+        if let Err(e) = form.apply(item) {
+            form.error = Some(e);
+            return;
+        }
+        self.error = library
+            .save()
+            .err()
+            .map(|e| format!("{}: {e}", library.file_name));
+        self.editing = None;
+    }
+
+    /// The error line, the add row and the list. Returns what was clicked in the list.
+    fn content(&mut self, ui: &mut Ui, p: &Palette) -> Option<RowAction> {
         if let Some(error) = &self.error {
             ui.label(RichText::new(error).color(p.due));
             ui.add_space(8.0);
@@ -264,8 +300,24 @@ impl eframe::App for App {
             .frame(Frame::new().fill(p.bg).inner_margin(16.0))
             .show(ui, |ui| self.content(ui, p))
             .inner;
-        if let Some(index) = clicked {
-            self.toggle(index);
+        match clicked {
+            Some(RowAction::Toggle(index)) => self.toggle(index),
+            Some(RowAction::Edit(index)) => {
+                self.editing = self.library.as_ref().and_then(|library| {
+                    library
+                        .items
+                        .get(index)
+                        .map(|item| EditForm::new(index, item))
+                });
+            }
+            None => {}
+        }
+        if let Some(form) = &mut self.editing {
+            match edit::show(ui.ctx(), p, form) {
+                Some(Outcome::Save) => self.save_edit(),
+                Some(Outcome::Cancel) => self.editing = None,
+                None => {}
+            }
         }
     }
 }
@@ -363,6 +415,7 @@ mod tests {
             library: Some(load_library(&file).unwrap()),
             error: None,
             new_item: String::new(),
+            editing: None,
         }
     }
 
@@ -466,6 +519,7 @@ mod tests {
             library: None,
             error: None,
             new_item: "Task".to_owned(),
+            editing: None,
         };
 
         app.add_item();
@@ -473,6 +527,47 @@ mod tests {
         assert_eq!(app.error.as_deref(), Some("Please load a file first"));
         assert_eq!(app.new_item, "Task");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1); // only "sub"
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn open_editor(app: &mut App, index: usize) -> &mut EditForm {
+        let item = &app.library.as_ref().unwrap().items[index];
+        app.editing.insert(EditForm::new(index, item))
+    }
+
+    #[test]
+    fn saving_an_edit_writes_the_item_and_keeps_the_others() {
+        let dir = temp_dir("edit");
+        let mut app = app_with(&dir, "First\n(D) Second +Home\nThird\n");
+        let form = open_editor(&mut app, 1);
+        form.description = "Second, edited".into();
+        form.due = "2026-11-02".into();
+
+        app.save_edit();
+
+        assert_eq!(app.error, None);
+        assert!(app.editing.is_none());
+        assert_eq!(
+            file_lines(&dir),
+            ["First", "(D) Second, edited +Home due:2026-11-02", "Third"]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_invalid_edit_keeps_the_dialog_and_writes_nothing() {
+        let dir = temp_dir("edit-invalid");
+        let mut app = app_with(&dir, "First\n");
+        open_editor(&mut app, 0).due = "tomorrow".into();
+
+        app.save_edit();
+
+        let form = app.editing.as_ref().expect("dialog stays open");
+        assert_eq!(form.error.as_deref(), Some("Due date: expected YYYY-MM-DD"));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("todo.txt")).unwrap(),
+            "First\n"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }
