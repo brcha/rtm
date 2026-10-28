@@ -21,6 +21,8 @@ pub struct Palette {
     pub due: Color32,
     pub recurrence: Color32,
     pub threshold: Color32,
+    pub input_bg: Color32,
+    pub input_border: Color32,
 }
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
@@ -42,6 +44,8 @@ const LIGHT: Palette = Palette {
     due: rgb(0xe7, 0x4c, 0x3c),
     recurrence: rgb(0x9b, 0x59, 0xb6),
     threshold: rgb(0x95, 0xa5, 0xa6),
+    input_bg: rgb(0xff, 0xff, 0xff),
+    input_border: rgb(0xd1, 0xd5, 0xda),
 };
 
 const DARK: Palette = Palette {
@@ -59,6 +63,8 @@ const DARK: Palette = Palette {
     due: rgb(0xf8, 0x51, 0x49),
     recurrence: rgb(0xbc, 0x8c, 0xff),
     threshold: rgb(0x8b, 0x94, 0x9e),
+    input_bg: rgb(0x0d, 0x11, 0x17),
+    input_border: rgb(0x30, 0x36, 0x3d),
 };
 
 /// Done-item checkbox colour; the same in both themes.
@@ -74,15 +80,65 @@ pub fn priority_color(priority: u8) -> Option<Color32> {
     }
 }
 
+/// CSS `#0366d6`: the primary button and the focused input border.
+const BLUE: Color32 = rgb(0x03, 0x66, 0xd6);
+
 /// The blue "Load File" button with its CSS hover colour.
 pub fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
+    filled_button(ui, text, BLUE, rgb(0x02, 0x56, 0xb9))
+}
+
+/// The green "Add" button with its CSS hover colour.
+pub fn success_button(ui: &mut Ui, text: &str) -> egui::Response {
+    filled_button(ui, text, GREEN, rgb(0x21, 0x88, 0x38))
+}
+
+/// CSS `.add-item input`: a single-line input with a 1 px border, 6 px corners and, when focused,
+/// a blue border with a soft 3 px glow.
+pub fn add_input(ui: &mut Ui, p: &Palette, text: &mut String, hint: &str) -> egui::Response {
+    let response = ui
+        .scope(|ui| {
+            let visuals = ui.visuals_mut();
+            visuals.selection.stroke = Stroke::new(1.0, BLUE);
+            let widgets = &mut visuals.widgets;
+            for state in [
+                &mut widgets.inactive,
+                &mut widgets.hovered,
+                &mut widgets.active,
+            ] {
+                state.bg_stroke = Stroke::new(1.0, p.input_border);
+                state.corner_radius = 6.0.into();
+                state.expansion = 0.0;
+            }
+            ui.add(
+                egui::TextEdit::singleline(text)
+                    .hint_text(hint)
+                    .font(FontId::proportional(13.3))
+                    .margin(egui::Margin::symmetric(12, 10))
+                    .background_color(p.input_bg)
+                    .desired_width(ui.available_width()),
+            )
+        })
+        .inner;
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            6.0,
+            Stroke::new(3.0, Color32::from_rgba_unmultiplied(0x03, 0x66, 0xd6, 77)),
+            egui::StrokeKind::Outside,
+        );
+    }
+    response
+}
+
+fn filled_button(ui: &mut Ui, text: &str, fill: Color32, hover: Color32) -> egui::Response {
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = egui::vec2(16.0, 10.0);
         let widgets = &mut ui.visuals_mut().widgets;
         for (state, fill) in [
-            (&mut widgets.inactive, rgb(0x03, 0x66, 0xd6)),
-            (&mut widgets.hovered, rgb(0x02, 0x56, 0xb9)),
-            (&mut widgets.active, rgb(0x02, 0x56, 0xb9)),
+            (&mut widgets.inactive, fill),
+            (&mut widgets.hovered, hover),
+            (&mut widgets.active, hover),
         ] {
             state.weak_bg_fill = fill;
             state.bg_fill = fill;

@@ -4,7 +4,7 @@ use eframe::egui::{
     self, Align, Color32, Frame, Layout, Margin, RichText, Stroke, Ui,
     text::{LayoutJob, TextFormat},
 };
-use todotxt::TodoLibrary;
+use todotxt::{TodoItem, TodoLibrary};
 
 use crate::config::{self, AppConfig};
 use crate::list;
@@ -16,6 +16,8 @@ pub struct App {
     library: Option<TodoLibrary>,
     /// Shown above the list until the next successful action.
     error: Option<String>,
+    /// The quick-add input.
+    new_item: String,
 }
 
 impl App {
@@ -39,6 +41,7 @@ impl App {
             config_path,
             library,
             error,
+            new_item: String::new(),
         }
     }
 
@@ -54,13 +57,43 @@ impl App {
             Ok(library) => {
                 self.config.file_name = Some(library.file_name.clone());
                 self.library = Some(library);
-                self.error = self
-                    .config
-                    .save(&self.config_path)
-                    .err()
-                    .map(|e| format!("Could not save the config: {e}"));
+                self.save_config();
             }
             Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Writes the config; replaces the error line with the result.
+    fn save_config(&mut self) {
+        self.error = self
+            .config
+            .save(&self.config_path)
+            .err()
+            .map(|e| format!("Could not save the config: {e}"));
+    }
+
+    /// The four view settings. A change is saved at once, as in `rtmapp`.
+    fn filters(&mut self, ui: &mut Ui) {
+        let mut changed = false;
+        ui.scope(|ui| {
+            // CSS: 16 px boxes, 8 px gaps, 0.9rem labels.
+            ui.spacing_mut().item_spacing.y = 8.0;
+            ui.spacing_mut().icon_width = 16.0;
+            ui.spacing_mut().icon_spacing = 8.0;
+            let config = &mut self.config;
+            for (value, label) in [
+                (&mut config.show_completed_items, "Show completed items"),
+                (&mut config.show_future_items, "Show future items"),
+                (&mut config.hide_no_date, "Hide items without due date"),
+                (&mut config.reverse_sort, "Reverse sort order"),
+            ] {
+                changed |= ui
+                    .checkbox(value, RichText::new(label).size(12.6))
+                    .changed();
+            }
+        });
+        if changed {
+            self.save_config();
         }
     }
 
@@ -84,6 +117,7 @@ impl App {
                 job.wrap.break_anywhere = true;
                 ui.add(egui::Label::new(job));
             });
+        self.filters(ui);
         let count = self.library.as_ref().map_or(0, TodoLibrary::item_count);
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             ui.label(
@@ -94,11 +128,88 @@ impl App {
         });
     }
 
-    fn content(&self, ui: &mut Ui, p: &Palette) {
+    /// Completes or uncompletes the item at file index `index` and saves at once, as `rtmapp` does,
+    /// including its re-read of the file after a successful completion.
+    fn toggle(&mut self, index: usize) {
+        let Some(library) = &mut self.library else {
+            return;
+        };
+        let Some(item) = library.items.get(index) else {
+            return;
+        };
+        let result = if item.done {
+            library.uncomplete_item(index);
+            library.save()
+        } else {
+            // Appends the next occurrence of a recurring item.
+            library.complete_item(index);
+            library.save().and_then(|()| library.load())
+        };
+        self.error = result.err().map(|e| format!("{}: {e}", library.file_name));
+    }
+
+    /// Parses the quick-add text, appends the item and saves at once, as `rtmapp` does. The input is
+    /// cleared only when the item was saved; blank input does nothing.
+    fn add_item(&mut self) {
+        let text = self.new_item.trim();
+        if text.is_empty() {
+            return;
+        }
+        let Some(library) = &mut self.library else {
+            self.error = Some("Please load a file first".to_owned());
+            return;
+        };
+        let item = match text.parse::<TodoItem>() {
+            Ok(item) => item,
+            Err(e) => {
+                self.error = Some(format!("Could not parse the item: {e}"));
+                return;
+            }
+        };
+        // Sets the creation date.
+        library.add_item(item);
+        match library.save() {
+            Ok(()) => {
+                self.error = None;
+                self.new_item.clear();
+            }
+            Err(e) => self.error = Some(format!("{}: {e}", library.file_name)),
+        }
+    }
+
+    /// CSS `.add-item`: the input fills the width, "Add" sits to its right, 16 px above the list.
+    fn add_row(&mut self, ui: &mut Ui, p: &Palette) {
+        let mut submit = false;
+        // Top-aligned: a centred cross axis would centre the row in all the space below it.
+        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+            // Lines the button up with the input, as the CSS flex row does.
+            ui.spacing_mut().interact_size.y = 38.0;
+            submit |= theme::success_button(ui, "Add").clicked();
+            let input = theme::add_input(
+                ui,
+                p,
+                &mut self.new_item,
+                "New item (e.g., (A) Task due:2024-01-15 +Project @context)",
+            );
+            // Enter ends the edit and drops focus; give it back for the next item.
+            if input.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                submit = true;
+                input.request_focus();
+            }
+        });
+        ui.add_space(16.0 - ui.spacing().item_spacing.y);
+        if submit {
+            self.add_item();
+        }
+    }
+
+    /// The error line, the add row and the list. Returns the file index of a clicked checkbox.
+    fn content(&mut self, ui: &mut Ui, p: &Palette) -> Option<usize> {
         if let Some(error) = &self.error {
             ui.label(RichText::new(error).color(p.due));
             ui.add_space(8.0);
         }
+        self.add_row(ui, p);
         Frame::new()
             .fill(p.panel)
             .stroke(Stroke::new(1.0, p.border))
@@ -106,18 +217,25 @@ impl App {
             .show(ui, |ui| {
                 // The list box fills the content area, as in the web app.
                 ui.set_min_size(ui.available_size());
-                match &self.library {
-                    None => empty_state(
+                let Some(library) = &self.library else {
+                    empty_state(
                         ui,
                         p,
                         "No file loaded. Use 'Load File' to select a todo.txt file.",
-                    ),
-                    Some(library) if library.items.is_empty() => {
-                        empty_state(ui, p, "No items found.");
-                    }
-                    Some(library) => list::show(ui, p, library.list_items()),
+                    );
+                    return None;
+                };
+                let today = chrono::Local::now().date_naive();
+                let visible = list::visible(&library.items, &self.config, today);
+                if visible.is_empty() {
+                    // Also when every item is filtered out, as in `rtmapp`.
+                    empty_state(ui, p, "No items found.");
+                    None
+                } else {
+                    list::show(ui, p, &library.items, &visible)
                 }
-            });
+            })
+            .inner
     }
 }
 
@@ -142,9 +260,13 @@ impl eframe::App for App {
                     Stroke::new(1.0, p.border),
                 );
             });
-        egui::CentralPanel::default()
+        let clicked = egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg).inner_margin(16.0))
-            .show(ui, |ui| self.content(ui, p));
+            .show(ui, |ui| self.content(ui, p))
+            .inner;
+        if let Some(index) = clicked {
+            self.toggle(index);
+        }
     }
 }
 
@@ -227,6 +349,130 @@ mod tests {
         let dir = temp_dir("empty");
         std::fs::write(dir.join("todo.txt"), "").unwrap();
         assert_eq!(load_library(&dir.join("todo.txt")).unwrap().item_count(), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// An app on a temp todo.txt with `contents`. The config path is in the temp dir too, so a
+    /// test can never write the user's real config.
+    fn app_with(dir: &Path, contents: &str) -> App {
+        let file = dir.join("todo.txt");
+        std::fs::write(&file, contents).unwrap();
+        App {
+            config: AppConfig::default(),
+            config_path: dir.join("config.toml"),
+            library: Some(load_library(&file).unwrap()),
+            error: None,
+            new_item: String::new(),
+        }
+    }
+
+    fn file_lines(dir: &Path) -> Vec<String> {
+        std::fs::read_to_string(dir.join("todo.txt"))
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn completing_a_recurring_item_saves_it_and_the_next_occurrence() {
+        let dir = temp_dir("complete");
+        // Strict recurrence, so the next due date follows the old one, not today.
+        let mut app = app_with(&dir, "Pay rent due:2026-11-01 rec:+1w\n");
+
+        app.toggle(0);
+
+        assert_eq!(app.error, None);
+        let lines = file_lines(&dir);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].starts_with("x ") && lines[0].contains("due:2026-11-01"));
+        assert!(!lines[1].starts_with("x ") && lines[1].contains("due:2026-11-08"));
+        // Re-read after completing, as in rtmapp.
+        assert_eq!(app.library.as_ref().unwrap().item_count(), 2);
+        assert!(!dir.join("config.toml").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn uncompleting_clears_the_completion_date_on_disk() {
+        let dir = temp_dir("uncomplete");
+        let mut app = app_with(&dir, "x 2026-10-20 2026-10-19 Done thing\n");
+
+        app.toggle(0);
+
+        assert_eq!(app.error, None);
+        let lines = file_lines(&dir);
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].starts_with("x ") && !lines[0].contains("2026-10-20"));
+        assert!(lines[0].contains("2026-10-19 Done thing"), "{}", lines[0]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn toggling_an_index_past_the_end_changes_nothing() {
+        let dir = temp_dir("past-end");
+        let mut app = app_with(&dir, "Only item\n");
+
+        app.toggle(1);
+
+        assert_eq!(app.error, None);
+        assert_eq!(file_lines(&dir), ["Only item"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn adding_saves_the_trimmed_item_with_a_creation_date() {
+        let dir = temp_dir("add");
+        let mut app = app_with(&dir, "First\n");
+        app.new_item = "  (B) Second +Proj due:2026-11-02  ".to_owned();
+
+        app.add_item();
+
+        assert_eq!(app.error, None);
+        assert_eq!(app.new_item, "");
+        let today = chrono::Local::now().date_naive().format("%Y-%m-%d");
+        assert_eq!(
+            file_lines(&dir),
+            [
+                "First".to_owned(),
+                format!("(B) {today} Second +Proj due:2026-11-02")
+            ]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn blank_input_adds_nothing() {
+        let dir = temp_dir("blank");
+        let mut app = app_with(&dir, "First\n");
+        app.new_item = "   ".to_owned();
+
+        app.add_item();
+
+        assert_eq!(app.error, None);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("todo.txt")).unwrap(),
+            "First\n"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn adding_without_a_file_is_an_error_and_writes_nothing() {
+        let dir = temp_dir("no-file");
+        let mut app = App {
+            config: AppConfig::default(),
+            config_path: dir.join("config.toml"),
+            library: None,
+            error: None,
+            new_item: "Task".to_owned(),
+        };
+
+        app.add_item();
+
+        assert_eq!(app.error.as_deref(), Some("Please load a file first"));
+        assert_eq!(app.new_item, "Task");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1); // only "sub"
         let _ = std::fs::remove_dir_all(dir);
     }
 }
