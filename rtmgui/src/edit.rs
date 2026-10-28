@@ -107,12 +107,9 @@ fn recurrence(text: &str) -> Result<Option<TodoRecurrence>, String> {
     if text.is_empty() {
         return Ok(None);
     }
-    let error = || "Recurrence: expected e.g. 1d, +2w, 1m".to_owned();
-    // `TodoRecurrence::from_str` panics on "+" and when its byte slicing cuts a non-ASCII character.
-    if !text.is_ascii() || text == "+" {
-        return Err(error());
-    }
-    text.parse().map(Some).map_err(|_| error())
+    text.parse()
+        .map(Some)
+        .map_err(|_| "Recurrence: expected e.g. 1d, +2w, 1m".to_owned())
 }
 
 /// Comma-separated names: trimmed, one leading `sigil` (`+` or `@`) dropped, empties skipped. A name

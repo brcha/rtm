@@ -169,10 +169,5 @@ screenshots of both themes; any other value is ignored.
   `spikes/egui-theme/FINDINGS.md`. `shell.nix` has no clippy: run it through
   `nix-shell -p clippy` inside the shell. These belong to RTM-37.
 - Dialog failures look like a cancel in the UI; the cause is on stderr (see File dialog above).
-- **`TodoRecurrence::from_str` panics** on an empty string, on `+` and on non-ASCII text (it slices
-  bytes), and the item parser passes any `rec:` value to it, so a file with such a `rec:` value crashes
-  rtmgui on load. The edit dialog refuses those inputs before parsing (`edit::recurrence`); the fix for
-  the load path belongs in `todotxt` and is pending as a separate change. Drop the dialog's guard only
-  once `from_str` returns an error instead.
 - The edit dialog does not scroll: a `ScrollArea` inside egui's `Modal` stays too short. The form fits
   the default window; revisit if it grows (see the `shortcut:` comment in `edit::show`).
