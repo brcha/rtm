@@ -44,8 +44,9 @@ Consequences:
   not cover it. `rust.yml` has separate steps for this.
 - `rtmgui/Cargo.toml` repeats the root `[profile.release]`, because profiles only apply at a workspace
   root. Keep the two in step.
-- `rtmgui/Cargo.lock` is committed and is separate from the root lock. `scripts/set-version.ps1` bumps
-  `rtmgui/Cargo.toml` but, like for the other crates, does not refresh any lock file.
+- `rtmgui/Cargo.lock` is committed and is separate from the root lock. `scripts/set-version.ps1` and
+  `scripts/set-version.sh` bump `rtmgui/Cargo.toml` but, like for the other crates, do not refresh any
+  lock file.
 - **Merging back (RTM-39):** when the Tauri app is removed, delete the `[workspace]` table, the copied
   `[profile.release]` and `rtmgui/Cargo.lock`, add the crate to the root `members`, drop the two `rtmgui`
   steps from `rust.yml`, and re-run `cargo build` so the root lock is regenerated.

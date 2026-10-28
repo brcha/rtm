@@ -120,10 +120,11 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
   workflow reads it and never writes to it. On a tag push, the tag is required to match that field
   exactly; a mismatch fails the build loudly instead of shipping installers whose internal
   version metadata silently disagrees with its own release filename.
-- **`scripts/set-version.ps1`** is a manual pre-release tool, not something CI invokes. Run it
+- **`scripts/set-version.ps1`** (PowerShell) and **`scripts/set-version.sh`** (bash) are two
+  ports of one manual pre-release tool, not something CI invokes; keep them in step. Run either
   locally to bump the version across `rtmapp/src-tauri/tauri.conf.json`,
-  `rtmapp/src-tauri/Cargo.toml`, `rtmcli/Cargo.toml`, `todotxt/Cargo.toml`, and
-  `rtmapp/package.json` in lockstep, review the diff, commit it, and only then tag. For Cargo.toml
+  `rtmapp/src-tauri/Cargo.toml`, `rtmcli/Cargo.toml`, `rtmgui/Cargo.toml`, `todotxt/Cargo.toml`,
+  and `rtmapp/package.json` in lockstep, review the diff, commit it, and only then tag. For Cargo.toml
   files it scopes its match to the `[package]` table specifically, not just "the first line
   starting with `version`" — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table with its
   own `version` key, and a naive match would be correct only by accident of ordering. This
