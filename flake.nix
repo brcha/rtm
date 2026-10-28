@@ -181,8 +181,17 @@
             nodejs
           ];
           buildInputs = tauriDeps;
+          # Start from empty values instead of whatever the calling session exports: a leaked
+          # `-L/usr/lib` links against the system glibc instead of the shell's, and the binary
+          # then fails to start. The stdenv setup hooks append their own flags to these.
+          NIX_LDFLAGS = "";
+          NIX_CFLAGS_LINK = "";
+          NIX_CFLAGS_COMPILE = "";
+          PKG_CONFIG_PATH = "";
+          # A rustc wrapper such as sccache from ~/.cargo/config.toml fails inside the shell.
+          RUSTC_WRAPPER = "";
           shellHook = ''
-            export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath tauriDeps}
+            export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath (tauriDeps ++ eguiDeps)}
           '';
         };
       }
