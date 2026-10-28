@@ -54,13 +54,43 @@ impl App {
             Ok(library) => {
                 self.config.file_name = Some(library.file_name.clone());
                 self.library = Some(library);
-                self.error = self
-                    .config
-                    .save(&self.config_path)
-                    .err()
-                    .map(|e| format!("Could not save the config: {e}"));
+                self.save_config();
             }
             Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Writes the config; replaces the error line with the result.
+    fn save_config(&mut self) {
+        self.error = self
+            .config
+            .save(&self.config_path)
+            .err()
+            .map(|e| format!("Could not save the config: {e}"));
+    }
+
+    /// The four view settings. A change is saved at once, as in `rtmapp`.
+    fn filters(&mut self, ui: &mut Ui) {
+        let mut changed = false;
+        ui.scope(|ui| {
+            // CSS: 16 px boxes, 8 px gaps, 0.9rem labels.
+            ui.spacing_mut().item_spacing.y = 8.0;
+            ui.spacing_mut().icon_width = 16.0;
+            ui.spacing_mut().icon_spacing = 8.0;
+            let config = &mut self.config;
+            for (value, label) in [
+                (&mut config.show_completed_items, "Show completed items"),
+                (&mut config.show_future_items, "Show future items"),
+                (&mut config.hide_no_date, "Hide items without due date"),
+                (&mut config.reverse_sort, "Reverse sort order"),
+            ] {
+                changed |= ui
+                    .checkbox(value, RichText::new(label).size(12.6))
+                    .changed();
+            }
+        });
+        if changed {
+            self.save_config();
         }
     }
 
@@ -84,6 +114,7 @@ impl App {
                 job.wrap.break_anywhere = true;
                 ui.add(egui::Label::new(job));
             });
+        self.filters(ui);
         let count = self.library.as_ref().map_or(0, TodoLibrary::item_count);
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             ui.label(
@@ -106,16 +137,21 @@ impl App {
             .show(ui, |ui| {
                 // The list box fills the content area, as in the web app.
                 ui.set_min_size(ui.available_size());
-                match &self.library {
-                    None => empty_state(
+                let Some(library) = &self.library else {
+                    empty_state(
                         ui,
                         p,
                         "No file loaded. Use 'Load File' to select a todo.txt file.",
-                    ),
-                    Some(library) if library.items.is_empty() => {
-                        empty_state(ui, p, "No items found.");
-                    }
-                    Some(library) => list::show(ui, p, library.list_items()),
+                    );
+                    return;
+                };
+                let today = chrono::Local::now().date_naive();
+                let visible = list::visible(&library.items, &self.config, today);
+                if visible.is_empty() {
+                    // Also when every item is filtered out, as in `rtmapp`.
+                    empty_state(ui, p, "No items found.");
+                } else {
+                    list::show(ui, p, &library.items, &visible);
                 }
             });
     }
