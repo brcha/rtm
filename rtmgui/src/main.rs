@@ -1,4 +1,6 @@
 mod app;
+mod config;
+mod list;
 mod theme;
 
 use eframe::egui;

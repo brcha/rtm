@@ -14,6 +14,13 @@ pub struct Palette {
     pub info_bg: Color32,
     pub text: Color32,
     pub muted: Color32,
+    pub done_bg: Color32,
+    pub done_text: Color32,
+    pub project: Color32,
+    pub context: Color32,
+    pub due: Color32,
+    pub recurrence: Color32,
+    pub threshold: Color32,
 }
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
@@ -28,6 +35,13 @@ const LIGHT: Palette = Palette {
     info_bg: rgb(0xf6, 0xf8, 0xfa),
     text: rgb(0x21, 0x35, 0x47),
     muted: rgb(0x58, 0x60, 0x69),
+    done_bg: rgb(0xf6, 0xf8, 0xfa),
+    done_text: rgb(0x6a, 0x73, 0x7d),
+    project: rgb(0x03, 0x66, 0xd6),
+    context: rgb(0x6a, 0x73, 0x7d),
+    due: rgb(0xe7, 0x4c, 0x3c),
+    recurrence: rgb(0x9b, 0x59, 0xb6),
+    threshold: rgb(0x95, 0xa5, 0xa6),
 };
 
 const DARK: Palette = Palette {
@@ -38,7 +52,49 @@ const DARK: Palette = Palette {
     info_bg: rgb(0x21, 0x26, 0x2d),
     text: rgb(0xc9, 0xd1, 0xd9),
     muted: rgb(0x8b, 0x94, 0x9e),
+    done_bg: rgb(0x21, 0x26, 0x2d),
+    done_text: rgb(0x8b, 0x94, 0x9e),
+    project: rgb(0x58, 0xa6, 0xff),
+    context: rgb(0x8b, 0x94, 0x9e),
+    due: rgb(0xf8, 0x51, 0x49),
+    recurrence: rgb(0xbc, 0x8c, 0xff),
+    threshold: rgb(0x8b, 0x94, 0x9e),
 };
+
+/// Done-item checkbox colour; the same in both themes.
+pub const GREEN: Color32 = rgb(0x28, 0xa7, 0x45);
+
+/// Priority colour for A, B and C. Other letters have no colour in the CSS and use the text colour.
+pub fn priority_color(priority: u8) -> Option<Color32> {
+    match priority {
+        0 => Some(rgb(0xe7, 0x4c, 0x3c)),
+        1 => Some(rgb(0xe6, 0x7e, 0x22)),
+        2 => Some(rgb(0xf3, 0x9c, 0x12)),
+        _ => None,
+    }
+}
+
+/// The blue "Load File" button with its CSS hover colour.
+pub fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = egui::vec2(16.0, 10.0);
+        let widgets = &mut ui.visuals_mut().widgets;
+        for (state, fill) in [
+            (&mut widgets.inactive, rgb(0x03, 0x66, 0xd6)),
+            (&mut widgets.hovered, rgb(0x02, 0x56, 0xb9)),
+            (&mut widgets.active, rgb(0x02, 0x56, 0xb9)),
+        ] {
+            state.weak_bg_fill = fill;
+            state.bg_fill = fill;
+            state.bg_stroke = Stroke::NONE;
+            state.expansion = 0.0;
+            state.corner_radius = 6.0.into();
+            state.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+        }
+        ui.button(egui::RichText::new(text).size(12.6).strong())
+    })
+    .inner
+}
 
 /// The palette for the theme `ui` is currently drawn with.
 pub fn palette(ui: &Ui) -> &'static Palette {
