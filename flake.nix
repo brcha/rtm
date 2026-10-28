@@ -2,8 +2,9 @@
   description = "Rusty Todo.txt Manager";
 
   inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-unstable";
-    # nixos-unstable ships Rust 1.85+ which supports edition 2024
+    # Stable channel: rustc 1.95, the minimum egui 0.37 needs. Consumers can override it with
+    # `inputs.rtm.inputs.nixpkgs.follows`. Move to nixos-26.11 when it is released (RTM-45).
+    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
