@@ -1,7 +1,6 @@
 # Legacy nix-build entry point. For flakes, use flake.nix.
 # Usage:
 #   nix-build -A rtmcli
-#   nix-build -A rtmapp   # best-effort (Tauri, Linux only)
 #   nix-build -A rtmgui   # egui app (Linux only)
 
 { pkgs ? import <nixpkgs> {} }:
@@ -15,30 +14,6 @@ let
       !(builtins.elem (baseNameOf path)
         [ "target" ".git" "node_modules" ".direnv" ]);
   };
-
-  # Shared GUI deps for rtmapp (GTK3 + X11/Wayland/OpenGL).
-  guiDeps = with pkgs; [
-    gtk3
-    glib
-    atk
-    gdk-pixbuf
-    pango
-    cairo
-    libxcb
-    libx11
-    libxcursor
-    libxrandr
-    libxi
-    libGL
-    libxkbcommon
-    wayland
-  ];
-
-  # Additional deps for rtmapp (Tauri v2 — WebKitGTK 4.1 + libsoup 3).
-  tauriDeps = guiDeps ++ (with pkgs; [
-    webkitgtk_4_1
-    libsoup_3
-  ]);
 
   # Run-time libraries for rtmgui (egui/winit/wgpu). It loads all of them with dlopen, so they are
   # not build inputs but go on the binary's rpath.
@@ -69,53 +44,6 @@ in {
       license     = licenses.mit;
       platforms   = platforms.all;
       mainProgram = "rtmcli";
-    };
-  };
-
-  # ── rtmapp ──────────────────────────────────────────────────────────────────
-  # Best-effort: plain `cargo build -p rtmapp` (bypasses Tauri bundler).
-  # Frontend assets are copied into $out/share/rtmapp/ via postInstall.
-  rtmapp = pkgs.rustPlatform.buildRustPackage {
-    pname   = "rtmapp";
-    version = "0.1.0";
-    inherit src;
-    cargoLock.lockFile = ./Cargo.lock;
-    cargoBuildFlags    = [ "-p" "rtmapp" ];
-    nativeBuildInputs  = with pkgs; [
-      pkg-config
-      gobject-introspection
-      wrapGAppsHook4
-    ];
-    buildInputs = tauriDeps;
-    WEBKIT_DISABLE_COMPOSITING_MODE = "1";
-    postInstall = ''
-      # Frontend assets (served by the embedded WebKit view)
-      mkdir -p $out/share/rtmapp
-      cp -r $src/rtmapp/src $out/share/rtmapp/
-
-      # XDG desktop entry
-      mkdir -p $out/share/applications
-      cp $src/rtmapp/rtmapp.desktop $out/share/applications/rtmapp.desktop
-
-      # Icons — hicolor theme, standard sizes
-      mkdir -p $out/share/icons/hicolor/32x32/apps
-      mkdir -p $out/share/icons/hicolor/128x128/apps
-      mkdir -p $out/share/icons/hicolor/256x256/apps
-      cp $src/rtmapp/src-tauri/icons/32x32.png \
-         $out/share/icons/hicolor/32x32/apps/rtmapp.png
-      cp $src/rtmapp/src-tauri/icons/128x128.png \
-         $out/share/icons/hicolor/128x128/apps/rtmapp.png
-      cp $src/rtmapp/src-tauri/icons/128x128@2x.png \
-         $out/share/icons/hicolor/256x256/apps/rtmapp.png
-      mkdir -p $out/share/icons/hicolor/512x512/apps
-      cp $src/rtmapp/src-tauri/icons/icon.png \
-         $out/share/icons/hicolor/512x512/apps/rtmapp.png
-    '';
-    meta = with pkgs.lib; {
-      description = "Rusty Todo.txt Manager — Tauri desktop app (best-effort)";
-      license     = licenses.mit;
-      platforms   = platforms.linux;
-      mainProgram = "rtmapp";
     };
   };
 

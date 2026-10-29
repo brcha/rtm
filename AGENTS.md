@@ -124,6 +124,18 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
 
 ## Release Process
 
+> **The Release workflow is broken until RTM-38.** RTM-39 removed the Tauri app, but `release.yml`
+> still builds the Tauri MSI, deb and AppImage and reads the version from the deleted
+> `tauri.conf.json`. Do not tag a release before RTM-38 rewrites it. The rest of this section
+> describes the Tauri-based workflow as input for RTM-38.
+>
+> Identity values from the deleted `rtmapp/src-tauri/tauri.conf.json` that the new installers must
+> keep: MSI `upgradeCode` **`e0e423d1-1101-50d4-baee-4a27fa127509`** (must never change once shipped),
+> `productName` "Rusty Todo.txt Manager", `identifier` `com.brcha.rtm`, `mainBinaryName` `rtmapp`,
+> deb package name `rtmapp`, deb `depends` `libwebkit2gtk-4.1-0` and `libgtk-3-0` (Tauri's; the egui
+> app needs its own list). The release version's source of truth moves to the `rtmapp` crate's
+> `Cargo.toml`.
+
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
   (publishes a draft GitHub Release) or manual `workflow_dispatch` (dry run: builds and uploads
   to the Actions run, publishes nothing, no tag required). x64 only — no ARM64, no 32-bit, on
