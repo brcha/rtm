@@ -121,6 +121,10 @@ one that had them.
 - **Assets:** `rtmapp_<v>_x64_en-US.msi`, `rtmcli-<v>-x64.exe`, `rtmapp_<v>_amd64.deb`,
   `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`. Since RTM-38 they are built without Tauri:
   cargo-wix, cargo-deb and appimagetool.
+- **Previous release (RTM-49):** the `version` job also outputs `previous`, the newest published
+  (non-draft, prereleases included) release below the version being built, for the upgrade tests.
+  A manual run can name another one with the `previous` input (`gh workflow run Release --ref <branch>
+  -f previous=v0.1.3`), which also lifts the Windows v0.1.3 skip.
 - **Job structure:** `version` (resolves and verifies the release version once, on `ubuntu-latest`)
   → `windows` and `linux` (build and test in parallel, each `needs: version`, each uploading its own
   `dist/` as a plain build artifact — `dist-windows` / `dist-linux`) → `publish` (`needs: [version,
@@ -167,10 +171,11 @@ one that had them.
   `winresource`, checking `CARGO_CFG_TARGET_OS` (not `#[cfg]`, which tests the host).
 - **Tests in the job:** a silent fresh install (files, both shortcuts, the exe's version information,
   uninstall), then an upgrade from the v0.1.3 Tauri MSI installed into a custom folder (one product
-  afterwards, at the new version, still in that folder). Both read the product from the uninstall
-  entries in the registry: the Windows Installer COM API failed with `DISP_E_TYPEMISMATCH` from
-  PowerShell. **The upgrade test downloads the v0.1.3 release asset, so that release must stay.**
-  More tests: RTM-49.
+  afterwards, at the new version, still in that folder), then an upgrade from the previous release's
+  MSI in the default folder (skipped with a notice when that is v0.1.3, already covered, or when it
+  has no MSI). All read the product from the uninstall entries in the registry: the Windows Installer
+  COM API failed with `DISP_E_TYPEMISMATCH` from PowerShell. **The v0.1.3 upgrade test downloads that
+  release's asset, so that release must stay.**
 
 ### Linux (RTM-8)
 
@@ -188,7 +193,10 @@ one that had them.
   `timeout-minutes`.
 - **Tests in the job:** `apt-get install` of both debs (every `Depends` must resolve on jammy), checks
   that `$auto` added `libc6`, that the desktop entry and all icon sizes are installed and that a portal
-  backend with a file chooser came with `rtmapp`; then the AppImage is extracted and checked.
+  backend with a file chooser came with `rtmapp`; then both are purged, the previous release's debs
+  installed and the new ones over them (`dpkg-query` must report the new version; skipped with a
+  notice when the release lacks a deb). v0.1.3 is not skipped here: it is the Tauri deb, also named
+  `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked.
 - **Apt hardening is reused, not reinvented.** The job pins the `archive.ubuntu.com` mirror and passes
   `Acquire::Retries`/timeout options (see "Linux CI apt hardening (RTM-28)" under Important Notes). It
   installs no build dependencies, but the install test resolves the debs' dependencies from the index.

@@ -4,7 +4,12 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      previous:
+        description: 'Release tag to test the upgrade from (vX.Y.Z), instead of the newest earlier release'
+        required: false
+        default: ''
   # Builds and tests the packages (publishes nothing) when a pull request touches anything that
   # goes into them, so packaging breaks are caught before a tag rather than at release time.
   pull_request:
@@ -33,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      previous: ${{ steps.previous.outputs.previous }}
 
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +83,33 @@ jobs:
           }
 
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+
+      # The release the upgrade tests start from: the newest published (non-draft) release below the
+      # version being built. Prereleases count -- every release so far is one. Empty if there is
+      # none. A manual run can name one with the `previous` input instead.
+      - name: Find the previous release
+        id: previous
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PREVIOUS_INPUT: ${{ inputs.previous }}
+        run: |
+          $pattern = '^v(\d+\.\d+\.\d+)$'
+          if ($env:PREVIOUS_INPUT) {
+            if ($env:PREVIOUS_INPUT -notmatch $pattern) { throw "Input 'previous' must look like v1.2.3, got '$env:PREVIOUS_INPUT'." }
+            $previous = $env:PREVIOUS_INPUT
+            Write-Host "Previous release (from the input): $previous"
+          } else {
+            $releases = gh release list --repo $env:GITHUB_REPOSITORY --exclude-drafts --limit 100 --json tagName | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw "gh release list failed ($LASTEXITCODE)." }
+            $previous = $releases.tagName |
+              Where-Object { $_ -match $pattern -and [version]$Matches[1] -lt [version]$env:VERSION } |
+              Sort-Object { [version]($_ -replace '^v', '') } |
+              Select-Object -Last 1
+            Write-Host "Previous release: $(if ($previous) { $previous } else { 'none' })"
+          }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "previous=$previous"
 
   windows:
     needs: version
@@ -249,6 +282,72 @@ jobs:
 
           Invoke-Msiexec @('/x', $after[0].Code) 'uninstall-upgrade.log'
 
+      # The upgrade users will actually make: the previous release's MSI in the default folder, then
+      # the new one over it. Skipped for v0.1.3, which the step above covers, unless a manual run
+      # names it with the `previous` input.
+      - name: Verify upgrade from the previous release
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+          PREVIOUS_INPUT: ${{ inputs.previous }}
+        run: |
+          if (-not $env:PREVIOUS) { Write-Host '::notice::No previous release: upgrade test skipped.'; exit 0 }
+          if ($env:PREVIOUS -eq 'v0.1.3' -and -not $env:PREVIOUS_INPUT) {
+            Write-Host '::notice::The previous release is v0.1.3, covered by the Tauri MSI upgrade step: skipped.'
+            exit 0
+          }
+          $oldVersion = $env:PREVIOUS -replace '^v', ''
+          $asset = "rtmapp_${oldVersion}_x64_en-US.msi"
+          $assets = (gh release view $env:PREVIOUS --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json).assets.name
+          if ($LASTEXITCODE -ne 0) { throw "gh release view $env:PREVIOUS failed ($LASTEXITCODE)." }
+          if ($assets -notcontains $asset) { Write-Host "::notice::$env:PREVIOUS has no $asset`: upgrade test skipped."; exit 0 }
+
+          $exe = Join-Path $env:ProgramFiles 'Rusty Todo.txt Manager\rtmapp.exe'
+
+          function Invoke-Msiexec([string[]] $arguments, [string] $log) {
+            $p = Start-Process msiexec.exe -ArgumentList ($arguments + @('/qn', '/norestart', '/l*v', $log)) -Wait -PassThru
+            if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+              Get-Content $log -Tail 60
+              throw "msiexec $($arguments -join ' ') failed with exit code $($p.ExitCode)."
+            }
+          }
+          # Installed products of that name, from the uninstall entries Windows Installer writes.
+          function Get-Installed {
+            @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -eq 'Rusty Todo.txt Manager' } |
+              ForEach-Object { [pscustomobject]@{ Code = [string]$_.PSChildName; Version = [string]$_.DisplayVersion } })
+          }
+
+          foreach ($leftover in Get-Installed) { Invoke-Msiexec @('/x', $leftover.Code) 'uninstall-leftover-previous.log' }
+          # A folder remembered from the step above would send this install there instead of the default.
+          $key = 'HKCU:\Software\brcha\Rusty Todo.txt Manager'
+          $remembered = (Get-ItemProperty $key -Name InstallDir -ErrorAction SilentlyContinue).InstallDir
+          if ($remembered) {
+            Write-Host "Removing the remembered install folder '$remembered'."
+            Remove-ItemProperty $key -Name InstallDir
+          }
+
+          gh release download $env:PREVIOUS --repo $env:GITHUB_REPOSITORY --pattern $asset --dir previous-msi
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)." }
+
+          Invoke-Msiexec @('/i', (Resolve-Path "previous-msi/$asset").Path) 'install-previous.log'
+          $before = Get-Installed
+          Write-Host "Installed ${env:PREVIOUS}: $($before | Out-String)"
+          if ($before.Count -ne 1) { throw "Expected one product after installing $env:PREVIOUS, found $($before.Count)." }
+
+          Invoke-Msiexec @('/i', (Resolve-Path "dist/rtmapp_${env:VERSION}_x64_en-US.msi").Path) 'install-upgrade-previous.log'
+          $after = Get-Installed
+          Write-Host "After the upgrade: $($after | Out-String)"
+          if ($after.Count -ne 1) { throw "Expected one product after the upgrade, found $($after.Count): the new MSI installed beside the old one." }
+          if ($after[0].Code -eq $before[0].Code) { throw "The product code did not change: the new MSI did not replace $env:PREVIOUS." }
+          if ($after[0].Version -ne $env:VERSION) { throw "Installed version after the upgrade is '$($after[0].Version)', expected '$env:VERSION'." }
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing after the upgrade: $exe" }
+
+          Invoke-Msiexec @('/x', $after[0].Code) 'uninstall-upgrade-previous.log'
+
       - name: Upload MSI logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -394,6 +493,51 @@ jobs:
             echo "::error::No installed XDG portal backend implements the file chooser."
             exit 1
           fi
+
+      # The upgrade users will actually make: the previous release's debs, then the new ones over
+      # them. Runs after the fresh install above, which proves the Depends resolve from nothing (an
+      # upgrade could mask a missing one). Unlike on Windows, v0.1.3 is not skipped: it is the Tauri
+      # deb (also named rtmapp) and nothing else tests that upgrade. Its webkit2gtk dependencies make
+      # this the slowest apt step while v0.1.3 is the previous release.
+      - name: Verify upgrade from the previous release
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIOUS" ]; then
+            echo "::notice::No previous release: upgrade test skipped."
+            exit 0
+          fi
+          old="${PREVIOUS#v}"
+          assets=$(gh release view "$PREVIOUS" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          for asset in "rtmapp_${old}_amd64.deb" "rtmcli_${old}_amd64.deb"; do
+            if ! grep -qxF "$asset" <<< "$assets"; then
+              echo "::notice::$PREVIOUS has no $asset: upgrade test skipped."
+              exit 0
+            fi
+          done
+
+          apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          sudo apt-get purge -y rtmapp rtmcli
+          gh release download "$PREVIOUS" --repo "$GITHUB_REPOSITORY" --pattern '*_amd64.deb' --dir previous-debs
+          sudo apt-get install -y "${apt_opts[@]}" \
+            "./previous-debs/rtmapp_${old}_amd64.deb" "./previous-debs/rtmcli_${old}_amd64.deb"
+          sudo apt-get install -y "${apt_opts[@]}" \
+            "./dist/rtmapp_${VERSION}_amd64.deb" "./dist/rtmcli_${VERSION}_amd64.deb"
+
+          for pkg in rtmapp rtmcli; do
+            installed=$(dpkg-query -W -f='${Version}' "$pkg")
+            echo "$pkg after the upgrade: $installed"
+            if [ "$installed" != "$VERSION" ]; then
+              echo "::error::$pkg is at '$installed' after upgrading from $PREVIOUS, expected '$VERSION'."
+              exit 1
+            fi
+          done
 
       # A launch requires a display server and is out of scope here. Extraction proves the
       # AppImage is well-formed rather than a truncated or corrupt build.
