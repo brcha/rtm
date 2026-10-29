@@ -11,13 +11,20 @@ mod theme;
 
 use eframe::egui;
 
+/// The title bar and taskbar icon (Windows, X11). Wayland compositors take the icon from the desktop
+/// entry matched by the app id instead.
+const ICON_PNG: &[u8] = include_bytes!("../assets/icons/128x128@2x.png");
+
 fn main() -> eframe::Result {
     // rfd reports file dialog failures (no portal, no zenity) only through `log`.
     env_logger::init();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Rusty Todo.txt Manager")
-            .with_inner_size([900.0, 650.0]),
+            .with_inner_size([900.0, 650.0])
+            .with_icon(
+                eframe::icon_data::from_png_bytes(ICON_PNG).expect("embedded icon is a valid PNG"),
+            ),
         centered: true,
         ..Default::default()
     };
@@ -41,4 +48,15 @@ fn theme_override(ctx: &egui::Context) {
         _ => return,
     };
     ctx.set_theme(theme);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_icon_decodes() {
+        let icon = eframe::icon_data::from_png_bytes(ICON_PNG).unwrap();
+        assert_eq!((icon.width, icon.height), (256, 256));
+    }
 }

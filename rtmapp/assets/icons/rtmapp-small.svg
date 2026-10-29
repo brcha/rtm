@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- rtmapp.svg simplified for 16 and 24 px: no text lines, a larger tick. -->
+  <rect width="512" height="512" rx="112" fill="#ce422b"/>
+  <path d="M136 48 H320 L408 136 V432 Q408 464 376 464 H136 Q104 464 104 432 V80 Q104 48 136 48 Z" fill="#ffffff"/>
+  <path d="M320 48 V112 Q320 136 344 136 H408 Z" fill="#d0d7de"/>
+  <rect x="160" y="184" width="192" height="192" rx="40" fill="#28a745"/>
+  <path d="M204 284 L243 324 L310 236" fill="none" stroke="#ffffff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

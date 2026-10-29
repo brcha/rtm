@@ -73,10 +73,13 @@
             install -Dm644 $src/rtmapp/assets/rtmapp.desktop $out/share/applications/rtmapp.desktop
             icons=$src/rtmapp/assets/icons
             hicolor=$out/share/icons/hicolor
+            install -Dm644 $icons/16x16.png      $hicolor/16x16/apps/rtmapp.png
+            install -Dm644 $icons/24x24.png      $hicolor/24x24/apps/rtmapp.png
             install -Dm644 $icons/32x32.png      $hicolor/32x32/apps/rtmapp.png
             install -Dm644 $icons/128x128.png    $hicolor/128x128/apps/rtmapp.png
             install -Dm644 $icons/128x128@2x.png $hicolor/256x256/apps/rtmapp.png
             install -Dm644 $icons/icon.png       $hicolor/512x512/apps/rtmapp.png
+            install -Dm644 $icons/rtmapp.svg     $hicolor/scalable/apps/rtmapp.svg
           '';
           # After the rpath shrinking in fixupPhase, which would drop these unused-at-link entries.
           postFixup = ''
