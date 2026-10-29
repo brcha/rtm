@@ -76,7 +76,7 @@ impl App {
             .map(|e| format!("Could not save the config: {e}"));
     }
 
-    /// The four view settings. A change is saved at once, as in `rtmapp`.
+    /// The four view settings. A change is saved at once, as in the Tauri app.
     fn filters(&mut self, ui: &mut Ui, p: &Palette) {
         let mut changed = false;
         ui.scope(|ui| {
@@ -139,8 +139,8 @@ impl App {
         });
     }
 
-    /// Completes or uncompletes the item at file index `index` and saves at once, as `rtmapp` does,
-    /// including its re-read of the file after a successful completion.
+    /// Completes or uncompletes the item at file index `index` and saves at once, as the Tauri app
+    /// did, including its re-read of the file after a successful completion.
     fn toggle(&mut self, index: usize) {
         let Some(library) = &mut self.library else {
             return;
@@ -159,8 +159,8 @@ impl App {
         self.error = result.err().map(|e| format!("{}: {e}", library.file_name));
     }
 
-    /// Parses the quick-add text, appends the item and saves at once, as `rtmapp` does. The input is
-    /// cleared only when the item was saved; blank input does nothing.
+    /// Parses the quick-add text, appends the item and saves at once, as the Tauri app did. The
+    /// input is cleared only when the item was saved; blank input does nothing.
     fn add_item(&mut self) {
         let text = self.new_item.trim();
         if text.is_empty() {
@@ -217,8 +217,8 @@ impl App {
         }
     }
 
-    /// Applies the edit dialog to its item and saves at once, as `rtmapp`'s `update_item` does. An
-    /// invalid field keeps the dialog open with the reason; nothing is written.
+    /// Applies the edit dialog to its item and saves at once, as the Tauri app's `update_item` did.
+    /// An invalid field keeps the dialog open with the reason; nothing is written.
     fn save_edit(&mut self) {
         let (Some(form), Some(library)) = (&mut self.editing, &mut self.library) else {
             self.editing = None;
@@ -264,7 +264,7 @@ impl App {
                 let today = chrono::Local::now().date_naive();
                 let visible = list::visible(&library.items, &self.config, today);
                 if visible.is_empty() {
-                    // Also when every item is filtered out, as in `rtmapp`.
+                    // Also when every item is filtered out, as in the Tauri app.
                     empty_state(ui, p, "No items found.");
                     None
                 } else {
@@ -322,7 +322,7 @@ impl eframe::App for App {
     }
 }
 
-/// Loads a todo.txt file. The path is canonicalized first, as `rtmapp` does; `path` is the
+/// Loads a todo.txt file. The path is canonicalized first, as the Tauri app did; `path` is the
 /// `PathBuf` from the file dialog, with no string or URI conversion in between.
 fn load_library(path: &Path) -> Result<TodoLibrary, String> {
     let canonical = path
@@ -364,7 +364,7 @@ mod tests {
 
     /// A fresh directory whose name contains spaces, under the system temp dir.
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rtmgui test {} {name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("rtmapp test {} {name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         dir
@@ -440,7 +440,7 @@ mod tests {
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert!(lines[0].starts_with("x ") && lines[0].contains("due:2026-11-01"));
         assert!(!lines[1].starts_with("x ") && lines[1].contains("due:2026-11-08"));
-        // Re-read after completing, as in rtmapp.
+        // Re-read after completing, as in the Tauri app.
         assert_eq!(app.library.as_ref().unwrap().item_count(), 2);
         assert!(!dir.join("config.toml").exists());
         let _ = std::fs::remove_dir_all(dir);

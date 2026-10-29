@@ -15,7 +15,7 @@ in
 pkgs.mkShell {
   # nativeBuildInputs is usually what you need -- tools you need to run
   nativeBuildInputs = with pkgs; [
-    # X11, Wayland and graphics (loaded by rtmgui with dlopen)
+    # X11, Wayland and graphics (loaded by rtmapp with dlopen)
     libxcb
     libx11
     libxcursor
@@ -46,7 +46,7 @@ pkgs.mkShell {
   # A rustc wrapper such as sccache from ~/.cargo/config.toml fails inside the shell.
   RUSTC_WRAPPER = "";
 
-  # rtmgui loads fontconfig and the Vulkan loader with dlopen as well.
+  # rtmapp loads fontconfig and the Vulkan loader with dlopen as well.
   shellHook = ''
     export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${makeLibraryPath (with pkgs; [ libxcb libx11 libxcursor libxrandr libxi libGL libxkbcommon wayland fontconfig vulkan-loader ])}
   '';

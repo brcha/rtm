@@ -1,7 +1,7 @@
 //! The config file in the OS config directory (`rtm/config.toml`).
 //!
-//! The schema is shared with the Tauri `rtmapp` until it is replaced (RTM-39): both apps read and
-//! write the same file, so field names and defaults must stay identical.
+//! The schema is the one the former Tauri app wrote (replaced in RTM-39), so field names and
+//! defaults must stay as they are: existing users' settings live in this file.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -48,7 +48,7 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         std::env::temp_dir()
-            .join(format!("rtmgui-test-{}-{name}", std::process::id()))
+            .join(format!("rtmapp-test-{}-{name}", std::process::id()))
             .join("rtm")
             .join("config.toml")
     }

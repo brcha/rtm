@@ -14,17 +14,13 @@
 # fails if the tag does not match what is committed. This script makes that true.
 #
 # Rewrites the `version` field in:
-#   - rtmapp/src-tauri/tauri.conf.json  (drives MSI ProductVersion and exe metadata)
-#   - rtmapp/src-tauri/Cargo.toml
+#   - rtmapp/Cargo.toml   (the release version's source of truth; drives the installers)
 #   - rtmcli/Cargo.toml
-#   - rtmgui/Cargo.toml
 #   - todotxt/Cargo.toml
-#   - rtmapp/package.json               (cosmetic, kept in sync for consistency)
 #
-# In a Cargo.toml only the `version` key inside the `[package]` table is touched:
-# todotxt/Cargo.toml also has a `[dependencies.uuid]` table with its own `version` line.
-# In the JSON files only the top-level (2-space-indented) key is touched. Files are patched
-# line by line rather than parsed, so hand-maintained formatting is left alone.
+# Only the `version` key inside the `[package]` table is touched: todotxt/Cargo.toml also has a
+# `[dependencies.uuid]` table with its own `version` line. Files are patched line by line rather
+# than parsed, so hand-maintained formatting is left alone.
 #
 # A target whose version key cannot be found is an error, never a silent skip: a stale version
 # in a release would break MSI upgrade detection. No git operations; running it twice with the
@@ -61,21 +57,15 @@ check_max major "$major" 255
 check_max minor "$minor" 255
 check_max patch "$patch" 65535
 
-# kind is "toml" (the `version` of [package]) or "json" (the top-level "version").
-# mode "get" prints the current line; mode "apply" prints the patched file. Only the matched
-# text is replaced, so line endings stay as they were. Exits 1 when the key is not found.
+# Patches the `version` of the [package] table. mode "get" prints the current line; mode "apply"
+# prints the patched file. Only the matched text is replaced, so line endings stay as they were.
+# Exits 1 when the key is not found.
 patch_awk='
 BEGIN {
-    if (kind == "toml") {
-        re = "^version = \"[^\"]*\""
-        new = "version = \"" v "\""
-    } else {
-        re = "^  \"version\": \"[^\"]*\""
-        new = "  \"version\": \"" v "\""
-    }
-    in_scope = (kind != "toml")
+    re = "^version = \"[^\"]*\""
+    new = "version = \"" v "\""
 }
-kind == "toml" && /^\[/ { in_scope = ($0 ~ /^\[package\]/) }
+/^\[/ { in_scope = ($0 ~ /^\[package\]/) }
 in_scope && !found && match($0, re) {
     found = 1
     old = substr($0, RSTART, RLENGTH)
@@ -88,37 +78,32 @@ END {
 }'
 
 run_awk() {
-    awk -v kind="$1" -v v="$normalised" -v mode="$2" "$patch_awk" "$3"
+    awk -v v="$normalised" -v mode="$1" "$patch_awk" "$2"
 }
 
 targets=(
-    "json rtmapp/src-tauri/tauri.conf.json"
-    "toml rtmapp/src-tauri/Cargo.toml"
-    "toml rtmcli/Cargo.toml"
-    "toml rtmgui/Cargo.toml"
-    "toml todotxt/Cargo.toml"
-    "json rtmapp/package.json"
+    rtmapp/Cargo.toml
+    rtmcli/Cargo.toml
+    todotxt/Cargo.toml
 )
 
 echo "Setting version to $normalised"
 
 # Check every target before writing any, so a failure leaves the tree untouched.
-for target in "${targets[@]}"; do
-    read -r kind rel <<<"$target"
+for rel in "${targets[@]}"; do
     path=$root/$rel
     [[ -f $path ]] || die "version target not found: '$path'"
-    run_awk "$kind" get "$path" >/dev/null ||
+    run_awk get "$path" >/dev/null ||
         die "version key not found in '$path'; the file may have been reformatted or the key moved"
 done
 
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 
-for target in "${targets[@]}"; do
-    read -r kind rel <<<"$target"
+for rel in "${targets[@]}"; do
     path=$root/$rel
-    old=$(run_awk "$kind" get "$path")
-    run_awk "$kind" apply "$path" >"$tmp"
+    old=$(run_awk get "$path")
+    run_awk apply "$path" >"$tmp"
     cat "$tmp" >"$path" # not mv, so the file's mode and ownership are kept
     if [[ $old == *"\"$normalised\""* ]]; then
         echo "  $path : already at $normalised (no change)"
