@@ -3,7 +3,8 @@
 //! `update_item`, with deliberate differences: the priority can be any letter A to Z, invalid dates
 //! or recurrence are refused instead of being silently dropped, tag names with whitespace are
 //! refused instead of being written as typed, and a typed `+` or `@` in front of a tag name is
-//! dropped. The date fields have a calendar popup (`calendar`).
+//! dropped. The date fields have a calendar popup (`calendar`). A trash button at the left of the
+//! button row deletes the item and its sub-items after an inline confirmation.
 
 use chrono::NaiveDate;
 use eframe::egui::{self, Align, Color32, Frame, Key, Layout, Modal, RichText, Stroke, Ui};
@@ -27,11 +28,17 @@ pub struct EditForm {
     pub contexts: String,
     /// Why the last Save was refused; shown above the buttons.
     pub error: Option<String>,
+    /// While the delete confirmation is shown: how many sub-items go with the item.
+    pub confirm_delete: Option<usize>,
 }
 
 pub enum Outcome {
     Save,
     Cancel,
+    /// The trash button: ask before deleting.
+    AskDelete,
+    /// Delete confirmed.
+    Delete,
 }
 
 impl EditForm {
@@ -52,6 +59,7 @@ impl EditForm {
             projects: join(item.projects.iter().map(|p| p.name.as_str())),
             contexts: join(item.contexts.iter().map(|c| c.name.as_str())),
             error: None,
+            confirm_delete: None,
         }
     }
 
@@ -149,8 +157,18 @@ fn priority_label(priority: Option<u8>) -> String {
     }
 }
 
-/// The modal. Returns `Save` on the Save button or Enter in a field, and `Cancel` on the Cancel
-/// button, Escape or a click outside the dialog (the Tauri app closed only on its buttons).
+/// The delete confirmation, naming the sub-items that go with the item.
+fn delete_question(sub_items: usize) -> String {
+    match sub_items {
+        0 => "Delete this item?".to_owned(),
+        1 => "Delete this item and 1 sub-item?".to_owned(),
+        n => format!("Delete this item and {n} sub-items?"),
+    }
+}
+
+/// The modal. Returns `Save` on the Save button or Enter in a field, `Cancel` on the Cancel
+/// button, Escape or a click outside the dialog (the Tauri app closed only on its buttons),
+/// `AskDelete` on the trash button and `Delete` once the deletion is confirmed.
 pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     // CSS: 500 px wide with 24 px padding, 8 px corners and a soft shadow; dark adds a border.
     let frame = Frame::new()
@@ -232,6 +250,9 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     if let Some(error) = &form.error {
         ui.label(RichText::new(error).color(p.due));
     }
+    if let Some(sub_items) = form.confirm_delete {
+        ui.label(RichText::new(delete_question(sub_items)).color(p.text));
+    }
     ui.add_space(4.0);
     let mut outcome = None;
     // Top-aligned: a centred cross axis would stretch the row over all the height below it.
@@ -243,6 +264,22 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
         if theme::secondary_button(ui, "Cancel").clicked() {
             outcome = Some(Outcome::Cancel);
         }
+        // The rest of the row, from the far left: the trash button, or Delete and Keep.
+        ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+            if form.confirm_delete.is_some() {
+                // The question line shifts Delete under where the trash button was, so the second
+                // click of a double-click on the trash button must not confirm.
+                let delete = theme::danger_button(ui, "Delete");
+                if delete.clicked() && !delete.double_clicked() {
+                    outcome = Some(Outcome::Delete);
+                }
+                if theme::secondary_button(ui, "Keep").clicked() {
+                    form.confirm_delete = None;
+                }
+            } else if theme::trash_button(ui, p).clicked() {
+                outcome = Some(Outcome::AskDelete);
+            }
+        });
     });
     if submit {
         outcome = Some(Outcome::Save);
@@ -420,6 +457,13 @@ mod tests {
             assert!(error.starts_with(message), "{error}");
             assert_eq!(target, item(FULL), "{message}");
         }
+    }
+
+    #[test]
+    fn delete_questions() {
+        assert_eq!(delete_question(0), "Delete this item?");
+        assert_eq!(delete_question(1), "Delete this item and 1 sub-item?");
+        assert_eq!(delete_question(2), "Delete this item and 2 sub-items?");
     }
 
     #[test]
