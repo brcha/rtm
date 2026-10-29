@@ -139,7 +139,7 @@ jobs:
           Write-Host 'Staged artifacts:'
           Get-ChildItem dist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
 
-      # The last Tauri MSI, for the table dump and the upgrade check below.
+      # The last Tauri MSI, for the decompile and the upgrade check below.
       - name: Download the v0.1.3 Tauri MSI
         shell: pwsh
         env:
@@ -149,38 +149,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)." }
 
       # Dry runs only, while rtmapp/wix/main.wxs is being matched to the Tauri MSI (RTM-38):
-      # prints the tables whose values main.wxs had to guess. Remove once they are settled.
-      - name: Dump the Tauri MSI tables
+      # decompiles it with WiX's dark.exe and prints the source. Remove once settled.
+      - name: Decompile the Tauri MSI
         if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         shell: pwsh
         run: |
-          $installer = New-Object -ComObject WindowsInstaller.Installer
-          $path = (Resolve-Path 'old-msi/rtmapp_0.1.3_x64_en-US.msi').Path
-          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($path, 0))
-          $tables = 'Property', 'Upgrade', 'Directory', 'Feature', 'FeatureComponents', 'Component',
-                    'Shortcut', 'MsiShortcutProperty', 'Registry', 'AppSearch', 'RegLocator',
-                    'CustomAction', 'InstallExecuteSequence', 'Dialog'
-          foreach ($table in $tables) {
-            Write-Host "=== $table"
-            try {
-              $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @("SELECT * FROM ``$table``"))
-              $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
-              $columns = $view.GetType().InvokeMember('ColumnInfo', 'GetProperty', $null, $view, @(0))
-              $count = $columns.GetType().InvokeMember('FieldCount', 'GetProperty', $null, $columns, $null)
-              $names = 1..$count | ForEach-Object { $columns.GetType().InvokeMember('StringData', 'GetProperty', $null, $columns, @($_)) }
-              Write-Host ($names -join ' | ')
-              while ($true) {
-                $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-                if ($null -eq $record) { break }
-                $values = 1..$count | ForEach-Object { $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @($_)) }
-                Write-Host ($values -join ' | ')
-              }
-              $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null) | Out-Null
-            } catch {
-              Write-Host "(not present: $($_.Exception.InnerException.Message))"
-            }
-          }
+          & (Join-Path $env:WIX 'bin\dark.exe') -nologo 'old-msi/rtmapp_0.1.3_x64_en-US.msi' -o 'tauri-0.1.3.wxs'
+          if ($LASTEXITCODE -ne 0) { throw "dark.exe failed ($LASTEXITCODE)." }
+          Get-Content 'tauri-0.1.3.wxs'
 
       # Building an MSI is not evidence it installs. A fresh, silent install of the new MSI (both
       # shortcut features are on by default), its files and the exe's embedded version
@@ -190,7 +167,6 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          $upgradeCode = '{E0E423D1-1101-50D4-BAEE-4A27FA127509}'
           $installDir = Join-Path $env:ProgramFiles 'Rusty Todo.txt Manager'
           $exe = Join-Path $installDir 'rtmapp.exe'
           $startMenu = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Rusty Todo.txt Manager.lnk'
@@ -203,17 +179,17 @@ jobs:
               throw "msiexec $($arguments -join ' ') failed with exit code $($p.ExitCode)."
             }
           }
-          function Get-RelatedProducts {
-            $installer = New-Object -ComObject WindowsInstaller.Installer
-            @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @($upgradeCode)))
+          # Installed products of that name, from the uninstall entries Windows Installer writes.
+          function Get-Installed {
+            @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -eq 'Rusty Todo.txt Manager' } |
+              ForEach-Object { [pscustomobject]@{ Code = [string]$_.PSChildName; Version = [string]$_.DisplayVersion } })
           }
 
           Invoke-Msiexec @('/i', (Resolve-Path "dist/rtmapp_${env:VERSION}_x64_en-US.msi").Path) 'install-fresh.log'
-          $products = Get-RelatedProducts
+          $products = Get-Installed
           if ($products.Count -ne 1) { throw "Expected one product after installing, found $($products.Count)." }
-          $installer = New-Object -ComObject WindowsInstaller.Installer
-          $installed = $installer.GetType().InvokeMember('ProductInfo', 'GetProperty', $null, $installer, @($products[0], 'VersionString'))
-          if ($installed -ne $env:VERSION) { throw "Installed version is '$installed', expected '$env:VERSION'." }
+          if ($products[0].Version -ne $env:VERSION) { throw "Installed version is '$($products[0].Version)', expected '$env:VERSION'." }
 
           foreach ($f in @($exe, (Join-Path $installDir 'LICENSE.txt'), (Join-Path $installDir 'Inter-LICENSE.txt'), $startMenu, $desktop)) {
             if (-not (Test-Path -LiteralPath $f)) { throw "Missing after install: $f" }
@@ -222,8 +198,8 @@ jobs:
           Write-Host "rtmapp.exe: ProductName '$($info.ProductName)', FileDescription '$($info.FileDescription)', ProductVersion '$($info.ProductVersion)'"
           if ($info.ProductName -ne 'Rusty Todo.txt Manager') { throw 'rtmapp.exe has no embedded version information (build.rs).' }
 
-          Invoke-Msiexec @('/x', $products[0]) 'uninstall-fresh.log'
-          if ((Get-RelatedProducts).Count -ne 0) { throw 'The product is still registered after uninstalling.' }
+          Invoke-Msiexec @('/x', $products[0].Code) 'uninstall-fresh.log'
+          if ((Get-Installed).Count -ne 0) { throw 'The product is still registered after uninstalling.' }
           if (Test-Path -LiteralPath $exe) { throw "Still present after uninstalling: $exe" }
 
       # The new MSI must replace a Tauri install instead of sitting beside it: installs v0.1.3,
@@ -235,7 +211,6 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          $upgradeCode = '{E0E423D1-1101-50D4-BAEE-4A27FA127509}'
           $exe = Join-Path $env:ProgramFiles 'Rusty Todo.txt Manager\rtmapp.exe'
 
           function Invoke-Msiexec([string[]] $arguments, [string] $log) {
@@ -245,37 +220,39 @@ jobs:
               throw "msiexec $($arguments -join ' ') failed with exit code $($p.ExitCode)."
             }
           }
-          function Get-RelatedProducts {
-            $installer = New-Object -ComObject WindowsInstaller.Installer
-            @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @($upgradeCode)))
+          # Installed products of that name, from the uninstall entries Windows Installer writes.
+          function Get-Installed {
+            @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -eq 'Rusty Todo.txt Manager' } |
+              ForEach-Object { [pscustomobject]@{ Code = [string]$_.PSChildName; Version = [string]$_.DisplayVersion } })
           }
 
           # A failed fresh-install step may have left its product behind.
-          foreach ($leftover in Get-RelatedProducts) { Invoke-Msiexec @('/x', $leftover) 'uninstall-leftover.log' }
+          foreach ($leftover in Get-Installed) { Invoke-Msiexec @('/x', $leftover.Code) 'uninstall-leftover.log' }
 
           Invoke-Msiexec @('/i', (Resolve-Path 'old-msi/rtmapp_0.1.3_x64_en-US.msi').Path) 'install-old.log'
-          $before = Get-RelatedProducts
-          Write-Host "Installed v0.1.3: $($before -join ', ')"
+          $before = Get-Installed
+          Write-Host "Installed v0.1.3: $($before | Out-String)"
           if ($before.Count -ne 1) { throw "Expected one product after installing v0.1.3, found $($before.Count)." }
 
           Invoke-Msiexec @('/i', (Resolve-Path "dist/rtmapp_${env:VERSION}_x64_en-US.msi").Path) 'install-upgrade.log'
-          $after = Get-RelatedProducts
-          Write-Host "After the upgrade: $($after -join ', ')"
+          $after = Get-Installed
+          Write-Host "After the upgrade: $($after | Out-String)"
           if ($after.Count -ne 1) { throw "Expected one product after the upgrade, found $($after.Count): the new MSI installed beside the old one." }
-          if ($after[0] -eq $before[0]) { throw 'The product code did not change: the new MSI did not replace v0.1.3.' }
-          $installer = New-Object -ComObject WindowsInstaller.Installer
-          $installed = $installer.GetType().InvokeMember('ProductInfo', 'GetProperty', $null, $installer, @($after[0], 'VersionString'))
-          if ($installed -ne $env:VERSION) { throw "Installed version after the upgrade is '$installed', expected '$env:VERSION'." }
+          if ($after[0].Code -eq $before[0].Code) { throw 'The product code did not change: the new MSI did not replace v0.1.3.' }
+          if ($after[0].Version -ne $env:VERSION) { throw "Installed version after the upgrade is '$($after[0].Version)', expected '$env:VERSION'." }
           if (-not (Test-Path -LiteralPath $exe)) { throw "Missing after the upgrade: $exe" }
 
-          Invoke-Msiexec @('/x', $after[0]) 'uninstall-upgrade.log'
+          Invoke-Msiexec @('/x', $after[0].Code) 'uninstall-upgrade.log'
 
       - name: Upload MSI logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: msi-logs
-          path: '*.log'
+          path: |
+            *.log
+            tauri-0.1.3.wxs
           if-no-files-found: ignore
 
       # Handed off to the shared `publish` job rather than uploaded/released here directly.
