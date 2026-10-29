@@ -11,8 +11,8 @@ that refer to them name commit `5076649`, the last commit that had them.
 Done: window shell in the Inter-based theme, config loading, "Load File" through a native dialog and
 the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
 complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
-package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46). Still to come: installers
-(RTM-38).
+package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); the MSI, deb and
+AppImage (RTM-38). Still to come: a macOS bundle (RTM-11).
 
 ---
 
@@ -20,11 +20,13 @@ package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46). S
 
 ```
 rtmapp/
-├── Cargo.toml              ← Member of the root workspace
+├── Cargo.toml              ← Member of the root workspace; also the deb description (cargo-deb)
+├── build.rs                ← Embeds the icon and version information in rtmapp.exe (Windows targets)
+├── wix/main.wxs            ← The MSI (cargo-wix, WiX v3), see Packaging
 ├── assets/
 │   ├── fonts/              ← Inter Regular and SemiBold (OTF) and the licence
 │   ├── icons/              ← App icon: SVG masters and the files generated from them (see App icon)
-│   └── rtmapp.desktop      ← XDG desktop entry (installed by the Nix package)
+│   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
     ├── app.rs              ← App state, panels, Load File, filters, quick-add, complete/uncomplete,
@@ -130,7 +132,8 @@ Inter 4.0 (`Inter-Regular.otf`, `Inter-SemiBold.otf`) is embedded with `include_
 official `Inter-4.0.zip` release of github.com/rsms/inter, with `assets/fonts/Inter-LICENSE.txt` (SIL
 Open Font License 1.1) next to it. The licence requires its text and the copyright notice to accompany
 every redistributed copy, so **installers and packages must ship `Inter-LICENSE.txt`**. The Nix package
-installs it under `share/licenses/rtmapp`; the installers are RTM-38.
+installs it under `share/licenses/rtmapp`, the deb and the AppImage under `usr/share/doc/rtmapp/`, and
+the MSI next to `rtmapp.exe`.
 
 ---
 
@@ -160,9 +163,10 @@ master as `scalable/apps/rtmapp.svg`; the 16 and 24 px PNGs keep panels from sca
 
 The window icon (title bar and taskbar on Windows and X11) is `128x128@2x.png`, embedded in `main.rs`;
 a test checks that it decodes. Wayland compositors take the icon from the desktop entry instead, and
-macOS from the bundle's `icon.icns` (RTM-38). Windows Explorer shows `rtmapp.exe` without an icon until
-`icon.ico` is embedded in the binary as a Windows resource at build time (RTM-38); an installer can only
-set the shortcut's icon.
+macOS from a bundle's `icon.icns` (RTM-11). Explorer and the taskbar take `rtmapp.exe`'s icon from its
+resources: `build.rs` embeds `icon.ico` there (an installer can only set its shortcuts' icon). The deb
+and the AppImage install the same icons and desktop entry as the Nix package; the MSI uses `icon.ico`
+for its shortcuts and the Add/Remove Programs entry.
 
 ---
 
@@ -200,11 +204,58 @@ The binary links no native libraries beyond glibc; it loads Wayland, xkbcommon, 
 fontconfig with `dlopen`. The dev shells put them on `LD_LIBRARY_PATH`, and the Nix package on the
 binary's rpath (`eguiDeps` in `flake.nix` and `default.nix`, see the root `AGENTS.md`).
 
+What it needs at run time (RTM-38); the deb's `depends` and `suggests` in `Cargo.toml` follow this. The
+Wayland entries were found by starting it on Wayland with reduced `LD_LIBRARY_PATH` sets and checking
+that it draws; the X11 list is what a full run under XWayland loaded, not reduced further:
+
+- **Wayland (required):** `libwayland-client.so.0` (without it winit fails with `NoWaylandLib`) and
+  `libxkbcommon.so.0` (winit panics with `XKBNotFound`).
+- **GPU (one of):** `libvulkan.so.1`, or `libEGL.so.1` plus `libwayland-egl.so.1` (without the latter
+  the GL path panics). With neither, wgpu fails to create a surface. The driver itself comes with the
+  system (Mesa).
+- **Fonts (required by the deb):** `libfontconfig.so.1`. The UI starts and draws with the bundled Inter
+  without it, but has no fallback for characters Inter lacks (CJK, emoji, many symbols).
+- **Optional (Suggests):** the X11 set, used only without `WAYLAND_DISPLAY`: `libX11.so.6`,
+  `libX11-xcb.so.1`, `libXcursor.so.1`, `libXi.so.6`, `libxkbcommon-x11.so.0`. GNOME is Wayland-only
+  from Ubuntu 25.10 and Debian forky; X11 matters mainly for older or non-GNOME X sessions.
+- **File dialog:** `rfd` talks to the XDG desktop portal over D-Bus (no library), so the deb depends on
+  `xdg-desktop-portal` and a backend that implements `org.freedesktop.impl.portal.FileChooser`: gtk,
+  gnome or kde on jammy. `xdg-desktop-portal-wlr` (and Hyprland's portal) has none, so wlroots desktops
+  need gtk beside it. The dialog was not opened in those reduced runs.
+
 To try it without touching your own config, point `XDG_CONFIG_HOME` at a scratch directory that has an
 `rtm/config.toml` with a `file_name` line.
 
 `RTMAPP_THEME=light` or `RTMAPP_THEME=dark` forces a theme instead of following the system, for
 screenshots of both themes; any other value is ignored.
+
+---
+
+## Packaging
+
+Built by the Release workflow (root `AGENTS.md`, "Release Process"). The deb and the AppImage install
+the binary, the desktop entry, the hicolor icons and both licences; the MSI installs `rtmapp.exe`
+(icon embedded), both licences and the Start Menu and desktop shortcuts.
+
+- **deb:** `[package.metadata.deb]` in `Cargo.toml` (cargo-deb). `depends` and `suggests` follow the
+  run-time list under Build & Run.
+- **AppImage:** `scripts/build-appimage.sh <binary> <version> <output>` (also runs locally; set
+  `APPIMAGE_TOOLS_DIR` to keep its downloads).
+- **MSI:** `wix/main.wxs`, built with `cargo wix -p rtmapp --no-build` on Windows. It replaces the Tauri
+  MSI of versions up to 0.1.3, so it keeps what that MSI had where it matters. The Tauri MSI, decompiled
+  with WiX's `dark.exe` during RTM-38, had:
+  - UpgradeCode `E0E423D1-1101-50D4-BAEE-4A27FA127509`, per-machine, `MajorUpgrade` allowing
+    downgrades — **kept** (the UpgradeCode must never change);
+  - Manufacturer `brcha` and the HKCU key `Software\brcha\Rusty Todo.txt Manager`, whose `InstallDir`
+    value is read back by a `RegistrySearch`, so an upgrade keeps a custom install folder — **kept**
+    (the Release workflow tests it);
+  - install folder `Program Files\Rusty Todo.txt Manager` with the exe at its root, desktop shortcut,
+    "Launch" checkbox on the finish screen — **kept**; the shortcuts are optional features here;
+  - Start Menu shortcut inside a `Rusty Todo.txt Manager` folder — **now directly in Programs**;
+  - AppUserModelID `com.brcha.rtm` on that shortcut — **not set**, as the app sets none (RTM-48);
+  - an Uninstall shortcut in the install folder — **dropped** (Settings > Apps uninstalls);
+  - a "PATH Environment Variable" feature that only referenced the exe and never set PATH, and the
+    WebView2 bootstrapper — **dropped**.
 
 ---
 

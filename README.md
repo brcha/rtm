@@ -17,20 +17,31 @@ and of the CLI:
 Grab the latest release from [GitHub Releases](https://github.com/brcha/rtm/releases):
 
 - **`rtmapp_<version>_x64_en-US.msi`** — installer for the desktop GUI. Requires administrator
-  rights (installs to `Program Files`) and downloads [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
-  automatically if it isn't already present. The installer is currently unsigned, so Windows
-  SmartScreen and the UAC prompt will show an "Unknown publisher" warning — this is expected for
-  now.
-- **`rtmapp-<version>-x64.exe`** — portable GUI binary, no installer. Requires WebView2 to already
-  be installed (the MSI installs it for you; this portable exe does not).
+  rights (installs to `Program Files`); the Start Menu and desktop shortcuts can be deselected. It
+  replaces an installed older version, including the Tauri-based releases up to 0.1.3, and keeps
+  its install folder. The installer is currently unsigned, so Windows SmartScreen and the UAC
+  prompt will show an "Unknown publisher" warning — this is expected for now.
 - **`rtmcli-<version>-x64.exe`** — portable CLI binary.
 
 ARM64 and 32-bit Windows builds are not currently produced.
 
-### GNU/Linux and macOS
+### GNU/Linux (x64)
 
-Not yet packaged for release. Build from source (see `AGENTS.md` and the per-component
-`AGENTS.md` files) or use the Nix flake (`nix build .#rtmcli` / `nix build .#rtmapp`).
+From the same releases, built on Ubuntu 22.04 and installable there and on newer Debian-based
+systems:
+
+- **`rtmapp_<version>_amd64.deb`** — the desktop GUI (`sudo apt install ./rtmapp_<version>_amd64.deb`).
+  Runs on Wayland; X11 works with the X11 libraries the package suggests. Opening a file needs the XDG
+  desktop portal with a file chooser (gtk, gnome or kde), which the package pulls in.
+- **`rtmapp_<version>_amd64.AppImage`** — the same GUI as a single file, for other distributions.
+- **`rtmcli_<version>_amd64.deb`** — the CLI.
+
+Nix users can build both from the flake (`nix build .#rtmcli` / `nix build .#rtmapp`).
+
+### macOS
+
+Not yet packaged for release. Build from source (see `AGENTS.md` and the per-component `AGENTS.md`
+files).
 
 ## General plan
 

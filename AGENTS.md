@@ -66,7 +66,9 @@ one that had them.
   fontconfig with `dlopen`. Those go only into the Nix `eguiDeps` lists (put on the binary's rpath,
   and on the flake dev shell's `LD_LIBRARY_PATH`) and into the `shellHook` library list in
   `shell.nix`, which has no `eguiDeps` list of its own; not into an apt step, because CI builds and
-  tests without ever starting the GUI. The `.deb`'s run-time `Depends:` are packaging (RTM-38).
+  tests without ever starting the GUI. A new run-time library also goes into the `rtmapp` deb's
+  `depends` (or `suggests`, if the app runs fully without it) in `[package.metadata.deb]` of
+  `rtmapp/Cargo.toml`; see the run-time notes in `rtmapp/AGENTS.md` for how the current list was found.
 
   This rule governs **additions**. It does not invert: apt's `-dev` packages pull each other in
   transitively, so an apt list is intentionally a minimal subset of what the Nix lists declare. Do
@@ -111,119 +113,96 @@ one that had them.
 
 ## Release Process
 
-> **The Release workflow is broken until RTM-38.** RTM-39 removed the Tauri app, but `release.yml`
-> still builds the Tauri MSI, deb and AppImage and reads the version from the deleted
-> `tauri.conf.json`. Do not tag a release before RTM-38 rewrites it. The rest of this section
-> describes the Tauri-based workflow as input for RTM-38.
->
-> Identity values from the deleted `rtmapp/src-tauri/tauri.conf.json` that the new installers must
-> keep: MSI `upgradeCode` **`e0e423d1-1101-50d4-baee-4a27fa127509`** (must never change once shipped),
-> `productName` "Rusty Todo.txt Manager", `identifier` `com.brcha.rtm`, `mainBinaryName` `rtmapp`,
-> deb package name `rtmapp`, deb `depends` `libwebkit2gtk-4.1-0` and `libgtk-3-0` (Tauri's; the egui
-> app needs its own list). The release version's source of truth moves to the `rtmapp` crate's
-> `Cargo.toml`.
-
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
-  (publishes a draft GitHub Release) or manual `workflow_dispatch` (dry run: builds and uploads
-  to the Actions run, publishes nothing, no tag required). x64 only — no ARM64, no 32-bit, on
-  either platform.
-- **Job structure:** `version` (resolves and verifies the release version once, on
-  `ubuntu-latest`) → `windows` and `linux` (build in parallel, each `needs: version`, each
-  uploading its own `dist/` as a plain build artifact — `dist-windows` / `dist-linux`) →
-  `publish` (`needs: [version, windows, linux]`, downloads both artifact sets and performs the
-  dry-run upload or draft-release publish exactly once). Both platform jobs deliberately do
-  **not** call `softprops/action-gh-release` themselves — two independent jobs calling it
-  concurrently would race to create/update the same tagged release.
-- **Versioning is CalVer:** `vYY.minor.patch` (first release `v26.1.0`). The committed
-  `rtmapp/src-tauri/tauri.conf.json` `version` field is the single source of truth — the release
-  workflow reads it and never writes to it. On a tag push, the tag is required to match that field
-  exactly; a mismatch fails the build loudly instead of shipping installers whose internal
-  version metadata silently disagrees with its own release filename.
-- **`scripts/set-version.ps1`** (PowerShell) and **`scripts/set-version.sh`** (bash) are two
-  ports of one manual pre-release tool, not something CI invokes; keep them in step. Run either
-  locally to bump the version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml` and
-  `todotxt/Cargo.toml` in lockstep (since RTM-39; before, it also patched the Tauri JSON files),
+  (publishes a draft GitHub Release), manual `workflow_dispatch` (dry run: builds and uploads to the
+  Actions run, publishes nothing, no tag required), and pull requests against `main` that touch the
+  crates, `Cargo.toml`/`Cargo.lock`, `LICENSE`, `scripts/build-appimage.sh` or the workflow (builds and
+  tests the packages, publishes nothing). x64 only — no ARM64, no 32-bit, on either platform.
+- **Assets:** `rtmapp_<v>_x64_en-US.msi`, `rtmcli-<v>-x64.exe`, `rtmapp_<v>_amd64.deb`,
+  `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`. Since RTM-38 they are built without Tauri:
+  cargo-wix, cargo-deb and appimagetool.
+- **Job structure:** `version` (resolves and verifies the release version once, on `ubuntu-latest`)
+  → `windows` and `linux` (build and test in parallel, each `needs: version`, each uploading its own
+  `dist/` as a plain build artifact — `dist-windows` / `dist-linux`) → `publish` (`needs: [version,
+  windows, linux]`, skipped on pull requests, downloads both artifact sets and performs the dry-run
+  upload or draft-release publish exactly once). Both platform jobs deliberately do **not** call
+  `softprops/action-gh-release` themselves — two independent jobs calling it concurrently would race
+  to create/update the same tagged release.
+- **Versioning:** `major.minor.patch`, all numeric (MSI `ProductVersion` allows nothing else). Releases
+  stay on 0.x while the project is in alpha; the switch to CalVer (`YY.minor.patch`) comes later. The
+  `[package]` version of `rtmapp/Cargo.toml` is the single source of truth — the release workflow reads
+  it (only that table: other tables have their own `version` keys) and never writes to it. On a tag
+  push, the tag is required to match it exactly; a mismatch fails the build loudly instead of shipping
+  packages whose internal version disagrees with their file names.
+- **`scripts/set-version.ps1`** (PowerShell) and **`scripts/set-version.sh`** (bash) are two ports of
+  one manual pre-release tool, not something CI invokes; keep them in step. Run either locally to bump
+  the version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml` and `todotxt/Cargo.toml` in lockstep,
   review the diff, commit it, and only then tag. It scopes its match to the `[package]` table
-  specifically, not just "the first line
-  starting with `version`" — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table with its
-  own `version` key, and a naive match would be correct only by accident of ordering. This
-  already covers `rtmcli/Cargo.toml`, so the Debian package version tracks the CalVer bump with
-  no separate step.
-- **`mainBinaryName: "rtmapp"`** in `tauri.conf.json` is a load-bearing invariant, not cosmetic. It
-  keeps the build's output filename aligned with `flake.nix`/`default.nix`
-  (`mainProgram = "rtmapp"`) and `rtmapp/assets/rtmapp.desktop` (`Exec=rtmapp`), which would otherwise
-  drift from `productName` (the display string, `"Rusty Todo.txt Manager"`).
+  specifically — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table with its own `version`
+  key. A new release must have a higher version than the last one, or neither the MSI nor apt
+  replaces the installed copy.
+- **Identity:** the binary is `rtmapp` everywhere (`flake.nix`/`default.nix` `mainProgram`, the desktop
+  entry's `Exec=rtmapp`, `Icon=rtmapp` and `StartupWMClass=rtmapp`, the deb package name); the display
+  name is "Rusty Todo.txt Manager"; the reverse-DNS identifier (Tauri's `identifier`, kept for a macOS
+  bundle and the Windows AppUserModelID, RTM-11 and RTM-48) is `com.brcha.rtm`.
 - **Merges are squashes.** One PR becomes exactly one commit on `main`, so PR titles are the
   changelog — the release workflow's `generate_release_notes: true` consumes them directly, and
   `.github/workflows/pr-title.yml` already forces them to be conventional and RTM-tagged.
-- **No raw platform binaries are published redundantly with their installer.** `rtmapp.exe` is
-  not staged on Windows — the MSI installs the identical binary, so shipping it loose adds
-  nothing. `rtmcli.exe` **is** staged, because neither the MSI nor (on Linux) the `rtmapp` deb
-  package the CLI; it is the only channel for `rtmcli` on Windows. This asymmetry is deliberate,
-  not an oversight — do not "fix" it for symmetry.
+- **No raw platform binaries are published redundantly with their installer.** `rtmapp.exe` is not
+  staged on Windows — the MSI installs the identical binary. `rtmcli.exe` **is** staged, because
+  neither the MSI nor (on Linux) the `rtmapp` deb packages the CLI; it is the only channel for
+  `rtmcli` on Windows. This asymmetry is deliberate, not an oversight — do not "fix" it for symmetry.
+- **Unsigned** for now (RTM-10).
 
 ### Windows
 
-- **`bundle.windows.wix.upgradeCode`** is pinned explicitly in `tauri.conf.json` rather than left
-  to Tauri's default derivation from `productName`. The MSI `UpgradeCode` GUID must never change
-  once an installer has shipped publicly; pinning it removes `productName` drift as a second, less
-  obvious way that could happen.
-- Only `msi` is built (`bundle.targets: ["msi"]`). Linux (`deb`/`appimage`) and macOS (`dmg`/`app`)
-  bundle types need their own runner OS — listing them in `bundle.targets` would not build them
-  here regardless, since Tauri's bundler silently skips any target that doesn't match the host
-  OS. The release workflow passes `--bundles` explicitly per platform instead.
+- **MSI source:** `rtmapp/wix/main.wxs` (WiX v3), built by `cargo wix -p rtmapp` (cargo-wix 0.3.9,
+  `cargo install --locked`; WiX 3.14.1 is on the runner image, installed with choco if a future image
+  drops it). Its header lists what it keeps from the Tauri MSI; `rtmapp/AGENTS.md` has the details.
+- **`UpgradeCode` `E0E423D1-1101-50D4-BAEE-4A27FA127509` must never change.** It is the Tauri MSI's
+  (Tauri derived it from the product name), and with it `MajorUpgrade` replaces an installed version
+  instead of installing beside it. Per-machine install, downgrades allowed (the build's only ICE
+  warning, ICE61, comes from that).
+- **Exe resources:** `rtmapp/build.rs` embeds `icon.ico` and the product name in `rtmapp.exe` with
+  `winresource`, checking `CARGO_CFG_TARGET_OS` (not `#[cfg]`, which tests the host).
+- **Tests in the job:** a silent fresh install (files, both shortcuts, the exe's version information,
+  uninstall), then an upgrade from the v0.1.3 Tauri MSI installed into a custom folder (one product
+  afterwards, at the new version, still in that folder). Both read the product from the uninstall
+  entries in the registry: the Windows Installer COM API failed with `DISP_E_TYPEMISMATCH` from
+  PowerShell. **The upgrade test downloads the v0.1.3 release asset, so that release must stay.**
+  More tests: RTM-49.
 
 ### Linux (RTM-8)
 
-- **Runner floor: `ubuntu-22.04`, not `ubuntu-latest`.** A `.deb`/AppImage built against
-  `noble`'s (24.04) WebKitGTK and glibc would not install on Debian bookworm or older Ubuntu
-  LTS releases. Building on the older jammy floor maximizes where the artifacts actually work.
-- **Tool split:** Tauri's own bundler produces the `rtmapp` `.deb` and `.AppImage`
-  (`--bundles deb,appimage`); `cargo-deb` packages `rtmcli` separately, since Tauri's bundler has
-  no concept of packaging a plain, non-Tauri binary. `rtmcli`'s packaging metadata lives in
-  `rtmcli/Cargo.toml` under `[package.metadata.deb]`.
-- **The `rtmapp` deb's package name is pinned in CI, not in config — there is no config field
-  for it.** `bundle.linux.deb` in `tauri.conf.json` (checked against the full schema and the
-  `tauri-bundler` source) has no `name` property. Tauri derives the dpkg `Package:` field by
-  kebab-casing `productName`, and the `.deb` filename from `productName` completely unmodified —
-  for `"Rusty Todo.txt Manager"` that is `rusty-todo-txt-manager` internally and
-  `Rusty Todo.txt Manager_<version>_amd64.deb` on disk. The Linux release job unpacks the built
-  `.deb` with `dpkg-deb -R`, rewrites `DEBIAN/control`'s `Package:` line to `rtmapp`, and repacks
-  with `dpkg-deb -b` directly to the correct filename. This is a load-bearing step, same
-  category as `mainBinaryName` and the pinned `upgradeCode` — if it is ever removed, the package
-  silently reverts to shipping as `rusty-todo-txt-manager` with no error, only a `dpkg-deb --field`
-  assertion in the release job's own verification step catching it.
-  `bundle.linux.deb.depends` is still declared explicitly in `tauri.conf.json`
-  (`libwebkit2gtk-4.1-0`, `libgtk-3-0`, verified against `packages.ubuntu.com/jammy`), so the
-  package fails loudly at install time on a system without WebKitGTK rather than at first launch.
-- **Desktop entry: Tauri's generated `.desktop` file ships in the deb and the AppImage.**
-  `rtmapp/assets/rtmapp.desktop` is not used for either — it exists solely for the Nix packaging path
-  (see `rtmapp/AGENTS.md`). The two must be kept in agreement on `Exec=rtmapp`, `Icon=rtmapp`,
-  and `StartupWMClass=rtmapp` even though only one of them is Tauri's actual output.
-- **AppImage build-time network dependency:** Tauri's AppImage bundler downloads `linuxdeploy`
-  and `appimagetool` during the build. This is the same class of failure the apt hardening below
-  exists to bound, so the build step carries its own `timeout-minutes`.
-- **Apt hardening is reused, not reinvented.** The Linux release job pins the same
-  `archive.ubuntu.com` mirror and `Acquire::Retries`/timeout options as `rust.yml` — see
-  "Linux CI apt hardening (RTM-28)" under Important Notes above. Do not let the two drift apart
-  without a reason.
-- **No raw Linux binaries are published.** Only the `.deb` packages and the `.AppImage`. RPM
-  (RTM-9) and non-Debian distros more generally have no release artifact for `rtmcli` as a
-  result — accepted for now, revisit if RTM-9 is scheduled.
-- **Prebuilt-binary install actions are a trap on this runner (RTM-29).** `cargo-deb` was
-  originally installed via `taiki-e/install-action`, which fetched upstream's only published
-  asset — built by upstream CI on `ubuntu-latest`, which has meant **noble** (24.04, glibc
-  2.39) since GitHub's runner migration. This runner is jammy (22.04, glibc 2.35) by the
-  deliberate choice above, so the binary failed immediately: `` GLIBC_2.39' not found ``. No
-  older `cargo-deb` release fixes this — upstream has built on `ubuntu-latest` since well
-  before the migration, so the mismatch isn't a version-specific regression. Fixed by
-  compiling with `cargo install cargo-deb --locked --version 3.7.0` instead, which links
-  against the runner's own glibc by construction. **This generalizes:** any future
-  prebuilt-binary installer action added to the `linux` job can reintroduce the same failure.
-  Prefer `cargo install --locked` for Rust tooling on this job unless a tool's release process
-  is confirmed to target the jammy floor specifically.
-
----
+- **Runner floor: `ubuntu-22.04`, not `ubuntu-latest`.** Packages built against `noble`'s (24.04)
+  glibc would not install on Debian bookworm or older Ubuntu LTS releases. Building on the older jammy
+  floor maximizes where the artifacts actually work.
+- **debs:** both come from cargo-deb, described in `[package.metadata.deb]` of `rtmapp/Cargo.toml`
+  and `rtmcli/Cargo.toml` (package name, maintainer, assets, dependencies). `rtmapp`'s `depends` lists
+  the libraries it loads with `dlopen` by hand (`$auto` sees only glibc); see `rtmapp/AGENTS.md`.
+- **AppImage:** `scripts/build-appimage.sh` lays out an AppDir by hand (binary, desktop entry, hicolor
+  icons, licences; no bundled libraries) and packs it with appimagetool 1.9.1 and the type2 runtime
+  20251108, downloaded from fixed release URLs and checked against their SHA-256 (upstream also
+  publishes moving "continuous" builds). appimagetool runs with `--appimage-extract-and-run`, so no
+  FUSE is needed. The downloads are a network dependency in the release path, so the step has its own
+  `timeout-minutes`.
+- **Tests in the job:** `apt-get install` of both debs (every `Depends` must resolve on jammy), checks
+  that `$auto` added `libc6`, that the desktop entry and all icon sizes are installed and that a portal
+  backend with a file chooser came with `rtmapp`; then the AppImage is extracted and checked.
+- **Apt hardening is reused, not reinvented.** The job pins the `archive.ubuntu.com` mirror and passes
+  `Acquire::Retries`/timeout options (see "Linux CI apt hardening (RTM-28)" under Important Notes). It
+  installs no build dependencies, but the install test resolves the debs' dependencies from the index.
+- **No raw Linux binaries are published.** Only the `.deb` packages and the `.AppImage`. RPM (RTM-9)
+  and non-Debian distros more generally have no release artifact for `rtmcli` as a result — accepted
+  for now, revisit if RTM-9 is scheduled.
+- **Prebuilt-binary install actions are a trap on this runner (RTM-29).** `cargo-deb` was originally
+  installed via `taiki-e/install-action`, which fetched upstream's only published asset — built by
+  upstream CI on `ubuntu-latest`, which has meant **noble** (24.04, glibc 2.39) since GitHub's runner
+  migration. This runner is jammy (22.04, glibc 2.35) by the deliberate choice above, so the binary
+  failed immediately: `` GLIBC_2.39' not found ``. Fixed by compiling with `cargo install cargo-deb
+  --locked --version 3.7.0` instead, which links against the runner's own glibc by construction.
+  **This generalizes:** prefer `cargo install --locked` for Rust tooling on this job unless a tool's
+  release process is confirmed to target the jammy floor specifically.
 
 ## Future Plans
 
