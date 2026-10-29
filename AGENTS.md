@@ -8,9 +8,7 @@ macOS, and Windows. Early development — core functionality works across two fr
 Subpart AGENTS.md files:
 - [`todotxt/AGENTS.md`](todotxt/AGENTS.md) — core library
 - [`rtmcli/AGENTS.md`](rtmcli/AGENTS.md) — CLI frontend
-- [`rtmapp/AGENTS.md`](rtmapp/AGENTS.md) — Tauri web-based desktop app
-- [`rtmgui/AGENTS.md`](rtmgui/AGENTS.md) — egui desktop app that will replace `rtmapp` (working name,
-  see below)
+- [`rtmapp/AGENTS.md`](rtmapp/AGENTS.md) — egui desktop app
 
 ---
 
@@ -20,38 +18,32 @@ Subpart AGENTS.md files:
 rtm/                        ← Cargo workspace root
 ├── todotxt/                ← Core library (no UI, no binary)
 ├── rtmcli/                 ← CLI (clap-based)
-├── rtmapp/                 ← Tauri v2 desktop app
-│   ├── src/                ← Frontend: vanilla JS + HTML + CSS
-│   └── src-tauri/          ← Tauri Rust backend
-├── rtmgui/                 ← egui desktop app (working name; standalone workspace, own Cargo.lock)
-└── shell.nix               ← Nix dev shell (GTK, WebKit, X11/Wayland)
+├── rtmapp/                 ← Desktop app (egui/eframe)
+├── spikes/egui-theme/      ← Historical spike for the egui look (RTM-33), not built by CI
+├── flake.nix, default.nix  ← Nix packages
+└── shell.nix               ← Nix dev shell
 ```
 
-`todotxt`, `rtmcli` and `rtmapp/src-tauri` share the root Cargo workspace (`Cargo.lock` at root).
-`rtmgui` is the exception: it is a standalone workspace with its own `rtmgui/Cargo.lock`, and the root
-`cargo build` and `cargo test` do not cover it (CI builds and tests it with
-`--manifest-path rtmgui/Cargo.toml`). The reason is that `rfd`'s `build.rs` rejects the `gtk3` and
-`xdg-portal` features together, and Tauri's dialog plugin enables `gtk3` while `rtmgui` uses
-`xdg-portal`. It joins the root workspace when the Tauri app is removed (RTM-39). The `todotxt` library
-is the single source of truth for parsing, serialization, and business logic. Frontends depend on it
-via `path` dependency.
+`todotxt`, `rtmcli` and `rtmapp` share the root Cargo workspace (`Cargo.lock` at root). The `todotxt`
+library is the single source of truth for parsing, serialization, and business logic. Frontends depend
+on it via `path` dependency.
 
-`rtmgui` is a working name: it replaces `rtmapp` and is renamed to `rtmapp` once it reaches feature
-parity (epic RTM-32). Until then both apps read and write the same `rtm/config.toml`.
+`rtmapp` replaced a Tauri app of the same name in RTM-39 (epic RTM-32): same features, same look and
+the same config file. The Tauri sources are gone; references to them name commit `5076649`, the last
+one that had them.
 
-`rtmapp` and `rtmgui` store config in the OS config directory (`dirs::config_dir()`), under
+`rtmapp` stores its config in the OS config directory (`dirs::config_dir()`), under
 `rtm/config.toml`. `rtmcli` has no config file (file from `-f` or `$TODOTXT`).
 
 ---
 
 ## Conventions
 
-- **Rust edition:** 2024 (todotxt, rtmcli, rtmgui); 2021 (rtmapp/src-tauri)
-- **No async** in the core library or CLI. Tauri backend is also synchronous (Mutex-guarded state).
+- **Rust edition:** 2024 everywhere.
+- **No async** in the core library, the CLI or the desktop app.
 - **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file.
 - **Date format:** `%Y-%m-%d` everywhere (chrono `NaiveDate`).
-- **Priority encoding:** stored as `u8` (0 = A, 1 = B, …); serialized as `i32` in DTOs for JS compatibility.
-- **No framework** in the Tauri frontend — plain HTML/CSS/JS with flatpickr for date pickers.
+- **Priority encoding:** stored as `u8` (0 = A, 1 = B, …).
 - All `save()` calls happen immediately after mutations (no deferred/batched writes).
 - **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`.
 
@@ -59,60 +51,54 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
 
 ## Important Notes
 
-- **`load_file` on Linux (rtmapp):** Known bug — file loading fails on GNU/Linux. Root cause is
-  likely `std::path::Path::canonicalize()` receiving a `file://` URI from the GTK file dialog, or
-  a platform difference in the `tauri-plugin-dialog` return value.
-- **Nix shell:** `shell.nix` provides all GTK/WebKit/X11/Wayland libraries needed to build and run
-  all frontends on NixOS or with `nix-shell`. Use `nix-shell` before running `cargo build`.
+- **Nix shell:** `shell.nix` (or `nix develop`) provides the toolchain and the libraries `rtmapp` loads
+  at run time. Use it before running `cargo build` on NixOS.
 - **Native dependency sync:** When adding a new system/native library dependency to any crate in
-  the workspace, or to `rtmgui` (a separate workspace), register it in **all three** of the
-  following locations to keep CI, Nix flake builds, and legacy nix-build in sync:
-  1. `.github/workflows/rust.yml` — the `apt-get install` step
-  2. `flake.nix` — `guiDeps`, `tauriDeps` or `eguiDeps` list (and `devShells.default` if needed)
-  3. `default.nix` — matching `guiDeps`, `tauriDeps` or `eguiDeps` list
+  the workspace, register it in **all three** of the following locations to keep CI, Nix flake
+  builds, and legacy nix-build in sync:
+  1. `.github/workflows/rust.yml` — an `apt-get install` step (there is none today: no crate links a
+     native library; reuse the hardened pattern from `release.yml` when adding one, see RTM-28 below)
+  2. `flake.nix` — the matching list (`eguiDeps` today), and `devShells.default` if needed
+  3. `default.nix` — the matching list
 
-  **Run-time-only libraries are the exception to item 1.** `rtmgui` links no native libraries beyond
+  **Run-time-only libraries are the exception to item 1.** `rtmapp` links no native libraries beyond
   glibc: egui, winit, wgpu and the font provider load Wayland, xkbcommon, X11, GL, Vulkan and
   fontconfig with `dlopen`. Those go only into the Nix `eguiDeps` lists (put on the binary's rpath,
   and on the flake dev shell's `LD_LIBRARY_PATH`) and into the `shellHook` library list in
-  `shell.nix`, which has no `eguiDeps` list of its own; not into the apt step, because CI builds and
+  `shell.nix`, which has no `eguiDeps` list of its own; not into an apt step, because CI builds and
   tests without ever starting the GUI. The `.deb`'s run-time `Depends:` are packaging (RTM-38).
 
   This rule governs **additions**. It does not invert: apt's `-dev` packages pull each other in
-  transitively (e.g. `libgtk-3-dev` alone brings in a dozen others), so `rust.yml`'s explicit
-  list is intentionally a minimal subset of what Nix's `guiDeps`/`tauriDeps` declare. Do not trim
-  the Nix lists to match — Nix `buildInputs` do not propagate `pkg-config` search paths the way
-  apt's package interdependencies do, and removing an "apparently redundant" entry there breaks
-  the build.
+  transitively, so an apt list is intentionally a minimal subset of what the Nix lists declare. Do
+  not trim the Nix lists to match — Nix `buildInputs` do not propagate `pkg-config` search paths the
+  way apt's package interdependencies do.
 - **Linux CI apt hardening (RTM-28):** GitHub-hosted Ubuntu runners resolve apt through a
   mirrorlist that tries `azure.archive.ubuntu.com` before falling back to `archive.ubuntu.com`.
   When the Azure-local mirror degrades — dropping connections rather than refusing them — apt
   retries it per index file across roughly twenty files, which can stall a job for hours with no
-  bound. The Linux leg of `rust.yml` now overwrites `/etc/apt/apt-mirrors.txt` with the canonical
-  archive before updating, and passes explicit `Acquire::Retries`/timeout options to both
-  `apt-get update` and `apt-get install` as defence in depth. **Do not revert this for a
-  marginally faster "good day" run** — it trades a small, predictable slowdown for an unbounded
-  hang becoming a fast, loud failure instead.
+  bound. Any job that installs apt packages (today only `release.yml`'s Linux job; `rust.yml` needs
+  none since RTM-39) overwrites `/etc/apt/apt-mirrors.txt` with the canonical archive before
+  updating, and passes explicit `Acquire::Retries`/timeout options to both `apt-get update` and
+  `apt-get install` as defence in depth. **Do not revert this for a marginally faster "good day"
+  run** — it trades a small, predictable slowdown for an unbounded hang becoming a fast, loud
+  failure instead.
 
 ---
 
 ## Nix Packaging
 
-- **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmapp`,
-  `nix build .#rtmgui`.
-- **`default.nix`** — legacy entry point. `nix-build -A rtmcli` (also `-A rtmapp`, `-A rtmgui`).
-- **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it. This
-  includes `rtmgui/Cargo.lock`, which the `rtmgui` derivation uses (`cargoRoot` and
-  `buildAndTestSubdir` point at `rtmgui`).
-- **`rtmgui` package (Linux only):** no native build inputs; `eguiDeps` are added to the binary's
+- **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmapp`.
+- **`default.nix`** — legacy entry point. `nix-build -A rtmcli`, `nix-build -A rtmapp`.
+- **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
+- **`rtmapp` package (Linux only):** no native build inputs; `eguiDeps` are added to the binary's
   rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which would drop
-  them), and `Inter-LICENSE.txt` is installed under `share/licenses/rtmgui`.
+  them). `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons and
+  `Inter-LICENSE.txt` (under `share/licenses/rtmapp`). Its version is read from
+  `rtmapp/Cargo.toml`; `rtmcli` still has a hard-coded `version` in `commonArgs`.
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
   needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
   `nixos-26.11` when it is released (RTM-45). `default.nix` and `shell.nix` use the caller's
   `<nixpkgs>`, which must also have rustc ≥ 1.95.
-- **`rtmapp` packaging is best-effort** — Tauri's bundler is bypassed; frontend assets are copied
-  into `$out/share/rtmapp/` via `postInstall`. Runtime behavior on NixOS may need further tuning.
 - **Dev shell:** `nix develop` (flake) or `nix-shell` (legacy). `.envrc` uses `use_nix`; change
   to `use flake` if using nix-direnv ≥ 2.30. Both shells have `rustfmt` and `clippy`, and both
   start `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and set
@@ -123,6 +109,18 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
 ---
 
 ## Release Process
+
+> **The Release workflow is broken until RTM-38.** RTM-39 removed the Tauri app, but `release.yml`
+> still builds the Tauri MSI, deb and AppImage and reads the version from the deleted
+> `tauri.conf.json`. Do not tag a release before RTM-38 rewrites it. The rest of this section
+> describes the Tauri-based workflow as input for RTM-38.
+>
+> Identity values from the deleted `rtmapp/src-tauri/tauri.conf.json` that the new installers must
+> keep: MSI `upgradeCode` **`e0e423d1-1101-50d4-baee-4a27fa127509`** (must never change once shipped),
+> `productName` "Rusty Todo.txt Manager", `identifier` `com.brcha.rtm`, `mainBinaryName` `rtmapp`,
+> deb package name `rtmapp`, deb `depends` `libwebkit2gtk-4.1-0` and `libgtk-3-0` (Tauri's; the egui
+> app needs its own list). The release version's source of truth moves to the `rtmapp` crate's
+> `Cargo.toml`.
 
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
   (publishes a draft GitHub Release) or manual `workflow_dispatch` (dry run: builds and uploads
@@ -142,17 +140,17 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
   version metadata silently disagrees with its own release filename.
 - **`scripts/set-version.ps1`** (PowerShell) and **`scripts/set-version.sh`** (bash) are two
   ports of one manual pre-release tool, not something CI invokes; keep them in step. Run either
-  locally to bump the version across `rtmapp/src-tauri/tauri.conf.json`,
-  `rtmapp/src-tauri/Cargo.toml`, `rtmcli/Cargo.toml`, `rtmgui/Cargo.toml`, `todotxt/Cargo.toml`,
-  and `rtmapp/package.json` in lockstep, review the diff, commit it, and only then tag. For Cargo.toml
-  files it scopes its match to the `[package]` table specifically, not just "the first line
+  locally to bump the version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml` and
+  `todotxt/Cargo.toml` in lockstep (since RTM-39; before, it also patched the Tauri JSON files),
+  review the diff, commit it, and only then tag. It scopes its match to the `[package]` table
+  specifically, not just "the first line
   starting with `version`" — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table with its
   own `version` key, and a naive match would be correct only by accident of ordering. This
   already covers `rtmcli/Cargo.toml`, so the Debian package version tracks the CalVer bump with
   no separate step.
 - **`mainBinaryName: "rtmapp"`** in `tauri.conf.json` is a load-bearing invariant, not cosmetic. It
   keeps the build's output filename aligned with `flake.nix`/`default.nix`
-  (`mainProgram = "rtmapp"`) and `rtmapp/rtmapp.desktop` (`Exec=rtmapp`), which would otherwise
+  (`mainProgram = "rtmapp"`) and `rtmapp/assets/rtmapp.desktop` (`Exec=rtmapp`), which would otherwise
   drift from `productName` (the display string, `"Rusty Todo.txt Manager"`).
 - **Merges are squashes.** One PR becomes exactly one commit on `main`, so PR titles are the
   changelog — the release workflow's `generate_release_notes: true` consumes them directly, and
@@ -198,7 +196,7 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
   (`libwebkit2gtk-4.1-0`, `libgtk-3-0`, verified against `packages.ubuntu.com/jammy`), so the
   package fails loudly at install time on a system without WebKitGTK rather than at first launch.
 - **Desktop entry: Tauri's generated `.desktop` file ships in the deb and the AppImage.**
-  `rtmapp/rtmapp.desktop` is not used for either — it exists solely for the Nix packaging path
+  `rtmapp/assets/rtmapp.desktop` is not used for either — it exists solely for the Nix packaging path
   (see `rtmapp/AGENTS.md`). The two must be kept in agreement on `Exec=rtmapp`, `Icon=rtmapp`,
   and `StartupWMClass=rtmapp` even though only one of them is Tauri's actual output.
 - **AppImage build-time network dependency:** Tauri's AppImage bundler downloads `linuxdeploy`

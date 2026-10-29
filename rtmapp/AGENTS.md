@@ -1,9 +1,17 @@
-# AGENTS.md — rtmapp (Tauri desktop app)
+# AGENTS.md — rtmapp (egui desktop app)
 
 ## What This Component Is
 
-A Tauri v2 desktop application for the Todo.txt manager. Rust backend exposes commands via IPC;
-frontend is vanilla HTML/CSS/JS (no framework). Targets GNU/Linux, macOS, and Windows.
+The egui/eframe desktop app for the Todo.txt manager. Targets GNU/Linux, macOS and Windows.
+
+It replaced a Tauri app of the same name in RTM-39 (epic RTM-32), keeping its look, its features and
+its config file. Until RTM-39 it was developed as `rtmgui`. The Tauri app's sources are gone; comments
+that refer to them name commit `5076649`, the last commit that had them.
+
+Done: window shell in the Inter-based theme, config loading, "Load File" through a native dialog and
+the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
+complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
+package and dev shells (RTM-37); the cut-over (RTM-39). Still to come: installers (RTM-38).
 
 ---
 
@@ -11,141 +19,164 @@ frontend is vanilla HTML/CSS/JS (no framework). Targets GNU/Linux, macOS, and Wi
 
 ```
 rtmapp/
-├── src/                    ← Frontend (served as static files by Tauri)
-│   ├── index.html
-│   ├── main.js             ← All UI logic; calls Tauri commands via invoke()
-│   └── styles.css
-└── src-tauri/              ← Rust backend
-    ├── src/
-    │   ├── lib.rs          ← All Tauri commands + AppState
-    │   └── main.rs         ← Entry point (calls lib::run())
-    ├── capabilities/
-    │   └── default.json    ← Tauri permission grants
-    └── tauri.conf.json     ← Tauri configuration
+├── Cargo.toml              ← Member of the root workspace
+├── assets/
+│   ├── fonts/              ← Inter Regular and SemiBold (OTF) and the licence
+│   ├── icons/              ← App icons (PNG sizes, icon.ico for Windows, icon.icns for macOS)
+│   └── rtmapp.desktop      ← XDG desktop entry (installed by the Nix package)
+└── src/
+    ├── main.rs             ← Window options, eframe::run_native
+    ├── app.rs              ← App state, panels, Load File, filters, quick-add, complete/uncomplete,
+    │                         saving an edit
+    ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
+    ├── config.rs           ← AppConfig and rtm/config.toml
+    ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
+    ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`)
+    └── theme.rs            ← Palettes, fonts, egui styling
 ```
-
----
-
-## Tauri Commands (Rust → JS IPC)
-
-| Command           | Description                                      |
-|-------------------|--------------------------------------------------|
-| `load_file`       | Load a todo.txt file by path; saves path to config |
-| `get_file_name`   | Return currently loaded file path                |
-| `has_file_loaded` | Return bool                                      |
-| `save_file`       | Persist current items to disk                    |
-| `get_items`       | Return filtered+sorted `Vec<TodoItemDto>`        |
-| `get_item_count`  | Return total item count (unfiltered)             |
-| `add_item`        | Parse + append item, auto-save                   |
-| `complete_item`   | Mark done, set completion date, handle recurrence, auto-save+reload |
-| `uncomplete_item` | Mark undone, clear completion date, auto-save    |
-| `update_item`     | Replace item fields, auto-save                   |
-| `get_config`      | Return `AppConfig`                               |
-| `save_config`     | Update display settings, persist                 |
 
 ---
 
 ## Key Dependencies
 
-| Crate / Package          | Purpose                          |
-|--------------------------|----------------------------------|
-| tauri v2                 | App framework + IPC              |
-| tauri-plugin-dialog v2   | Native file open dialog          |
-| tauri-plugin-opener v2   | Open files/URLs                  |
-| todotxt (path dep)       | Core data library                |
-| chrono                   | Date handling                    |
-| dirs                     | OS config directory              |
-| toml                     | Config serialization             |
-| flatpickr (CDN)          | Date picker in frontend          |
+| Crate               | Purpose                                            |
+|---------------------|----------------------------------------------------|
+| eframe 0.37         | Window, event loop, egui integration               |
+| todotxt (path)      | Parsing, serialization, `TodoLibrary`              |
+| rfd 0.16            | Native file dialog (`xdg-portal` backend on Linux) |
+| serde, toml 0.8     | Config file                                        |
+| dirs 5              | OS config directory                                |
+| chrono              | Dates (same as the core library)                   |
+| env_logger 0.11     | Logs to stderr (`rfd`'s file dialog errors)        |
+| sys-locale 0.3      | The OS locale, for the calendar's week start       |
+| icu_calendar 2.4    | CLDR first day of the week for a locale            |
+| icu_locale_core 2.4 | Parses the locale for `icu_calendar`               |
 
 ---
 
 ## Conventions
 
-- **Rust edition:** 2021 (Tauri scaffold default)
-- `AppState` holds `Mutex<Option<TodoLibrary>>` and `Mutex<AppConfig>`. All commands lock these.
-- `TodoItemDto` is the serialization boundary — `TodoItem` never crosses the IPC boundary directly.
-- Priority is `u8` in the library, `i32` in the DTO (JS `Number` compatibility).
-- Config path: `dirs::config_dir()/rtm/config.toml`.
-- Frontend uses `window.__TAURI__.core.invoke` and `window.__TAURI__.dialog.open` (global Tauri
-  injected via `withGlobalTauri: true` in `tauri.conf.json`).
-- No bundler/build step for the frontend — files are served directly from `src/`.
+- **Rust edition:** 2024. No async.
+- **Identity:** crate, binary, Nix package and eframe app name are `rtmapp`. The app name is also the
+  Wayland app id and the X11 `WM_CLASS`, so it must match the desktop entry's file name and its
+  `StartupWMClass`; `Exec=rtmapp` and `Icon=rtmapp` match the binary and the installed icons. Keep the
+  four in agreement.
+- **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one the Tauri app wrote,
+  so existing users' settings carry over: do not rename fields or change defaults (`#[serde(default)]`
+  on `AppConfig`). The file is written after a successful file load or a filter change, never at
+  startup.
+- **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
+  `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
+  is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
+  (`ctx.set_sublayer`), or a click in the dialog draws the dialog over it. `Sense::click()` includes
+  `FOCUSABLE`: hit areas inside a popup use `Sense::CLICK`, so Tab does not walk into them.
+- **Look:** palettes and sizes come from the Tauri app's `rtmapp/src/styles.css` (at `5076649`), as
+  worked out in `spikes/egui-theme/` (see its `FINDINGS.md`; `shots.sh` there takes comparison
+  screenshots). egui has no font weights: Inter Regular is the text face and SemiBold is the `bold`
+  family (title, headings, priorities). The ☐ and ☑ glyphs are missing from most fonts, so checkboxes
+  are painted.
+- **Filtering and sorting** (`list::visible`) follow the Tauri app's `get_items`, and a test checks the
+  filters against its predicate, copied verbatim, for every flag combination. Sorting puts items
+  without a due date first, then dated items, with priority as the tie-break (none last). **One
+  deliberate difference:** dates run earliest first and `reverse_sort` gives latest first; the Tauri
+  app had it the other way round, so the saved `reverse_sort` setting now gives the opposite order.
+- **Item rows** show the visible items in that order. A done item is struck through entirely, as the
+  CSS did. Recurrence is shown through `TodoRecurrence`'s `Display` (`rec:+1m` appears as `rec:+m`).
+  The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had
+  it. Rows report the clicked item's index in the file, never its position in the filtered list.
+- **Mutations** call the same `TodoLibrary` methods in the same order as the Tauri app did and save at
+  once: add is `add_item` (which sets a creation date when the item has none) then `save`; uncomplete
+  is `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
+  recurring item that has a due date) then `save`, then `load` once the save succeeded. Errors go to
+  the error line above the list, not to a dialog; the quick-add input is cleared only after a
+  successful save. Every save rewrites the whole file, and recurrence goes through `Display`, so a
+  count of 1 is written in its short form (`rec:+1m` becomes `rec:+m`); this is intended.
+- **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled as the Tauri app's
+  `openEditDialog` did; Save (or Enter in a field) writes the fields as its `update_item` did, then
+  `save`. Fields the dialog does not show (done, dates of completion and creation, `uuid`, `sub`) are
+  kept. **Deliberate differences from the Tauri app:** the priority dropdown offers A to Z, not just A
+  to C; an invalid date or recurrence keeps the dialog open with a message and writes nothing, where
+  the Tauri app dropped the field silently; one leading `+` or `@` on a project or context name is
+  stripped, and a name with whitespace is refused, where the Tauri app wrote it as typed and it split
+  into several words on reload; Escape and a click outside the dialog cancel, where the Tauri app
+  closed only on its buttons.
+- **Calendar** (`calendar.rs`): Due Date and Threshold are text fields (typing still works, as
+  flatpickr's `allowInput` did) with a popup drawn at the sizes of the flatpickr popup the Tauri app
+  used (`rtmapp/src/assets/flatpickr.min.css` at `5076649`). It opens on a click or focus and closes on
+  a pick, Clear, Escape, Tab or a click outside. Escape and a click elsewhere in the dialog close only
+  the calendar; a click on the backdrop still cancels the dialog (egui's `Modal` does not hold that
+  back for open popups, as with the priority dropdown). **Deliberate differences from flatpickr:** dark
+  theme from the app's dark palette (flatpickr is light only); a Clear button; the week starts on the
+  locale's first day, not always Sunday; month arrows instead of the month dropdown; the mouse wheel
+  over the year steps it (touchpad scrolling is gathered into whole notches); names stay English; no
+  keyboard navigation of the day grid.
+- **Week start:** the locale is `LC_ALL`, then `LC_TIME`, then `LANG` when set (`#[cfg(unix)]`, so this
+  includes macOS started from a terminal), otherwise `sys-locale` (Windows, and macOS started from
+  Finder); `icu_calendar`'s CLDR week data gives the first day for it. `C`, `POSIX`, an empty or
+  unparsable locale start on Sunday. The explicit "first day of week" setting of macOS and Windows is
+  not read yet (RTM-44).
+- **Windows:** release builds use the `windows` subsystem (`#![cfg_attr(...)]` in `main.rs`), as the
+  Tauri app did, so no console window opens behind the GUI. The window opens centred at 900 × 650.
+- Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
+  build `App { .. }` directly with a temp `config_path` (see `app_with`), never
+  `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.
+
+---
+
+## Fonts and licence
+
+Inter 4.0 (`Inter-Regular.otf`, `Inter-SemiBold.otf`) is embedded with `include_bytes!`, from the
+official `Inter-4.0.zip` release of github.com/rsms/inter, with `assets/fonts/Inter-LICENSE.txt` (SIL
+Open Font License 1.1) next to it. The licence requires its text and the copyright notice to accompany
+every redistributed copy, so **installers and packages must ship `Inter-LICENSE.txt`**. The Nix package
+installs it under `share/licenses/rtmapp`; the installers are RTM-38.
+
+---
+
+## File dialog
+
+`rfd` uses the `xdg-portal` backend on Linux, so a running `xdg-desktop-portal` with a FileChooser
+backend (for example `-gtk` or `-kde`) is needed at runtime. If the portal fails, `rfd` tries `zenity`
+and then returns `None`, which is also what a cancelled dialog returns, so the UI cannot tell the two
+apart. The fallback is the `gtk3` feature (`rfd = { version = "0.16", default-features = false, features =
+["gtk3"] }`), which needs GTK 3 at runtime.
+
+`rfd` logs both failures at `error` level, and `env_logger` prints them to stderr: run the app from a
+terminal to see why "Load File" did nothing. A cancel logs nothing. `RUST_LOG=warn` (or `debug`) shows
+more. Windows release builds have no console (see Conventions), so there the log is not visible; use a
+debug build.
+
+A load error (unreadable file, missing path) is shown above the list.
 
 ---
 
 ## Build & Run
 
 ```sh
-cd rtmapp
+# Linux: enter the dev shell first (from the repo root)
+nix-shell
 
-# Development (hot-reload frontend, rebuild Rust on change):
-npm run tauri dev
+cargo run -p rtmapp
+cargo test -p rtmapp
 
-# Production build:
-npm run tauri build
+# Or as a Nix package (Linux; tests run during the build)
+nix build .#rtmapp      # or: nix-build -A rtmapp
 ```
 
-On Linux, run inside `nix-shell` from the repo root first to ensure GTK/WebKit libraries are
-available.
+The binary links no native libraries beyond glibc; it loads Wayland, xkbcommon, X11, GL, Vulkan and
+fontconfig with `dlopen`. The dev shells put them on `LD_LIBRARY_PATH`, and the Nix package on the
+binary's rpath (`eguiDeps` in `flake.nix` and `default.nix`, see the root `AGENTS.md`).
 
----
+To try it without touching your own config, point `XDG_CONFIG_HOME` at a scratch directory that has an
+`rtm/config.toml` with a `file_name` line.
 
-## Windows Packaging
-
-- **Install scope: per-machine.** The MSI installs to `Program Files` and requires administrator
-  rights — the UAC prompt this triggers is expected, not a bug. There is no per-user/no-admin
-  install mode.
-- **Shortcuts: Start Menu, and an unconditional Desktop shortcut.** Both come from Tauri's stock
-  WiX template, completely unmodified — `bundle.windows.wix.template` is not set, and there is no
-  vendored `wix/` directory in this repo. Tauri's default MSI template creates the Desktop
-  shortcut unconditionally with no config toggle to suppress it (checked against the full
-  `bundle.windows.wix` schema: it exposes `template`, `fragmentPaths`,
-  `componentRefs`/`componentGroupRefs`/`featureRefs`, `upgradeCode`, `version`, and banner/dialog
-  image paths — nothing shortcut-related). Suppressing it would require vendoring and hand-editing
-  `main.wxs` to delete the `DesktopFolder` component; that tradeoff was considered and declined in
-  favor of simplicity. If revisited, fork the template from the exact `@tauri-apps/cli` version
-  pinned in `rtmapp/package-lock.json` (not `dev` — the Handlebars variables drift between
-  releases) and delete only the `DesktopFolder` block.
-- **`bundle.windows.wix.upgradeCode`** is pinned explicitly (see root `AGENTS.md`) rather than
-  left to derive from `productName`.
-- **`bundle.targets: ["msi"]`** — no NSIS. Tauri's `"all"` target set also emits an NSIS `.exe`
-  installer on Windows, which is deliberately out of scope here.
-- The release workflow (`.github/workflows/release.yml`) builds the MSI and `rtmcli.exe` on
-  `windows-latest`. `rtmapp.exe` is not staged as a separate download — the MSI installs the
-  identical binary, so shipping it loose is redundant. It never modifies `tauri.conf.json` —
-  see root `AGENTS.md` for the versioning convention and `scripts/set-version.ps1`.
-
----
-
-## Linux Packaging (RTM-8)
-
-- **Two artifact types, one bundler invocation:** `npm run tauri build -- --bundles deb,appimage`
-  on `ubuntu-22.04` (see root `AGENTS.md` for why that floor, not `ubuntu-latest`) produces both
-  a `.deb` and a `.AppImage` in the same build.
-- **`bundle.linux.deb.depends`** in `tauri.conf.json` is declared explicitly
-  (`libwebkit2gtk-4.1-0`, `libgtk-3-0`) rather than left to Tauri's `ldd`-based auto-detection,
-  so a missing runtime dependency fails at `dpkg -i` rather than at first launch.
-  `bundle.linux.deb` has **no field to override the package name** — checked against the full
-  schema and the `tauri-bundler` source. The release job pins it to `rtmapp` by unpacking and
-  repacking the built `.deb` in CI; see root `AGENTS.md`'s "Linux (RTM-8)" section for the full
-  mechanism. Do not assume a config-only fix exists for this without re-checking the source —
-  it did not exist as of `tauri-bundler` targeting config schema v2.
-- **Desktop entry: this build's own generated `.desktop` file ships in the `.deb` and the
-  `.AppImage`.** `rtmapp/rtmapp.desktop` (checked into this directory) is **not** used by either
-  — it exists only for the Nix packaging path (`flake.nix` / `default.nix`, see their
-  `postInstall`). Both files must agree on `Exec=rtmapp`, `Icon=rtmapp`, and
-  `StartupWMClass=rtmapp`; if one changes, check the other.
-- **AppImage bundling downloads tooling at build time.** Tauri fetches `linuxdeploy` and
-  `appimagetool` during the AppImage build step — a network dependency in the release path,
-  budgeted with its own `timeout-minutes` in the release workflow rather than left unbounded.
-- **No raw Linux binaries are published** — only the `.deb` and `.AppImage`. Mirrors the Windows
-  decision to drop the redundant `rtmapp.exe`, for a different reason: on Linux there is no
-  "install without a package manager" story worth shipping loose binaries for.
+`RTMAPP_THEME=light` or `RTMAPP_THEME=dark` forces a theme instead of following the system, for
+screenshots of both themes; any other value is ignored.
 
 ---
 
 ## Known Issues
 
-- **Load File fails on GNU/Linux.** The GTK file dialog (via `tauri-plugin-dialog`) may return a
-  `file://` URI or an unexpected format, which causes `std::path::Path::canonicalize()` in
-  `load_file` to fail. Works correctly on Windows and macOS.
+- Dialog failures look like a cancel in the UI; the cause is on stderr (see File dialog above).
+- The edit dialog does not scroll: a `ScrollArea` inside egui's `Modal` stays too short. The form fits
+  the default window; revisit if it grows (see the `shortcut:` comment in `edit::show`).

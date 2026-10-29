@@ -30,8 +30,7 @@ ARM64 and 32-bit Windows builds are not currently produced.
 ### GNU/Linux and macOS
 
 Not yet packaged for release. Build from source (see `AGENTS.md` and the per-component
-`AGENTS.md` files) or use the Nix flake (`nix build .#rtmcli` / `nix build .#rtmapp` /
-`nix build .#rtmgui`).
+`AGENTS.md` files) or use the Nix flake (`nix build .#rtmcli` / `nix build .#rtmapp`).
 
 ## General plan
 

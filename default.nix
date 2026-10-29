@@ -1,8 +1,7 @@
 # Legacy nix-build entry point. For flakes, use flake.nix.
 # Usage:
 #   nix-build -A rtmcli
-#   nix-build -A rtmapp   # best-effort (Tauri, Linux only)
-#   nix-build -A rtmgui   # egui app (Linux only)
+#   nix-build -A rtmapp   # desktop app (Linux only)
 
 { pkgs ? import <nixpkgs> {} }:
 
@@ -16,31 +15,7 @@ let
         [ "target" ".git" "node_modules" ".direnv" ]);
   };
 
-  # Shared GUI deps for rtmapp (GTK3 + X11/Wayland/OpenGL).
-  guiDeps = with pkgs; [
-    gtk3
-    glib
-    atk
-    gdk-pixbuf
-    pango
-    cairo
-    libxcb
-    libx11
-    libxcursor
-    libxrandr
-    libxi
-    libGL
-    libxkbcommon
-    wayland
-  ];
-
-  # Additional deps for rtmapp (Tauri v2 — WebKitGTK 4.1 + libsoup 3).
-  tauriDeps = guiDeps ++ (with pkgs; [
-    webkitgtk_4_1
-    libsoup_3
-  ]);
-
-  # Run-time libraries for rtmgui (egui/winit/wgpu). It loads all of them with dlopen, so they are
+  # Run-time libraries for rtmapp (egui/winit/wgpu). It loads all of them with dlopen, so they are
   # not build inputs but go on the binary's rpath.
   eguiDeps = with pkgs; [
     wayland
@@ -73,76 +48,37 @@ in {
   };
 
   # ── rtmapp ──────────────────────────────────────────────────────────────────
-  # Best-effort: plain `cargo build -p rtmapp` (bypasses Tauri bundler).
-  # Frontend assets are copied into $out/share/rtmapp/ via postInstall.
+  # The egui desktop app. No native build inputs: every library is loaded at run time.
   rtmapp = pkgs.rustPlatform.buildRustPackage {
     pname   = "rtmapp";
-    version = "0.1.0";
+    version = (pkgs.lib.importTOML ./rtmapp/Cargo.toml).package.version;
     inherit src;
     cargoLock.lockFile = ./Cargo.lock;
     cargoBuildFlags    = [ "-p" "rtmapp" ];
-    nativeBuildInputs  = with pkgs; [
-      pkg-config
-      gobject-introspection
-      wrapGAppsHook4
-    ];
-    buildInputs = tauriDeps;
-    WEBKIT_DISABLE_COMPOSITING_MODE = "1";
-    postInstall = ''
-      # Frontend assets (served by the embedded WebKit view)
-      mkdir -p $out/share/rtmapp
-      cp -r $src/rtmapp/src $out/share/rtmapp/
-
-      # XDG desktop entry
-      mkdir -p $out/share/applications
-      cp $src/rtmapp/rtmapp.desktop $out/share/applications/rtmapp.desktop
-
-      # Icons — hicolor theme, standard sizes
-      mkdir -p $out/share/icons/hicolor/32x32/apps
-      mkdir -p $out/share/icons/hicolor/128x128/apps
-      mkdir -p $out/share/icons/hicolor/256x256/apps
-      cp $src/rtmapp/src-tauri/icons/32x32.png \
-         $out/share/icons/hicolor/32x32/apps/rtmapp.png
-      cp $src/rtmapp/src-tauri/icons/128x128.png \
-         $out/share/icons/hicolor/128x128/apps/rtmapp.png
-      cp $src/rtmapp/src-tauri/icons/128x128@2x.png \
-         $out/share/icons/hicolor/256x256/apps/rtmapp.png
-      mkdir -p $out/share/icons/hicolor/512x512/apps
-      cp $src/rtmapp/src-tauri/icons/icon.png \
-         $out/share/icons/hicolor/512x512/apps/rtmapp.png
-    '';
-    meta = with pkgs.lib; {
-      description = "Rusty Todo.txt Manager — Tauri desktop app (best-effort)";
-      license     = licenses.mit;
-      platforms   = platforms.linux;
-      mainProgram = "rtmapp";
-    };
-  };
-
-  # ── rtmgui ──────────────────────────────────────────────────────────────────
-  # A standalone Cargo workspace with its own lock (see rtmgui/AGENTS.md). No native build
-  # inputs: every library is loaded at run time.
-  rtmgui = pkgs.rustPlatform.buildRustPackage {
-    pname   = "rtmgui";
-    version = (pkgs.lib.importTOML ./rtmgui/Cargo.toml).package.version;
-    inherit src;
-    cargoRoot          = "rtmgui";
-    buildAndTestSubdir = "rtmgui";
-    cargoLock.lockFile = ./rtmgui/Cargo.lock;
+    cargoTestFlags     = [ "-p" "rtmapp" ];
     postInstall = ''
       # The embedded Inter fonts' licence (SIL OFL) must ship with every copy.
-      install -Dm644 $src/rtmgui/assets/fonts/Inter-LICENSE.txt \
-        $out/share/licenses/rtmgui/Inter-LICENSE.txt
+      install -Dm644 $src/rtmapp/assets/fonts/Inter-LICENSE.txt \
+        $out/share/licenses/rtmapp/Inter-LICENSE.txt
+
+      # XDG desktop entry and hicolor icons
+      install -Dm644 $src/rtmapp/assets/rtmapp.desktop $out/share/applications/rtmapp.desktop
+      icons=$src/rtmapp/assets/icons
+      hicolor=$out/share/icons/hicolor
+      install -Dm644 $icons/32x32.png      $hicolor/32x32/apps/rtmapp.png
+      install -Dm644 $icons/128x128.png    $hicolor/128x128/apps/rtmapp.png
+      install -Dm644 $icons/128x128@2x.png $hicolor/256x256/apps/rtmapp.png
+      install -Dm644 $icons/icon.png       $hicolor/512x512/apps/rtmapp.png
     '';
     # After the rpath shrinking in fixupPhase, which would drop these unused-at-link entries.
     postFixup = ''
-      patchelf --add-rpath ${pkgs.lib.makeLibraryPath eguiDeps} $out/bin/rtmgui
+      patchelf --add-rpath ${pkgs.lib.makeLibraryPath eguiDeps} $out/bin/rtmapp
     '';
     meta = with pkgs.lib; {
-      description = "Rusty Todo.txt Manager — egui desktop app";
+      description = "Rusty Todo.txt Manager — desktop app";
       license     = licenses.mit;
       platforms   = platforms.linux;
-      mainProgram = "rtmgui";
+      mainProgram = "rtmapp";
     };
   };
 }

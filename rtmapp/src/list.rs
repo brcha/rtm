@@ -12,10 +12,10 @@ use crate::theme::{self, Palette};
 
 const DATE_FORMAT: &str = "%Y-%m-%d";
 
-/// The file indices of the items to show, filtered and sorted like `rtmapp`'s `get_items`: items
-/// without a due date first, then by due date, then by priority (none last). One deliberate
-/// difference: dates run earliest first, and `reverse_sort` gives latest first (`rtmapp` has it the
-/// other way round).
+/// The file indices of the items to show, filtered and sorted like the Tauri app's `get_items`:
+/// items without a due date first, then by due date, then by priority (none last). One deliberate
+/// difference: dates run earliest first, and `reverse_sort` gives latest first (the Tauri app had
+/// it the other way round).
 pub fn visible(items: &[TodoItem], config: &AppConfig, today: NaiveDate) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..items.len())
         .filter(|&i| {
@@ -247,22 +247,23 @@ mod tests {
 
     const ALL: u8 = 1 | 2;
 
-    /// `rtmapp`'s filter, copied verbatim from `get_items` in `rtmapp/src-tauri/src/lib.rs`.
-    fn rtmapp_shows(item: &TodoItem, config: &AppConfig, today: NaiveDate) -> bool {
+    /// The Tauri app's filter, copied verbatim from `get_items` in `rtmapp/src-tauri/src/lib.rs` at
+    /// 5076649 (removed in RTM-39).
+    fn tauri_app_shows(item: &TodoItem, config: &AppConfig, today: NaiveDate) -> bool {
         !(item.due.map_or(false, |d| d > today) && !config.show_future_items)
             && !(item.done && !config.show_completed_items)
             && !(config.hide_no_date && item.due.is_none())
     }
 
     #[test]
-    fn filters_match_rtmapp_for_every_flag_combination() {
+    fn filters_match_the_tauri_app_for_every_flag_combination() {
         let items = fixture();
         for bits in 0..16 {
             let config = config(bits);
             let mut shown = visible(&items, &config, today());
             shown.sort();
             let expected: Vec<usize> = (0..items.len())
-                .filter(|&i| rtmapp_shows(&items[i], &config, today()))
+                .filter(|&i| tauri_app_shows(&items[i], &config, today()))
                 .collect();
             assert_eq!(shown, expected, "flags {bits:04b}");
         }

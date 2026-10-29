@@ -1,8 +1,9 @@
 //! The date fields of the edit dialog: a text input with a calendar popup below it, styled like the
-//! flatpickr popup `rtmapp` uses (`rtmapp/src/assets/flatpickr.min.css`). Typing a date still works,
-//! as flatpickr's `allowInput: true` allows. Deliberate differences: the dark theme uses the app's dark
-//! palette (flatpickr is light only), a Clear button empties the field, the week starts on the
-//! locale's first day (flatpickr: Sunday), and the month is stepped with arrows (no month dropdown).
+//! flatpickr popup the former Tauri app used (`rtmapp/src/assets/flatpickr.min.css` at 5076649).
+//! Typing a date still works, as flatpickr's `allowInput: true` allows. Deliberate differences: the
+//! dark theme uses the app's dark palette (flatpickr is light only), a Clear button empties the
+//! field, the week starts on the locale's first day (flatpickr: Sunday), and the month is stepped
+//! with arrows (no month dropdown).
 
 use std::sync::OnceLock;
 

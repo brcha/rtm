@@ -1,8 +1,9 @@
-//! The edit dialog: the form behind it (`EditForm`) and the modal (`show`), laid out like `rtmapp`'s
-//! `#edit-dialog`. Saving follows `rtmapp`'s `update_item`, with deliberate differences: the priority
-//! can be any letter A to Z, invalid dates or recurrence are refused instead of being silently
-//! dropped, tag names with whitespace are refused instead of being written as typed, and a typed `+`
-//! or `@` in front of a tag name is dropped. The date fields have a calendar popup (`calendar`).
+//! The edit dialog: the form behind it (`EditForm`) and the modal (`show`), laid out like the
+//! former Tauri app's `#edit-dialog` (`rtmapp/src/index.html` at 5076649). Saving follows its
+//! `update_item`, with deliberate differences: the priority can be any letter A to Z, invalid dates
+//! or recurrence are refused instead of being silently dropped, tag names with whitespace are
+//! refused instead of being written as typed, and a typed `+` or `@` in front of a tag name is
+//! dropped. The date fields have a calendar popup (`calendar`).
 
 use chrono::NaiveDate;
 use eframe::egui::{self, Align, Color32, Frame, Key, Layout, Modal, RichText, Stroke, Ui};
@@ -34,7 +35,7 @@ pub enum Outcome {
 }
 
 impl EditForm {
-    /// Fills the form from `item`, as `openEditDialog` does.
+    /// Fills the form from `item`, as the Tauri app's `openEditDialog` did.
     pub fn new(index: usize, item: &TodoItem) -> Self {
         let date = |d: Option<NaiveDate>| d.map(|d| d.format(DATE_FORMAT).to_string());
         EditForm {
@@ -132,7 +133,7 @@ fn names(text: &str, sigil: char, field: &str) -> Result<Vec<String>, String> {
         .collect()
 }
 
-/// The priority choices: none, then A to Z, with the `rtmapp` labels on A to C.
+/// The priority choices: none, then A to Z, with the Tauri app's labels on A to C.
 fn priority_label(priority: Option<u8>) -> String {
     match priority {
         None => "None".to_owned(),
@@ -149,7 +150,7 @@ fn priority_label(priority: Option<u8>) -> String {
 }
 
 /// The modal. Returns `Save` on the Save button or Enter in a field, and `Cancel` on the Cancel
-/// button, Escape or a click outside the dialog (`rtmapp` closes only on its buttons).
+/// button, Escape or a click outside the dialog (the Tauri app closed only on its buttons).
 pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     // CSS: 500 px wide with 24 px padding, 8 px corners and a soft shadow; dark adds a border.
     let frame = Frame::new()
@@ -330,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn fields_are_filled_like_rtmapp() {
+    fn fields_are_filled_like_the_tauri_app() {
         let f = form("(B) Task +Work +Home @office due:2026-11-01 rec:1w t:2026-10-30");
         assert_eq!(f.description, "Task");
         assert_eq!(f.priority, Some(1));

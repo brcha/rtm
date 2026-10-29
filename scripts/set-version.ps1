@@ -11,21 +11,18 @@
     make that be true: run it, review the diff, commit it, then `git tag`.
 
     Rewrites the `version` field in:
-      - rtmapp/src-tauri/tauri.conf.json  (drives MSI ProductVersion and exe metadata)
-      - rtmapp/src-tauri/Cargo.toml
+      - rtmapp/Cargo.toml   (the release version's source of truth; drives the installers)
       - rtmcli/Cargo.toml
-      - rtmgui/Cargo.toml
       - todotxt/Cargo.toml
-      - rtmapp/package.json               (cosmetic, kept in sync for consistency)
 
-    For Cargo.toml files, only the `version` key inside the `[package]` table is touched. This is
+    Only the `version` key inside the `[package]` table is touched. This is
     scoped deliberately, not just anchored to the start of a line: todotxt/Cargo.toml also has a
     `[dependencies.uuid]` table with its own `version = "..."` line, and a naive "first line
     starting with version" match would be correct today only by accident of ordering. Scoping the
     match to the `[package]` table body makes it correct by construction, and safe even if a
     dependency table is ever reordered to appear first.
 
-    Each target is patched via a narrow, targeted regex rather than full JSON/TOML
+    Each target is patched via a narrow, targeted regex rather than full TOML
     (de)serialization, to avoid reformatting files that are otherwise hand-maintained. If a
     target's version key cannot be found, the script fails loudly rather than silently leaving
     that file unversioned — a silent no-op here would ship a release with a stale version forever
@@ -91,32 +88,8 @@ if ($patch -gt 65535) {
 Write-Host "Setting version to $normalised"
 
 # ---------------------------------------------------------------------------
-# 2. Patch helpers, one per file shape.
+# 2. Patch helper.
 # ---------------------------------------------------------------------------
-
-function Set-JsonTopLevelVersion {
-    <#
-        Replaces a top-level (2-space-indented) "version": "..." key. Anchored to that specific
-        indentation so it cannot match a nested version key elsewhere in the document (e.g. a
-        future `bundle.windows.wix.version`, which would be indented further).
-    #>
-    param([string]$Content, [string]$NewVersion)
-
-    $pattern = '(?m)^  "version": "[^"]*"'
-    $replacement = "  `"version`": `"$NewVersion`""
-    $regex = [regex]::new($pattern)
-    $match = $regex.Match($Content)
-
-    if (-not $match.Success) {
-        return $null
-    }
-
-    return @{
-        Before  = $match.Value
-        After   = $replacement
-        Content = $regex.Replace($Content, $replacement, 1)
-    }
-}
 
 function Set-TomlPackageVersion {
     <#
@@ -159,12 +132,9 @@ function Set-TomlPackageVersion {
 # ---------------------------------------------------------------------------
 
 $targets = @(
-    @{ Path = Join-Path $RepoRoot 'rtmapp/src-tauri/tauri.conf.json'; Handler = ${function:Set-JsonTopLevelVersion} },
-    @{ Path = Join-Path $RepoRoot 'rtmapp/src-tauri/Cargo.toml';       Handler = ${function:Set-TomlPackageVersion} },
-    @{ Path = Join-Path $RepoRoot 'rtmcli/Cargo.toml';                 Handler = ${function:Set-TomlPackageVersion} },
-    @{ Path = Join-Path $RepoRoot 'rtmgui/Cargo.toml';                 Handler = ${function:Set-TomlPackageVersion} },
-    @{ Path = Join-Path $RepoRoot 'todotxt/Cargo.toml';                Handler = ${function:Set-TomlPackageVersion} },
-    @{ Path = Join-Path $RepoRoot 'rtmapp/package.json';               Handler = ${function:Set-JsonTopLevelVersion} }
+    @{ Path = Join-Path $RepoRoot 'rtmapp/Cargo.toml';  Handler = ${function:Set-TomlPackageVersion} },
+    @{ Path = Join-Path $RepoRoot 'rtmcli/Cargo.toml';  Handler = ${function:Set-TomlPackageVersion} },
+    @{ Path = Join-Path $RepoRoot 'todotxt/Cargo.toml'; Handler = ${function:Set-TomlPackageVersion} }
 )
 
 # ---------------------------------------------------------------------------
