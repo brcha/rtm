@@ -54,6 +54,7 @@ rtmapp/
 | sys-locale 0.3      | The OS locale, for the calendar's week start       |
 | icu_calendar 2.4    | CLDR first day of the week for a locale            |
 | icu_locale_core 2.4 | Parses the locale for `icu_calendar`               |
+| windows-sys 0.52    | Windows only: the taskbar ID (winit's version)     |
 
 ---
 
@@ -120,6 +121,8 @@ rtmapp/
   not read yet (RTM-44).
 - **Windows:** release builds use the `windows` subsystem (`#![cfg_attr(...)]` in `main.rs`), as the
   Tauri app did, so no console window opens behind the GUI. The window opens centred at 900 × 650.
+  Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
+  uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
 - Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
   build `App { .. }` directly with a temp `config_path` (see `app_with`), never
   `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.
@@ -252,7 +255,8 @@ the binary, the desktop entry, the hicolor icons and both licences; the MSI inst
   - install folder `Program Files\Rusty Todo.txt Manager` with the exe at its root, desktop shortcut,
     "Launch" checkbox on the finish screen — **kept**; the shortcuts are optional features here;
   - Start Menu shortcut inside a `Rusty Todo.txt Manager` folder — **now directly in Programs**;
-  - AppUserModelID `com.brcha.rtm` on that shortcut — **not set**, as the app sets none (RTM-48);
+  - AppUserModelID `com.brcha.rtm` on that shortcut — **kept**, on both shortcuts; the app sets the same
+    ID at startup (RTM-48), and the Release workflow reads it back from the installed shortcuts;
   - an Uninstall shortcut in the install folder — **dropped** (Settings > Apps uninstalls);
   - a "PATH Environment Variable" feature that only referenced the exe and never set PATH, and the
     WebView2 bootstrapper — **dropped**.

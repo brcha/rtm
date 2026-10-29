@@ -15,6 +15,9 @@
     a folder) and desktop shortcuts are optional features (on by default, deselectable in the
     installer). The finish screen offers to launch the app, as Tauri's did; Tauri's Uninstall shortcut
     is not kept (Settings > Apps uninstalls).
+  - Both shortcuts carry the AppUserModelID com.brcha.rtm, which Tauri's Start Menu shortcut had and the
+    app sets at startup (main.rs): the taskbar groups the window with the shortcut, and pins made with
+    a Tauri install keep working.
 
   cargo-wix sets Version (from rtmapp/Cargo.toml) and CargoTargetBinDir. Paths to repository files are
   relative to this file, so the build does not depend on the working directory.
@@ -115,7 +118,9 @@
                         Name='$(var.ProductName)'
                         Target='[APPLICATIONFOLDER]rtmapp.exe'
                         WorkingDirectory='APPLICATIONFOLDER'
-                        Icon='ProductICO'/>
+                        Icon='ProductICO'>
+                        <ShortcutProperty Key='System.AppUserModel.ID' Value='com.brcha.rtm'/>
+                    </Shortcut>
                     <!-- An HKCU key path, as Tauri's per-machine template had for its shortcut. -->
                     <RegistryValue Root='HKCU'
                         Key='$(var.RegistryKey)'
@@ -132,7 +137,9 @@
                         Name='$(var.ProductName)'
                         Target='[APPLICATIONFOLDER]rtmapp.exe'
                         WorkingDirectory='APPLICATIONFOLDER'
-                        Icon='ProductICO'/>
+                        Icon='ProductICO'>
+                        <ShortcutProperty Key='System.AppUserModel.ID' Value='com.brcha.rtm'/>
+                    </Shortcut>
                     <RegistryValue Root='HKCU'
                         Key='$(var.RegistryKey)'
                         Name='DesktopShortcut'

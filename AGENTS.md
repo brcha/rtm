@@ -144,7 +144,8 @@ one that had them.
 - **Identity:** the binary is `rtmapp` everywhere (`flake.nix`/`default.nix` `mainProgram`, the desktop
   entry's `Exec=rtmapp`, `Icon=rtmapp` and `StartupWMClass=rtmapp`, the deb package name); the display
   name is "Rusty Todo.txt Manager"; the reverse-DNS identifier (Tauri's `identifier`, kept for a macOS
-  bundle and the Windows AppUserModelID, RTM-11 and RTM-48) is `com.brcha.rtm`.
+  bundle, RTM-11) is `com.brcha.rtm`. It is also the Windows AppUserModelID, set by the app at startup
+  and on both MSI shortcuts (RTM-48).
 - **Merges are squashes.** One PR becomes exactly one commit on `main`, so PR titles are the
   changelog — the release workflow's `generate_release_notes: true` consumes them directly, and
   `.github/workflows/pr-title.yml` already forces them to be conventional and RTM-tagged.
@@ -165,9 +166,9 @@ one that had them.
   warning, ICE61, comes from that).
 - **Exe resources:** `rtmapp/build.rs` embeds `icon.ico` and the product name in `rtmapp.exe` with
   `winresource`, checking `CARGO_CFG_TARGET_OS` (not `#[cfg]`, which tests the host).
-- **Tests in the job:** a silent fresh install (files, both shortcuts, the exe's version information,
-  uninstall), then an upgrade from the v0.1.3 Tauri MSI installed into a custom folder (one product
-  afterwards, at the new version, still in that folder). Both read the product from the uninstall
+- **Tests in the job:** a silent fresh install (files, both shortcuts and their AppUserModelID, the
+  exe's version information, uninstall), then an upgrade from the v0.1.3 Tauri MSI installed into a
+  custom folder (one product afterwards, at the new version, still in that folder). Both read the product from the uninstall
   entries in the registry: the Windows Installer COM API failed with `DISP_E_TYPEMISMATCH` from
   PowerShell. **The upgrade test downloads the v0.1.3 release asset, so that release must stay.**
   More tests: RTM-49.

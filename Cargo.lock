@@ -3200,6 +3200,7 @@ dependencies = [
  "sys-locale",
  "todotxt",
  "toml 0.8.23",
+ "windows-sys 0.52.0",
  "winresource",
 ]
 
