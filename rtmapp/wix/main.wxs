@@ -9,8 +9,12 @@
     Tauri (or older) version instead of installing beside it.
   - Per-machine install into "Program Files\Rusty Todo.txt Manager", the exe at its root, as Tauri had.
   - Downgrades allowed, as Tauri's default.
-  - The template's PATH feature is gone (a GUI app). Start Menu and desktop shortcuts are added as
-    optional features (on by default, deselectable in the installer), and the Add/Remove Programs icon.
+  - Manufacturer "brcha" and the registry key Software\brcha\Rusty Todo.txt Manager, as Tauri had; the
+    install folder is saved there and reused on upgrade, so a custom folder from a Tauri install stays.
+  - The template's PATH feature is gone (a GUI app). Start Menu (directly in Programs, where Tauri used
+    a folder) and desktop shortcuts are optional features (on by default, deselectable in the
+    installer). The finish screen offers to launch the app, as Tauri's did; Tauri's Uninstall shortcut
+    is not kept (Settings > Apps uninstalls).
 
   cargo-wix sets Version (from rtmapp/Cargo.toml) and CargoTargetBinDir. Paths to repository files are
   relative to this file, so the build does not depend on the working directory.
@@ -23,7 +27,8 @@
 <?endif ?>
 
 <?define ProductName = "Rusty Todo.txt Manager" ?>
-<?define Manufacturer = "Filip Brcic" ?>
+<?define Manufacturer = "brcha" ?>
+<?define RegistryKey = "Software\$(var.Manufacturer)\$(var.ProductName)" ?>
 <?define RepoDir = "$(sys.SOURCEFILEDIR)..\.." ?>
 
 <Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
@@ -58,6 +63,16 @@
         <Property Id='ARPPRODUCTICON' Value='ProductICO'/>
         <Property Id='ARPHELPLINK' Value='https://github.com/brcha/rtm'/>
 
+        <!-- The folder of a previous install, Tauri's or this MSI's (InstallDirRegistry below). -->
+        <Property Id='APPLICATIONFOLDER'>
+            <RegistrySearch Id='PrevInstallDir'
+                Root='HKCU'
+                Key='$(var.RegistryKey)'
+                Name='InstallDir'
+                Type='raw'
+                Win64='yes'/>
+        </Property>
+
         <Directory Id='TARGETDIR' Name='SourceDir'>
             <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
                 <Directory Id='APPLICATIONFOLDER' Name='$(var.ProductName)'>
@@ -67,6 +82,14 @@
                             Name='rtmapp.exe'
                             DiskId='1'
                             Source='$(var.CargoTargetBinDir)\rtmapp.exe'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='InstallDirRegistry' Guid='*'>
+                        <RegistryValue Root='HKCU'
+                            Key='$(var.RegistryKey)'
+                            Name='InstallDir'
+                            Type='string'
+                            Value='[APPLICATIONFOLDER]'
                             KeyPath='yes'/>
                     </Component>
                     <Component Id='License' Guid='*'>
@@ -95,7 +118,7 @@
                         Icon='ProductICO'/>
                     <!-- An HKCU key path, as Tauri's per-machine template had for its shortcut. -->
                     <RegistryValue Root='HKCU'
-                        Key='Software\$(var.Manufacturer)\$(var.ProductName)'
+                        Key='$(var.RegistryKey)'
                         Name='StartMenuShortcut'
                         Type='integer'
                         Value='1'
@@ -111,7 +134,7 @@
                         WorkingDirectory='APPLICATIONFOLDER'
                         Icon='ProductICO'/>
                     <RegistryValue Root='HKCU'
-                        Key='Software\$(var.Manufacturer)\$(var.ProductName)'
+                        Key='$(var.RegistryKey)'
                         Name='DesktopShortcut'
                         Type='integer'
                         Value='1'
@@ -130,6 +153,7 @@
             Display='expand'
             Absent='disallow'>
             <ComponentRef Id='binary0'/>
+            <ComponentRef Id='InstallDirRegistry'/>
             <ComponentRef Id='License'/>
             <ComponentRef Id='InterLicense'/>
 
@@ -156,11 +180,18 @@
 
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
 
+        <!-- "Launch" checkbox on the finish screen, checked by default; interactive installs only. -->
+        <Property Id='WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT' Value='Launch $(var.ProductName)'/>
+        <Property Id='WIXUI_EXITDIALOGOPTIONALCHECKBOX' Value='1'/>
+        <Property Id='LAUNCHAPPARGS' Secure='yes'/>
+        <CustomAction Id='LaunchApplication' FileKey='exe0' ExeCommand='[LAUNCHAPPARGS]' Return='asyncNoWait'/>
+
         <UI>
             <UIRef Id='WixUI_FeatureTree'/>
             <!-- No licence dialog, as the Tauri MSI had none. -->
             <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='99'>1</Publish>
             <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='99'>1</Publish>
+            <Publish Dialog='ExitDialog' Control='Finish' Event='DoAction' Value='LaunchApplication'>WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
         </UI>
 
     </Product>
