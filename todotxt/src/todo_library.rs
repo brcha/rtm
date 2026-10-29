@@ -1,6 +1,8 @@
 use crate::todo_item::TodoItem;
 use crate::todo_recurrence::TodoRecurrenceUnit;
 use chrono::{Duration, Local};
+use std::collections::HashSet;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TodoLibrary {
@@ -48,12 +50,35 @@ impl TodoLibrary {
         self.items.push(item);
     }
 
-    pub fn remove_item(&mut self, index: usize) -> Option<TodoItem> {
-        if index < self.items.len() {
-            Some(self.items.remove(index))
-        } else {
-            None
+    /// Removes the item at `index` and, recursively, every item whose `sub` is the uuid of a
+    /// removed item. Returns the removed items in file order, or `None` if `index` is out of
+    /// bounds.
+    pub fn remove_item(&mut self, index: usize) -> Option<Vec<TodoItem>> {
+        if index >= self.items.len() {
+            return None;
         }
+        let mut marked = vec![false; self.items.len()];
+        marked[index] = true;
+        let mut visited = HashSet::new();
+        let mut pending: Vec<Uuid> = self.items[index].uuid.into_iter().collect();
+        // Items are marked once, so cyclic links terminate; `visited` skips rescans of duplicated uuids.
+        while let Some(parent) = pending.pop() {
+            if !visited.insert(parent) {
+                continue;
+            }
+            for (i, item) in self.items.iter().enumerate() {
+                if !marked[i] && item.sub == Some(parent) {
+                    marked[i] = true;
+                    pending.extend(item.uuid);
+                }
+            }
+        }
+        let (removed, kept) = std::mem::take(&mut self.items)
+            .into_iter()
+            .zip(marked)
+            .partition::<Vec<_>, _>(|(_, m)| *m);
+        self.items = kept.into_iter().map(|(item, _)| item).collect();
+        Some(removed.into_iter().map(|(item, _)| item).collect())
     }
     pub fn list_items(&self) -> &Vec<TodoItem> {
         &self.items
@@ -200,10 +225,10 @@ mod tests {
         let mut lib = TodoLibrary::new("dummy.txt".to_string());
         lib.add_item("Item 1".parse().unwrap());
         lib.add_item("Item 2".parse().unwrap());
-        let removed = lib.remove_item(0);
-        assert!(removed.is_some());
+        let removed = lib.remove_item(0).unwrap();
+        assert_eq!(removed.len(), 1);
         assert_eq!(lib.items.len(), 1);
-        assert_eq!(removed.unwrap().description, "Item 1");
+        assert_eq!(removed[0].description, "Item 1");
     }
 
     #[test]
@@ -508,8 +533,9 @@ mod tests {
         lib.add_item("First".parse().unwrap());
         lib.add_item("Second".parse().unwrap());
         lib.add_item("Third".parse().unwrap());
-        let removed = lib.remove_item(0);
-        assert_eq!(removed.unwrap().description, "First");
+        let removed = lib.remove_item(0).unwrap();
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].description, "First");
         assert_eq!(lib.item_count(), 2);
     }
 
@@ -519,9 +545,81 @@ mod tests {
         lib.add_item("First".parse().unwrap());
         lib.add_item("Second".parse().unwrap());
         lib.add_item("Third".parse().unwrap());
-        let removed = lib.remove_item(1);
-        assert_eq!(removed.unwrap().description, "Second");
+        let removed = lib.remove_item(1).unwrap();
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].description, "Second");
         assert_eq!(lib.item_count(), 2);
+    }
+
+    /// Builds a library of items named by `description`, each with the given uuid and sub.
+    fn linked(items: &[(&str, Option<Uuid>, Option<Uuid>)]) -> TodoLibrary {
+        let mut lib = TodoLibrary::new("dummy.txt".to_string());
+        for (description, uuid, sub) in items {
+            let mut item: TodoItem = description.parse().unwrap();
+            item.uuid = *uuid;
+            item.sub = *sub;
+            lib.add_item(item);
+        }
+        assert_eq!(lib.item_count(), items.len());
+        lib
+    }
+
+    fn descriptions(items: &[TodoItem]) -> Vec<&str> {
+        items.iter().map(|item| item.description.as_str()).collect()
+    }
+
+    #[test]
+    fn test_remove_item_without_uuid_removes_only_itself() {
+        let other = Uuid::new_v4();
+        let mut lib = linked(&[("Plain", None, None), ("Child", None, Some(other))]);
+        let removed = lib.remove_item(0).unwrap();
+        assert_eq!(descriptions(&removed), ["Plain"]);
+        assert_eq!(descriptions(&lib.items), ["Child"]);
+    }
+
+    #[test]
+    fn test_remove_item_removes_sub_items_recursively() {
+        let (parent, child) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut lib = linked(&[
+            ("Grandchild", None, Some(child)),
+            ("Unrelated", None, None),
+            ("Parent", Some(parent), None),
+            ("Child A", Some(child), Some(parent)),
+            ("Child B", None, Some(parent)),
+        ]);
+        let removed = lib.remove_item(2).unwrap();
+        assert_eq!(
+            descriptions(&removed),
+            ["Grandchild", "Parent", "Child A", "Child B"]
+        );
+        assert_eq!(descriptions(&lib.items), ["Unrelated"]);
+    }
+
+    #[test]
+    fn test_remove_sub_item_keeps_parent_and_siblings() {
+        let (parent, child) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut lib = linked(&[
+            ("Parent", Some(parent), None),
+            ("Child A", Some(child), Some(parent)),
+            ("Child B", None, Some(parent)),
+            ("Grandchild", None, Some(child)),
+        ]);
+        let removed = lib.remove_item(1).unwrap();
+        assert_eq!(descriptions(&removed), ["Child A", "Grandchild"]);
+        assert_eq!(descriptions(&lib.items), ["Parent", "Child B"]);
+    }
+
+    #[test]
+    fn test_remove_item_with_cyclic_links_terminates() {
+        let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut lib = linked(&[
+            ("A", Some(a), Some(b)),
+            ("B", Some(b), Some(a)),
+            ("Other", None, None),
+        ]);
+        let removed = lib.remove_item(0).unwrap();
+        assert_eq!(descriptions(&removed), ["A", "B"]);
+        assert_eq!(descriptions(&lib.items), ["Other"]);
     }
 
     #[test]

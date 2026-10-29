@@ -44,6 +44,9 @@ todotxt/src/
 - `uncomplete_item(index)` clears `done` and `completion_date`, returns `Option<()>` (None =
   out of bounds). Priority and creation date are untouched — priority re-serializes as `(X)`
   automatically because `Display` keys that choice off `done`.
+- `remove_item(index)` removes the item and, recursively, every item whose `sub` is the uuid
+  of a removed item (cyclic links terminate). Returns `Option<Vec<TodoItem>>`: None = out of
+  bounds, otherwise the removed items in file order. Like every mutation it does not save.
 - `TodoItem` fields: `done`, `priority`, `completion_date`, `creation_date`, `description`,
   `projects`, `contexts`, `due`, `recurrence`, `threshold`, `uuid`, `sub`.
 - **Priority has two serialization forms, chosen by `done`:** an open item writes `(X)`
