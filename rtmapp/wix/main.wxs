@@ -1,0 +1,168 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<!--
+  WiX v3 source for the rtmapp MSI, built by `cargo wix -p rtmapp` (cargo-wix 0.3.9) in the Release
+  workflow. Started from the template that `cargo wix print wxs` prints (Copyright (C) 2017
+  Christopher R. Field, Apache License 2.0) and edited to replace the Tauri MSI that versions up to
+  0.1.3 shipped:
+
+  - UpgradeCode is the Tauri MSI's and must never change: with it, MajorUpgrade removes an installed
+    Tauri (or older) version instead of installing beside it.
+  - Per-machine install into "Program Files\Rusty Todo.txt Manager", the exe at its root, as Tauri had.
+  - Downgrades allowed, as Tauri's default.
+  - The template's PATH feature is gone (a GUI app). Start Menu and desktop shortcuts are added as
+    optional features (on by default, deselectable in the installer), and the Add/Remove Programs icon.
+
+  cargo-wix sets Version (from rtmapp/Cargo.toml) and CargoTargetBinDir. Paths to repository files are
+  relative to this file, so the build does not depend on the working directory.
+-->
+
+<?if $(sys.BUILDARCH) = x64 or $(sys.BUILDARCH) = arm64 ?>
+    <?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
+<?else ?>
+    <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
+<?endif ?>
+
+<?define ProductName = "Rusty Todo.txt Manager" ?>
+<?define Manufacturer = "Filip Brcic" ?>
+<?define RepoDir = "$(sys.SOURCEFILEDIR)..\.." ?>
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+
+    <Product
+        Id='*'
+        Name='$(var.ProductName)'
+        UpgradeCode='E0E423D1-1101-50D4-BAEE-4A27FA127509'
+        Manufacturer='$(var.Manufacturer)'
+        Language='1033'
+        Codepage='1252'
+        Version='$(var.Version)'>
+
+        <Package Id='*'
+            Keywords='Installer'
+            Description='$(var.ProductName)'
+            Manufacturer='$(var.Manufacturer)'
+            InstallerVersion='450'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perMachine'
+            SummaryCodepage='1252'
+            />
+
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            AllowDowngrades='yes'/>
+
+        <Media Id='1' Cabinet='media1.cab' EmbedCab='yes'/>
+
+        <Icon Id='ProductICO' SourceFile='$(var.RepoDir)\rtmapp\assets\icons\icon.ico'/>
+        <Property Id='ARPPRODUCTICON' Value='ProductICO'/>
+        <Property Id='ARPHELPLINK' Value='https://github.com/brcha/rtm'/>
+
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+            <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
+                <Directory Id='APPLICATIONFOLDER' Name='$(var.ProductName)'>
+                    <Component Id='binary0' Guid='*'>
+                        <File
+                            Id='exe0'
+                            Name='rtmapp.exe'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\rtmapp.exe'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='License' Guid='*'>
+                        <File Id='LicenseFile'
+                            Name='LICENSE.txt'
+                            DiskId='1'
+                            Source='$(var.RepoDir)\LICENSE'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='InterLicense' Guid='*'>
+                        <File Id='InterLicenseFile'
+                            Name='Inter-LICENSE.txt'
+                            DiskId='1'
+                            Source='$(var.RepoDir)\rtmapp\assets\fonts\Inter-LICENSE.txt'
+                            KeyPath='yes'/>
+                    </Component>
+                </Directory>
+            </Directory>
+
+            <Directory Id='ProgramMenuFolder'>
+                <Component Id='StartMenuShortcut' Guid='*'>
+                    <Shortcut Id='StartMenuShortcutLink'
+                        Name='$(var.ProductName)'
+                        Target='[APPLICATIONFOLDER]rtmapp.exe'
+                        WorkingDirectory='APPLICATIONFOLDER'
+                        Icon='ProductICO'/>
+                    <!-- An HKCU key path, as Tauri's per-machine template had for its shortcut. -->
+                    <RegistryValue Root='HKCU'
+                        Key='Software\$(var.Manufacturer)\$(var.ProductName)'
+                        Name='StartMenuShortcut'
+                        Type='integer'
+                        Value='1'
+                        KeyPath='yes'/>
+                </Component>
+            </Directory>
+
+            <Directory Id='DesktopFolder' Name='Desktop'>
+                <Component Id='DesktopShortcut' Guid='*'>
+                    <Shortcut Id='DesktopShortcutLink'
+                        Name='$(var.ProductName)'
+                        Target='[APPLICATIONFOLDER]rtmapp.exe'
+                        WorkingDirectory='APPLICATIONFOLDER'
+                        Icon='ProductICO'/>
+                    <RegistryValue Root='HKCU'
+                        Key='Software\$(var.Manufacturer)\$(var.ProductName)'
+                        Name='DesktopShortcut'
+                        Type='integer'
+                        Value='1'
+                        KeyPath='yes'/>
+                </Component>
+            </Directory>
+        </Directory>
+
+        <Feature
+            Id='Binaries'
+            Title='Application'
+            Description='Installs [ProductName] and its licences.'
+            Level='1'
+            ConfigurableDirectory='APPLICATIONFOLDER'
+            AllowAdvertise='no'
+            Display='expand'
+            Absent='disallow'>
+            <ComponentRef Id='binary0'/>
+            <ComponentRef Id='License'/>
+            <ComponentRef Id='InterLicense'/>
+
+            <!-- Both shortcuts are installed by default and can be deselected in the feature tree. -->
+            <Feature
+                Id='StartMenuShortcutFeature'
+                Title='Start Menu shortcut'
+                Description='Adds [ProductName] to the Start Menu.'
+                Level='1'
+                AllowAdvertise='no'
+                Absent='allow'>
+                <ComponentRef Id='StartMenuShortcut'/>
+            </Feature>
+            <Feature
+                Id='DesktopShortcutFeature'
+                Title='Desktop shortcut'
+                Description='Adds a [ProductName] shortcut to the desktop.'
+                Level='1'
+                AllowAdvertise='no'
+                Absent='allow'>
+                <ComponentRef Id='DesktopShortcut'/>
+            </Feature>
+        </Feature>
+
+        <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+
+        <UI>
+            <UIRef Id='WixUI_FeatureTree'/>
+            <!-- No licence dialog, as the Tauri MSI had none. -->
+            <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='99'>1</Publish>
+            <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='99'>1</Publish>
+        </UI>
+
+    </Product>
+
+</Wix>
