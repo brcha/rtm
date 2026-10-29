@@ -24,6 +24,7 @@ rtmcli/tests/   ← Integration tests
 | `list`     | List items, optionally filtered by completion and date   |
 | `add`      | Add a new item in Todo.txt format                        |
 | `complete` | Complete items by filter, index, or UUID                 |
+| `delete`   | Delete an item and its sub-items, after confirmation     |
 
 ---
 
@@ -33,6 +34,11 @@ rtmcli/tests/   ← Integration tests
 - File path resolved from: `-f <file>` flag → `$TODOTXT` env var → `todo.txt` (cwd fallback).
 - Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
 - `complete` accepts: a filter name (optionally + index/UUID), an absolute index, or a UUID.
+- `delete` takes one item: a number as shown by `list` (with `-c`, as shown by `list -c`) or a
+  UUID (open or completed; `-c` does not apply). It also removes the item's sub-items
+  (`TodoLibrary::remove_item`), prints every line it will remove, and asks `Delete? [y/N]`;
+  anything but `y`/`yes`, including no input, exits 0 without writing. `-y`/`--yes` skips the
+  prompt.
 - No config file — stateless, all options via CLI args/env.
 
 ---
