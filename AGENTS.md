@@ -19,7 +19,6 @@ rtm/                        ← Cargo workspace root
 ├── todotxt/                ← Core library (no UI, no binary)
 ├── rtmcli/                 ← CLI (clap-based)
 ├── rtmapp/                 ← Desktop app (egui/eframe)
-├── spikes/egui-theme/      ← Historical spike for the egui look (RTM-33), not built by CI
 ├── flake.nix, default.nix  ← Nix packages
 └── shell.nix               ← Nix dev shell
 ```
