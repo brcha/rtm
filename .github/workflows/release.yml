@@ -569,7 +569,8 @@ jobs:
         timeout-minutes: 10
         shell: bash
         run: |
-          set -uo pipefail
+          # Not -e (the default shell sets it): the kill in the trap and the wait may fail harmlessly.
+          set +e -uo pipefail
           smoke="$RUNNER_TEMP/smoke"
           fail() { echo "::warning::Wayland smoke launch failed: $1"; exit 1; }
           sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
@@ -578,6 +579,7 @@ jobs:
           XDG_RUNTIME_DIR=$(mktemp -d)
           chmod 700 "$XDG_RUNTIME_DIR"
           export XDG_RUNTIME_DIR
+          weston --version
           weston --backend=headless-backend.so --use-pixman --socket=wayland-rtm --idle-time=0 > "$smoke/weston.log" 2>&1 &
           weston_pid=$!
           app_pid=
@@ -588,10 +590,13 @@ jobs:
             sleep 0.5
           done
           [ -S "$XDG_RUNTIME_DIR/wayland-rtm" ] || fail 'Weston did not create its socket'
+          sleep 1
+          kill -0 "$weston_pid" 2> /dev/null || fail 'Weston exited before any client connected'
 
           WAYLAND_DISPLAY=wayland-rtm XDG_CONFIG_HOME="$smoke" RUST_LOG=info,zbus=warn,tracing=warn rtmapp 2> "$smoke/wayland.log" &
           app_pid=$!
           sleep 5
+          kill -0 "$weston_pid" 2> /dev/null || fail 'Weston exited after rtmapp connected'
           kill -0 "$app_pid" 2> /dev/null || fail 'rtmapp exited within 5 s'
           echo 'Smoke launch: rtmapp is running on Wayland after 5 s.'
           kill "$app_pid"
