@@ -19,6 +19,7 @@ uuid = "1.18.1"
 # packaging identity in root AGENTS.md.
 [package.metadata.deb]
 name = "rtmcli"
+maintainer = "Filip Brcic <filip.brcic@brcha.com>"
 section = "utils"
 priority = "optional"
 assets = [

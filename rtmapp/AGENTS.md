@@ -200,6 +200,25 @@ The binary links no native libraries beyond glibc; it loads Wayland, xkbcommon, 
 fontconfig with `dlopen`. The dev shells put them on `LD_LIBRARY_PATH`, and the Nix package on the
 binary's rpath (`eguiDeps` in `flake.nix` and `default.nix`, see the root `AGENTS.md`).
 
+What it needs at run time (RTM-38); the deb's `depends` and `suggests` in `Cargo.toml` follow this. The
+Wayland entries were found by starting it on Wayland with reduced `LD_LIBRARY_PATH` sets and checking
+that it draws; the X11 list is what a full run under XWayland loaded, not reduced further:
+
+- **Wayland (required):** `libwayland-client.so.0` (without it winit fails with `NoWaylandLib`) and
+  `libxkbcommon.so.0` (winit panics with `XKBNotFound`).
+- **GPU (one of):** `libvulkan.so.1`, or `libEGL.so.1` plus `libwayland-egl.so.1` (without the latter
+  the GL path panics). With neither, wgpu fails to create a surface. The driver itself comes with the
+  system (Mesa).
+- **Fonts (required by the deb):** `libfontconfig.so.1`. The UI starts and draws with the bundled Inter
+  without it, but has no fallback for characters Inter lacks (CJK, emoji, many symbols).
+- **Optional (Suggests):** the X11 set, used only without `WAYLAND_DISPLAY`: `libX11.so.6`,
+  `libX11-xcb.so.1`, `libXcursor.so.1`, `libXi.so.6`, `libxkbcommon-x11.so.0`. GNOME is Wayland-only
+  from Ubuntu 25.10 and Debian forky; X11 matters mainly for older or non-GNOME X sessions.
+- **File dialog:** `rfd` talks to the XDG desktop portal over D-Bus (no library), so the deb depends on
+  `xdg-desktop-portal` and a backend that implements `org.freedesktop.impl.portal.FileChooser`: gtk,
+  gnome or kde on jammy. `xdg-desktop-portal-wlr` (and Hyprland's portal) has none, so wlroots desktops
+  need gtk beside it. The dialog was not opened in those reduced runs.
+
 To try it without touching your own config, point `XDG_CONFIG_HOME` at a scratch directory that has an
 `rtm/config.toml` with a `file_name` line.
 
