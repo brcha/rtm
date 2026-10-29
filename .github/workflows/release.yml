@@ -580,7 +580,9 @@ jobs:
           chmod 700 "$XDG_RUNTIME_DIR"
           export XDG_RUNTIME_DIR
           weston --version
-          weston --backend=headless-backend.so --use-pixman --socket=wayland-rtm --idle-time=0 > "$smoke/weston.log" 2>&1 &
+          # The default (no-op) renderer: with --use-pixman, jammy's Weston 9.0.0 segfaulted once rtmapp
+          # connected and drew.
+          weston --backend=headless-backend.so --socket=wayland-rtm --idle-time=0 > "$smoke/weston.log" 2>&1 &
           weston_pid=$!
           app_pid=
           trap 'kill ${app_pid:+"$app_pid"} "$weston_pid" 2> /dev/null; cat "$smoke/weston.log" "$smoke/wayland.log" 2> /dev/null' EXIT
