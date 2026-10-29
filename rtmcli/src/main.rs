@@ -1,5 +1,6 @@
 use chrono::{Duration, Local};
 use clap::{Parser, Subcommand, ValueEnum};
+use std::io::Write;
 use todotxt::TodoItem;
 use todotxt::TodoLibrary;
 
@@ -39,6 +40,19 @@ enum Commands {
 
         /// Second arg: optional index or identifier
         arg2: Option<String>,
+    },
+    /// Delete an item and its sub-items
+    Delete {
+        /// Item number as shown by `list` (or `list -c` with -c), or a UUID
+        id: String,
+
+        /// The number counts completed items
+        #[arg(short, long)]
+        completed: bool,
+
+        /// Do not ask for confirmation
+        #[arg(short, long)]
+        yes: bool,
     },
 }
 
@@ -232,6 +246,65 @@ fn main() {
             } else {
                 println!("No items matched the criteria");
             }
+        }
+        Commands::Delete { id, completed, yes } => {
+            if let Err(e) = lib.load() {
+                eprintln!("Error loading file '{}': {}", file_name, e);
+                std::process::exit(1);
+            }
+
+            let items = lib.list_items();
+            let index = if let Ok(n) = id.parse::<usize>() {
+                let rows: Vec<usize> = (0..items.len())
+                    .filter(|&i| items[i].done == completed)
+                    .collect();
+                if n == 0 || n > rows.len() {
+                    eprintln!("Invalid index: {}", n);
+                    std::process::exit(1);
+                }
+                rows[n - 1]
+            } else if let Ok(uuid) = id.parse::<uuid::Uuid>() {
+                items
+                    .iter()
+                    .position(|item| item.uuid == Some(uuid))
+                    .unwrap_or_else(|| {
+                        eprintln!("UUID {} not found", uuid);
+                        std::process::exit(1);
+                    })
+            } else {
+                eprintln!("Invalid arg: {}", id);
+                std::process::exit(1);
+            };
+
+            // Removed in memory only; the file is written after confirmation.
+            let target = items[index].clone();
+            let mut removed = lib.remove_item(index).unwrap();
+            // remove_item returns file order, where a sub-item can precede its parent.
+            let pos = removed.iter().position(|item| *item == target).unwrap();
+            removed.remove(pos);
+            println!("Deleting from '{}':", file_name);
+            println!("{}", target);
+            for item in &removed {
+                println!("  {}", item);
+            }
+
+            if !yes {
+                print!("Delete? [y/N] ");
+                std::io::stdout().flush().ok();
+                let mut answer = String::new();
+                std::io::stdin().read_line(&mut answer).ok();
+                let answer = answer.trim().to_lowercase();
+                if answer != "y" && answer != "yes" {
+                    println!("Nothing deleted.");
+                    return;
+                }
+            }
+
+            if let Err(e) = lib.save() {
+                eprintln!("Error saving file: {}", e);
+                std::process::exit(1);
+            }
+            println!("Deleted {} item(s) from '{}'", removed.len() + 1, file_name);
         }
     }
 }
