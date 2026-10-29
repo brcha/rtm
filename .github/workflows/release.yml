@@ -233,6 +233,29 @@ jobs:
           Write-Host "rtmapp.exe: ProductName '$($info.ProductName)', FileDescription '$($info.FileDescription)', ProductVersion '$($info.ProductVersion)'"
           if ($info.ProductName -ne 'Rusty Todo.txt Manager') { throw 'rtmapp.exe has no embedded version information (build.rs).' }
 
+          # Smoke launch with a sample todo.txt: still running after 5 s means it got a window and an
+          # adapter (WARP if the runner has no GPU). A warning only, as the runner's desktop session
+          # is not under our control. The release exe has no console, so stderr goes to a log.
+          $todo = Join-Path $env:RUNNER_TEMP 'todo.txt'
+          Set-Content -Path $todo -Value @('(A) Smoke test +rtm @ci', 'x 2026-10-29 Done item')
+          New-Item -ItemType Directory -Force -Path (Join-Path $env:APPDATA 'rtm') | Out-Null
+          Set-Content -Path (Join-Path $env:APPDATA 'rtm\config.toml') -Value "file_name = '$todo'"
+          $env:RUST_LOG = 'info'
+          $app = $null
+          try {
+            $app = Start-Process $exe -PassThru -RedirectStandardError 'smoke-windows.log'
+            $null = $app.Handle  # without an open handle, ExitCode stays empty after the exit
+            Start-Sleep -Seconds 5
+            if ($app.HasExited) { throw "rtmapp.exe exited within 5 s with exit code $($app.ExitCode)." }
+            Write-Host 'Smoke launch: rtmapp.exe is running after 5 s.'
+          } catch {
+            Write-Host "::warning::Smoke launch failed: $_"
+          } finally {
+            # Before the uninstall: a running exe would keep its files.
+            if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -ErrorAction SilentlyContinue; $app.WaitForExit() }
+            if (Test-Path 'smoke-windows.log') { Get-Content 'smoke-windows.log' }
+          }
+
           Invoke-Msiexec @('/x', $products[0].Code) 'uninstall-fresh.log'
           if ((Get-Installed).Count -ne 0) { throw 'The product is still registered after uninstalling.' }
           if (Test-Path -LiteralPath $exe) { throw "Still present after uninstalling: $exe" }
@@ -494,6 +517,87 @@ jobs:
             exit 1
           fi
 
+      # Smoke launch of the installed app on X11 (the fallback without WAYLAND_DISPLAY), under Xvfb
+      # with Mesa software rendering: lavapipe for Vulkan, llvmpipe for GL. Still running after 5 s
+      # with its window mapped means it got a surface and an adapter; RUST_LOG=info logs which one.
+      # The 24-bit screen is explicit: older xvfb-run scripts default to 8 bit, which has no visual
+      # GL or Vulkan can use. The X11 libraries are the rtmapp deb's Suggests.
+      - name: Smoke launch on X11
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
+            xvfb x11-utils libgl1-mesa-dri libegl-mesa0 mesa-vulkan-drivers \
+            libx11-6 libx11-xcb1 libxcursor1 libxi6 libxkbcommon-x11-0
+
+          # Also used by the Wayland launch below.
+          smoke="$RUNNER_TEMP/smoke"
+          mkdir -p "$smoke/rtm"
+          printf '(A) Smoke test +rtm @ci\nx 2026-10-29 Done item\n' > "$smoke/todo.txt"
+          printf 'file_name = "%s"\n' "$smoke/todo.txt" > "$smoke/rtm/config.toml"
+
+          status=0
+          # shellcheck disable=SC2016 # the inner script expands its own variables
+          env -u WAYLAND_DISPLAY XDG_CONFIG_HOME="$smoke" RUST_LOG=info,zbus=warn,tracing=warn LIBGL_ALWAYS_SOFTWARE=1 SMOKE_LOG="$smoke/x11.log" \
+            xvfb-run -a -s '-screen 0 1280x1024x24' bash -c '
+              rtmapp 2> "$SMOKE_LOG" &
+              pid=$!
+              trap "kill $pid 2> /dev/null" EXIT
+              sleep 5
+              if ! kill -0 "$pid" 2> /dev/null; then
+                echo "::error::rtmapp exited within 5 s on X11."
+                exit 1
+              fi
+              if ! xwininfo -root -tree | grep -F "\"Rusty Todo.txt Manager\""; then
+                echo "::error::rtmapp is running on X11 but has no window."
+                exit 1
+              fi
+              echo "Smoke launch: rtmapp is running on X11 after 5 s."
+              kill "$pid"
+              wait "$pid" 2> /dev/null
+              exit 0
+            ' || status=$?
+          cat "$smoke/x11.log"
+          exit "$status"
+
+      # The same on Wayland, the main path, under a headless Weston (Weston 9 on jammy names the
+      # backend by its module). Non-blocking: without a GPU there is no dmabuf, and whether wgpu
+      # finds a software path that Weston accepts is not guaranteed. A failure shows as a warning.
+      - name: Smoke launch on Wayland
+        continue-on-error: true
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -uo pipefail
+          smoke="$RUNNER_TEMP/smoke"
+          fail() { echo "::warning::Wayland smoke launch failed: $1"; exit 1; }
+          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
+            weston || fail 'could not install weston'
+
+          XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 "$XDG_RUNTIME_DIR"
+          export XDG_RUNTIME_DIR
+          weston --backend=headless-backend.so --use-pixman --socket=wayland-rtm --idle-time=0 > "$smoke/weston.log" 2>&1 &
+          weston_pid=$!
+          app_pid=
+          trap 'kill ${app_pid:+"$app_pid"} "$weston_pid" 2> /dev/null; cat "$smoke/weston.log" "$smoke/wayland.log" 2> /dev/null' EXIT
+
+          for _ in $(seq 20); do
+            [ -S "$XDG_RUNTIME_DIR/wayland-rtm" ] && break
+            sleep 0.5
+          done
+          [ -S "$XDG_RUNTIME_DIR/wayland-rtm" ] || fail 'Weston did not create its socket'
+
+          WAYLAND_DISPLAY=wayland-rtm XDG_CONFIG_HOME="$smoke" RUST_LOG=info,zbus=warn,tracing=warn rtmapp 2> "$smoke/wayland.log" &
+          app_pid=$!
+          sleep 5
+          kill -0 "$app_pid" 2> /dev/null || fail 'rtmapp exited within 5 s'
+          echo 'Smoke launch: rtmapp is running on Wayland after 5 s.'
+          kill "$app_pid"
+          wait "$app_pid" 2> /dev/null
+          exit 0
+
       # The upgrade users will actually make: the previous release's debs, then the new ones over
       # them. Runs after the fresh install above, which proves the Depends resolve from nothing (an
       # upgrade could mask a missing one). Unlike on Windows, v0.1.3 is not skipped: it is the Tauri
@@ -539,8 +643,8 @@ jobs:
             fi
           done
 
-      # A launch requires a display server and is out of scope here. Extraction proves the
-      # AppImage is well-formed rather than a truncated or corrupt build.
+      # The AppImage holds the same binary the smoke launches above ran, so it is only extracted:
+      # that proves it is well-formed rather than a truncated or corrupt build.
       - name: Verify AppImage integrity
         shell: bash
         env:
