@@ -5,6 +5,19 @@ on:
     tags:
       - 'v*'
   workflow_dispatch: {}
+  # Builds and tests the packages (publishes nothing) when a pull request touches anything that
+  # goes into them, so packaging breaks are caught before a tag rather than at release time.
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'rtmapp/**'
+      - 'rtmcli/**'
+      - 'todotxt/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'LICENSE'
+      - 'scripts/build-appimage.sh'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
@@ -60,7 +73,7 @@ jobs:
             }
             Write-Host "Tag matches committed version."
           } else {
-            Write-Host "workflow_dispatch dry run: building committed version as-is, no tag to verify against."
+            Write-Host "$env:EVENT_NAME run: building committed version as-is, no tag to verify against."
           }
 
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
@@ -424,8 +437,9 @@ jobs:
           if-no-files-found: error
 
   # Single point of publication for both platforms -- avoids two concurrent jobs racing to
-  # create or update the same tagged GitHub Release.
+  # create or update the same tagged GitHub Release. Pull requests stop after the platform jobs.
   publish:
+    if: github.event_name != 'pull_request'
     needs: [version, windows, linux]
     runs-on: ubuntu-latest
 
