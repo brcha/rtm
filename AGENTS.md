@@ -92,7 +92,8 @@ one that had them.
 - **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
 - **`rtmapp` package (Linux only):** no native build inputs; `eguiDeps` are added to the binary's
   rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which would drop
-  them). `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons and
+  them). `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons (PNGs from 16 to
+  512 px and the scalable SVG, see `rtmapp/AGENTS.md`) and
   `Inter-LICENSE.txt` (under `share/licenses/rtmapp`). Its version is read from
   `rtmapp/Cargo.toml`; `rtmcli` still has a hard-coded `version` in `commonArgs`.
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37

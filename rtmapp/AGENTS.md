@@ -11,7 +11,8 @@ that refer to them name commit `5076649`, the last commit that had them.
 Done: window shell in the Inter-based theme, config loading, "Load File" through a native dialog and
 the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
 complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
-package and dev shells (RTM-37); the cut-over (RTM-39). Still to come: installers (RTM-38).
+package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46). Still to come: installers
+(RTM-38).
 
 ---
 
@@ -22,7 +23,7 @@ rtmapp/
 ├── Cargo.toml              ← Member of the root workspace
 ├── assets/
 │   ├── fonts/              ← Inter Regular and SemiBold (OTF) and the licence
-│   ├── icons/              ← App icons (PNG sizes, icon.ico for Windows, icon.icns for macOS)
+│   ├── icons/              ← App icon: SVG masters and the files generated from them (see App icon)
 │   └── rtmapp.desktop      ← XDG desktop entry (installed by the Nix package)
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
@@ -130,6 +131,38 @@ official `Inter-4.0.zip` release of github.com/rsms/inter, with `assets/fonts/In
 Open Font License 1.1) next to it. The licence requires its text and the copyright notice to accompany
 every redistributed copy, so **installers and packages must ship `Inter-LICENSE.txt`**. The Nix package
 installs it under `share/licenses/rtmapp`; the installers are RTM-38.
+
+---
+
+## App icon
+
+A page whose first line is ticked, on a Rust-orange rounded square (`#ce422b`; the tick box is the
+done green `#28a745`). `assets/icons/rtmapp.svg` is the master; `rtmapp-small.svg` is a simplified
+variant (no text lines, a larger tick) for 16 and 24 px, where the master's lines blur. Edit the SVGs
+by hand and keep them plain (no Inkscape metadata); every other file in `assets/icons/` is generated
+from them and keeps its name, because the Nix packages and the installers refer to those names.
+
+Regenerate after changing an SVG (from `rtmapp/assets/icons/`; `inkscape` is not in the dev shells):
+
+```sh
+t=$(mktemp -d)
+for s in 16 24; do inkscape rtmapp-small.svg --export-type=png --export-width=$s --export-filename=$t/$s.png; done
+for s in 32 48 64 128 256 512 1024; do inkscape rtmapp.svg --export-type=png --export-width=$s --export-filename=$t/$s.png; done
+cp $t/16.png 16x16.png; cp $t/24.png 24x24.png; cp $t/32.png 32x32.png
+cp $t/128.png 128x128.png; cp $t/256.png 128x128@2x.png; cp $t/512.png icon.png
+nix-shell -p icoutils --run "icotool -c -o icon.ico $t/16.png $t/24.png $t/32.png $t/48.png $t/64.png $t/128.png -r $t/256.png"
+nix-shell -p libicns --run "png2icns icon.icns $t/16.png $t/32.png $t/128.png $t/256.png $t/512.png $t/1024.png"
+```
+
+`icotool -r` stores the 256 px entry as PNG (ImageMagick writes it as an uncompressed bitmap, over three
+times the size). The Nix packages install the PNGs as hicolor `rtmapp.png` from 16 to 512 px and the
+master as `scalable/apps/rtmapp.svg`; the 16 and 24 px PNGs keep panels from scaling the master down.
+
+The window icon (title bar and taskbar on Windows and X11) is `128x128@2x.png`, embedded in `main.rs`;
+a test checks that it decodes. Wayland compositors take the icon from the desktop entry instead, and
+macOS from the bundle's `icon.icns` (RTM-38). Windows Explorer shows `rtmapp.exe` without an icon until
+`icon.ico` is embedded in the binary as a Windows resource at build time (RTM-38); an installer can only
+set the shortcut's icon.
 
 ---
 
