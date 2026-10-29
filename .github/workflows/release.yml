@@ -152,7 +152,7 @@ jobs:
           Write-Host 'Staged artifacts:'
           Get-ChildItem dist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
 
-      # The last Tauri MSI, for the decompile and the upgrade check below.
+      # The last Tauri MSI, for the upgrade check below.
       - name: Download the v0.1.3 Tauri MSI
         shell: pwsh
         env:
@@ -160,17 +160,6 @@ jobs:
         run: |
           gh release download v0.1.3 --repo $env:GITHUB_REPOSITORY --pattern 'rtmapp_0.1.3_x64_en-US.msi' --dir old-msi
           if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)." }
-
-      # Dry runs only, while rtmapp/wix/main.wxs is being matched to the Tauri MSI (RTM-38):
-      # decompiles it with WiX's dark.exe and prints the source. Remove once settled.
-      - name: Decompile the Tauri MSI
-        if: github.event_name == 'workflow_dispatch'
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          & (Join-Path $env:WIX 'bin\dark.exe') -nologo 'old-msi/rtmapp_0.1.3_x64_en-US.msi' -o 'tauri-0.1.3.wxs'
-          if ($LASTEXITCODE -ne 0) { throw "dark.exe failed ($LASTEXITCODE)." }
-          Get-Content 'tauri-0.1.3.wxs'
 
       # Building an MSI is not evidence it installs. A fresh, silent install of the new MSI (both
       # shortcut features are on by default), its files and the exe's embedded version
@@ -215,16 +204,18 @@ jobs:
           if ((Get-Installed).Count -ne 0) { throw 'The product is still registered after uninstalling.' }
           if (Test-Path -LiteralPath $exe) { throw "Still present after uninstalling: $exe" }
 
-      # The new MSI must replace a Tauri install instead of sitting beside it: installs v0.1.3,
-      # then the new MSI over it, and expects one product with the shared UpgradeCode at the new
-      # version. Runs even if the fresh install failed, so one run answers both questions.
+      # The new MSI must replace a Tauri install instead of sitting beside it, and keep its folder:
+      # installs v0.1.3 into a custom folder, then the new MSI over it without naming a folder, and
+      # expects one product at the new version, in the custom folder. Runs even if the fresh install
+      # failed, so one run answers both questions.
       - name: Verify upgrade from the v0.1.3 Tauri MSI
         if: always()
         shell: pwsh
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          $exe = Join-Path $env:ProgramFiles 'Rusty Todo.txt Manager\rtmapp.exe'
+          $customDir = 'C:\RtmCustom\'
+          $exe = Join-Path $customDir 'rtmapp.exe'
 
           function Invoke-Msiexec([string[]] $arguments, [string] $log) {
             $p = Start-Process msiexec.exe -ArgumentList ($arguments + @('/qn', '/norestart', '/l*v', $log)) -Wait -PassThru
@@ -243,7 +234,7 @@ jobs:
           # A failed fresh-install step may have left its product behind.
           foreach ($leftover in Get-Installed) { Invoke-Msiexec @('/x', $leftover.Code) 'uninstall-leftover.log' }
 
-          Invoke-Msiexec @('/i', (Resolve-Path 'old-msi/rtmapp_0.1.3_x64_en-US.msi').Path) 'install-old.log'
+          Invoke-Msiexec @('/i', (Resolve-Path 'old-msi/rtmapp_0.1.3_x64_en-US.msi').Path, "INSTALLDIR=$customDir") 'install-old.log'
           $before = Get-Installed
           Write-Host "Installed v0.1.3: $($before | Out-String)"
           if ($before.Count -ne 1) { throw "Expected one product after installing v0.1.3, found $($before.Count)." }
@@ -254,7 +245,7 @@ jobs:
           if ($after.Count -ne 1) { throw "Expected one product after the upgrade, found $($after.Count): the new MSI installed beside the old one." }
           if ($after[0].Code -eq $before[0].Code) { throw 'The product code did not change: the new MSI did not replace v0.1.3.' }
           if ($after[0].Version -ne $env:VERSION) { throw "Installed version after the upgrade is '$($after[0].Version)', expected '$env:VERSION'." }
-          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing after the upgrade: $exe" }
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing after the upgrade: $exe (the install folder was not kept)." }
 
           Invoke-Msiexec @('/x', $after[0].Code) 'uninstall-upgrade.log'
 
@@ -263,9 +254,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: msi-logs
-          path: |
-            *.log
-            tauri-0.1.3.wxs
+          path: '*.log'
           if-no-files-found: ignore
 
       # Handed off to the shared `publish` job rather than uploaded/released here directly.
