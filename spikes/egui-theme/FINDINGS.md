@@ -97,6 +97,9 @@ The dark-theme popup was captured but not inspected.
     glibc 2.42, so it did not start. Patching a copy with `patchelf --set-interpreter` and `--set-rpath`
     to the 2.44 glibc made it run (`shots.sh` does this when `GLIBC` is set). The cause is probably the
     mixed toolchain in the shell and should be checked when the Nix files are updated for egui.
+  - Update (RTM-37): the cause was the calling session exporting `NIX_LDFLAGS=-L/usr/lib -L/usr/lib32`
+    (and similar), so the linker found the system's glibc 2.44 in `/usr/lib`. Both dev shells now start
+    those variables empty and disable `RUSTC_WRAPPER`, so neither workaround is needed any more.
 - `shell.nix` already provides the X11, Wayland, GL and xkbcommon libraries egui needs at runtime.
 
 ## Reproduce

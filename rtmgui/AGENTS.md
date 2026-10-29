@@ -9,8 +9,8 @@ Windows.
 
 Done so far: window shell in the Inter-based theme, config loading, "Load File" through a native dialog
 and the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
-complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40). Still to
-come: native dependencies in CI and Nix (RTM-37) and installers (RTM-38).
+complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
+package and dev shells (RTM-37). Still to come: installers (RTM-38) and the cut-over (RTM-39).
 
 ---
 
@@ -52,7 +52,9 @@ Consequences:
   lock file.
 - **Merging back (RTM-39):** when the Tauri app is removed, delete the `[workspace]` table, the copied
   `[profile.release]` and `rtmgui/Cargo.lock`, add the crate to the root `members`, drop the two `rtmgui`
-  steps from `rust.yml`, and re-run `cargo build` so the root lock is regenerated.
+  steps from `rust.yml`, and re-run `cargo build` so the root lock is regenerated. In `flake.nix` and
+  `default.nix`, the `rtmgui` package then drops `cargoRoot`, `buildAndTestSubdir` and its own lock
+  and uses the root `Cargo.lock` like the others.
 
 ---
 
@@ -170,7 +172,14 @@ nix-shell
 
 cargo run --manifest-path rtmgui/Cargo.toml
 cargo test --manifest-path rtmgui/Cargo.toml
+
+# Or as a Nix package (Linux; tests run during the build)
+nix build .#rtmgui      # or: nix-build -A rtmgui
 ```
+
+The binary links no native libraries; it loads Wayland, xkbcommon, X11, GL, Vulkan and fontconfig
+with `dlopen`. The dev shells put them on `LD_LIBRARY_PATH`, and the Nix package on the binary's
+rpath (`eguiDeps` in `flake.nix` and `default.nix`, see the root `AGENTS.md`).
 
 To try it without touching your own config, point `XDG_CONFIG_HOME` at a scratch directory that has an
 `rtm/config.toml` with a `file_name` line.
@@ -182,11 +191,6 @@ screenshots of both themes; any other value is ignored.
 
 ## Known Issues
 
-- **Dev shell on some machines:** `~/.cargo/config.toml` may set `sccache` as the rustc wrapper, which
-  fails inside `nix-shell` (missing temp directory); build with `RUSTC_WRAPPER=`. A binary linked inside
-  the shell can need a glibc fix-up to start; both problems are described in
-  `spikes/egui-theme/FINDINGS.md`. `shell.nix` has no clippy: run it through
-  `nix-shell -p clippy` inside the shell. These belong to RTM-37.
 - Dialog failures look like a cancel in the UI; the cause is on stderr (see File dialog above).
 - The edit dialog does not scroll: a `ScrollArea` inside egui's `Modal` stays too short. The form fits
   the default window; revisit if it grows (see the `shortcut:` comment in `edit::show`).

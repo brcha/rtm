@@ -2,6 +2,7 @@
 # Usage:
 #   nix-build -A rtmcli
 #   nix-build -A rtmapp   # best-effort (Tauri, Linux only)
+#   nix-build -A rtmgui   # egui app (Linux only)
 
 { pkgs ? import <nixpkgs> {} }:
 
