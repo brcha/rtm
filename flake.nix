@@ -2,8 +2,9 @@
   description = "Rusty Todo.txt Manager";
 
   inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-unstable";
-    # nixos-unstable ships Rust 1.85+ which supports edition 2024
+    # Stable channel: rustc 1.95, the minimum egui 0.37 needs. Consumers can override it with
+    # `inputs.rtm.inputs.nixpkgs.follows`. Move to nixos-26.11 when it is released (RTM-45).
+    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -44,6 +45,21 @@
           webkitgtk_4_1
           libsoup_3
         ]);
+
+        # Run-time libraries for rtmgui (egui/winit/wgpu). It loads all of them with dlopen, so they
+        # are not build inputs but go on the binary's rpath.
+        eguiDeps = with pkgs; [
+          wayland
+          libxkbcommon
+          libGL
+          vulkan-loader
+          libxcb
+          libx11
+          libxcursor
+          libxrandr
+          libxi
+          fontconfig
+        ];
 
         # Shared build arguments for all crates.
         commonArgs = {
@@ -110,10 +126,37 @@
           };
         });
 
+        # ── rtmgui ────────────────────────────────────────────────────────────
+        # A standalone Cargo workspace with its own lock (see rtmgui/AGENTS.md), so it does not
+        # use commonArgs. No native build inputs: every library is loaded at run time.
+        rtmgui = pkgs.rustPlatform.buildRustPackage {
+          pname = "rtmgui";
+          version = (pkgs.lib.importTOML ./rtmgui/Cargo.toml).package.version;
+          inherit src;
+          cargoRoot = "rtmgui";
+          buildAndTestSubdir = "rtmgui";
+          cargoLock.lockFile = ./rtmgui/Cargo.lock;
+          postInstall = ''
+            # The embedded Inter fonts' licence (SIL OFL) must ship with every copy.
+            install -Dm644 $src/rtmgui/assets/fonts/Inter-LICENSE.txt \
+              $out/share/licenses/rtmgui/Inter-LICENSE.txt
+          '';
+          # After the rpath shrinking in fixupPhase, which would drop these unused-at-link entries.
+          postFixup = ''
+            patchelf --add-rpath ${pkgs.lib.makeLibraryPath eguiDeps} $out/bin/rtmgui
+          '';
+          meta = with pkgs.lib; {
+            description = "Rusty Todo.txt Manager — egui desktop app";
+            license     = licenses.mit;
+            platforms   = platforms.linux;
+            mainProgram = "rtmgui";
+          };
+        };
+
       in {
         # ── Packages ──────────────────────────────────────────────────────────
         packages = {
-          inherit rtmcli rtmapp;
+          inherit rtmcli rtmapp rtmgui;
           default = rtmcli;
         };
 
@@ -121,6 +164,7 @@
         apps = {
           rtmcli = flake-utils.lib.mkApp { drv = rtmcli; };
           rtmapp = flake-utils.lib.mkApp { drv = rtmapp; };
+          rtmgui = flake-utils.lib.mkApp { drv = rtmgui; };
           default = flake-utils.lib.mkApp { drv = rtmcli; };
         };
 
@@ -137,8 +181,17 @@
             nodejs
           ];
           buildInputs = tauriDeps;
+          # Start from empty values instead of whatever the calling session exports: a leaked
+          # `-L/usr/lib` links against the system glibc instead of the shell's, and the binary
+          # then fails to start. The stdenv setup hooks append their own flags to these.
+          NIX_LDFLAGS = "";
+          NIX_CFLAGS_LINK = "";
+          NIX_CFLAGS_COMPILE = "";
+          PKG_CONFIG_PATH = "";
+          # A rustc wrapper such as sccache from ~/.cargo/config.toml fails inside the shell.
+          RUSTC_WRAPPER = "";
           shellHook = ''
-            export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath tauriDeps}
+            export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath (tauriDeps ++ eguiDeps)}
           '';
         };
       }

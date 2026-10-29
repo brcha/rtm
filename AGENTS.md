@@ -65,11 +65,18 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
 - **Nix shell:** `shell.nix` provides all GTK/WebKit/X11/Wayland libraries needed to build and run
   all frontends on NixOS or with `nix-shell`. Use `nix-shell` before running `cargo build`.
 - **Native dependency sync:** When adding a new system/native library dependency to any crate in
-  the workspace, register it in **all three** of the following locations to keep CI, Nix flake
-  builds, and legacy nix-build in sync:
+  the workspace, or to `rtmgui` (a separate workspace), register it in **all three** of the
+  following locations to keep CI, Nix flake builds, and legacy nix-build in sync:
   1. `.github/workflows/rust.yml` — the `apt-get install` step
-  2. `flake.nix` — `guiDeps` or `tauriDeps` list (and `devShells.default` if needed)
-  3. `default.nix` — matching `guiDeps` or `tauriDeps` list
+  2. `flake.nix` — `guiDeps`, `tauriDeps` or `eguiDeps` list (and `devShells.default` if needed)
+  3. `default.nix` — matching `guiDeps`, `tauriDeps` or `eguiDeps` list
+
+  **Run-time-only libraries are the exception to item 1.** `rtmgui` links no native libraries beyond
+  glibc: egui, winit, wgpu and the font provider load Wayland, xkbcommon, X11, GL, Vulkan and
+  fontconfig with `dlopen`. Those go only into the Nix `eguiDeps` lists (put on the binary's rpath,
+  and on the flake dev shell's `LD_LIBRARY_PATH`) and into the `shellHook` library list in
+  `shell.nix`, which has no `eguiDeps` list of its own; not into the apt step, because CI builds and
+  tests without ever starting the GUI. The `.deb`'s run-time `Depends:` are packaging (RTM-38).
 
   This rule governs **additions**. It does not invert: apt's `-dev` packages pull each other in
   transitively (e.g. `libgtk-3-dev` alone brings in a dozen others), so `rust.yml`'s explicit
@@ -91,15 +98,27 @@ parity (epic RTM-32). Until then both apps read and write the same `rtm/config.t
 
 ## Nix Packaging
 
-- **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmapp`.
-- **`default.nix`** — legacy entry point. `nix-build -A rtmcli`.
+- **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmapp`,
+  `nix build .#rtmgui`.
+- **`default.nix`** — legacy entry point. `nix-build -A rtmcli` (also `-A rtmapp`, `-A rtmgui`).
 - **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it. This
-  includes `rtmgui/Cargo.lock`, which a future `rtmgui` derivation will use (RTM-37).
-- **nixpkgs pin:** `nixos-unstable` (needs Rust ≥ 1.85 for edition 2024).
+  includes `rtmgui/Cargo.lock`, which the `rtmgui` derivation uses (`cargoRoot` and
+  `buildAndTestSubdir` point at `rtmgui`).
+- **`rtmgui` package (Linux only):** no native build inputs; `eguiDeps` are added to the binary's
+  rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which would drop
+  them), and `Inter-LICENSE.txt` is installed under `share/licenses/rtmgui`.
+- **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
+  needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
+  `nixos-26.11` when it is released (RTM-45). `default.nix` and `shell.nix` use the caller's
+  `<nixpkgs>`, which must also have rustc ≥ 1.95.
 - **`rtmapp` packaging is best-effort** — Tauri's bundler is bypassed; frontend assets are copied
   into `$out/share/rtmapp/` via `postInstall`. Runtime behavior on NixOS may need further tuning.
 - **Dev shell:** `nix develop` (flake) or `nix-shell` (legacy). `.envrc` uses `use_nix`; change
-  to `use flake` if using nix-direnv ≥ 2.30.
+  to `use flake` if using nix-direnv ≥ 2.30. Both shells have `rustfmt` and `clippy`, and both
+  start `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and set
+  `RUSTC_WRAPPER` to empty: a calling session that exports `-L/usr/lib` otherwise links against the
+  system glibc instead of the shell's (the binary then fails with `GLIBC_2.xx not found`), and a
+  user-configured sccache fails inside the shell. Keep these in both shells.
 
 ---
 
