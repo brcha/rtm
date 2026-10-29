@@ -251,7 +251,7 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
 }
 
 /// A label with its control 6 px below. Labels are regular: the CSS weight 500 renders regular
-/// under `font-synthesis: none` (see the spike's findings).
+/// under `font-synthesis: none` (see "Look" in `rtmapp/AGENTS.md`).
 fn group<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
@@ -278,7 +278,7 @@ fn date_field(ui: &mut Ui, p: &Palette, label: &str, text: &mut String, hint: &s
     })
 }
 
-/// A `ComboBox` with the look of the text inputs, as the spike's `form_control` does.
+/// A `ComboBox` with the look of the text inputs.
 fn priority_combo(ui: &mut Ui, p: &Palette, priority: &mut Option<u8>) {
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = egui::vec2(12.0, 9.0);

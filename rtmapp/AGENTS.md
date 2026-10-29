@@ -73,11 +73,7 @@ rtmapp/
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
   (`ctx.set_sublayer`), or a click in the dialog draws the dialog over it. `Sense::click()` includes
   `FOCUSABLE`: hit areas inside a popup use `Sense::CLICK`, so Tab does not walk into them.
-- **Look:** palettes and sizes come from the Tauri app's `rtmapp/src/styles.css` (at `5076649`), as
-  worked out in `spikes/egui-theme/` (see its `FINDINGS.md`; `shots.sh` there takes comparison
-  screenshots). egui has no font weights: Inter Regular is the text face and SemiBold is the `bold`
-  family (title, headings, priorities). The ☐ and ☑ glyphs are missing from most fonts, so checkboxes
-  are painted.
+- **Look:** reproduces the Tauri app's `styles.css`; see "Look" below.
 - **Filtering and sorting** (`list::visible`) follow the Tauri app's `get_items`, and a test checks the
   filters against its predicate, copied verbatim, for every flag combination. Sorting puts items
   without a due date first, then dated items, with priority as the tie-break (none last). **One
@@ -123,6 +119,34 @@ rtmapp/
 - Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
   build `App { .. }` directly with a temp `config_path` (see `app_with`), never
   `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.
+
+---
+
+## Look
+
+`theme.rs` and the widgets reproduce the palettes, spacing, radii, borders and shadows of the Tauri
+app's `rtmapp/src/styles.css` (at `5076649`), in both themes. The theme follows the system preference;
+`RTMAPP_THEME=light` or `dark` forces one.
+
+- **Reference sizes,** read from the Tauri app's DOM: header 50 px, sidebar 220 px, text input 37 px,
+  list rows 46 px, dialog 500 px wide. The sidebar and dialog widths are set directly; the others
+  follow from the CSS paddings and font sizes the code reproduces.
+- **How it was compared (RTM-33):** the unmodified Tauri frontend in Chromium with a mocked
+  `window.__TAURI__`, against screenshots of an egui prototype with the same sample items. Chromium is
+  not the WebKitGTK webview the Tauri app used, so small text-rendering differences were expected.
+- **Focus ring:** a 3 px translucent stroke painted outside the input's border.
+- **Item text:** one `LayoutJob` per row (`list::row_job`), with per-span font, colour and
+  strikethrough.
+- **Known differences from the Tauri look:**
+  - egui has no font weights: Inter Regular is the text face and SemiBold is the `bold` family (title,
+    headings, priorities). The CSS weight 500 of the labels rendered regular under
+    `font-synthesis: none`, so labels are regular.
+  - The ☐ and ☑ glyphs are missing from most fonts, so the list's checkboxes are painted. The sidebar
+    filters use egui's checkbox with a grey outline, and the dialog's priority a `ComboBox` styled like
+    the text inputs, in place of the native checkbox and `<select>`.
+  - The CSS 0.2 s hover transition and egui's modal fade are not matched.
+- **History:** the egui prototype, its full findings (`FINDINGS.md`) and its screenshot script
+  (`shots.sh`) were in `spikes/egui-theme/`, last changed in `5076649`, until RTM-47 removed them.
 
 ---
 

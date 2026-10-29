@@ -1,5 +1,5 @@
 //! Colours, fonts and egui styling that reproduce the look of the former Tauri
-//! app (`rtmapp/src/styles.css` at 5076649), as worked out in `spikes/egui-theme`.
+//! app (`rtmapp/src/styles.css` at 5076649); see "Look" in `rtmapp/AGENTS.md`.
 
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, Theme, Ui,

@@ -115,8 +115,9 @@ pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) -> 
     clicked
 }
 
-/// Painted, because the ☐ and ☑ glyphs are missing from most fonts (see the spike's findings).
-/// Returns whether it was clicked. `index` is the item's file index, for a stable widget id.
+/// Painted, because the ☐ and ☑ glyphs are missing from most fonts (see "Look" in
+/// `rtmapp/AGENTS.md`). Returns whether it was clicked. `index` is the item's file index, for a
+/// stable widget id.
 fn checkbox(ui: &mut Ui, p: &Palette, done: bool, index: usize) -> bool {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
     // The CSS button is padded around its glyph: a larger hit area that leaves the layout alone.
