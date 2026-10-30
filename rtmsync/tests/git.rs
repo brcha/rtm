@@ -205,3 +205,33 @@ fn only_a_clone_with_an_upstream_has_a_remote() {
     let dir = remote_and_clones("remote");
     assert!(Vcs::Git.has_remote(&dir.join("a/sub/todo.txt")).unwrap());
 }
+
+#[test]
+fn commit_waits_out_a_briefly_held_index_lock() {
+    let dir = repo("short lock");
+    Vcs::Git.commit(&dir.join("sub/todo.txt"), "first").unwrap();
+    std::fs::write(dir.join("sub/todo.txt"), "Buy milk\n").unwrap();
+    // Another git process, such as rtmcli, holding the index for a moment.
+    let lock = dir.join(".git/index.lock");
+    std::fs::write(&lock, "").unwrap();
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::fs::remove_file(lock).unwrap();
+    });
+    Vcs::Git
+        .commit(&dir.join("sub/todo.txt"), "second")
+        .unwrap();
+    releaser.join().unwrap();
+    assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "second");
+}
+
+#[test]
+fn commit_gives_up_on_an_index_lock_that_stays() {
+    let dir = repo("held lock");
+    let lock = dir.join(".git/index.lock");
+    std::fs::write(&lock, "").unwrap();
+    let result = Vcs::Git.commit(&dir.join("sub/todo.txt"), "first");
+    assert!(matches!(result, Err(Error::Failed { .. })), "{result:?}");
+    // rtm never removes another process's lock.
+    assert!(lock.exists());
+}

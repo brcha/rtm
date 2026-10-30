@@ -254,12 +254,27 @@ fn command(program: &str, dir: &Path) -> Command {
 }
 
 /// Runs `command` to completion and returns its stdout.
+/// A run blocked by another git process's `index.lock` (the app and the CLI at once) is retried
+/// for about 3 s; the lock is never removed.
 fn output(program: &'static str, command: &mut Command) -> Result<String, Error> {
-    let output = command
-        .output()
-        .map_err(|source| Error::Spawn { program, source })?;
-    check(program, output.status, &output.stderr)?;
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let mut wait = Duration::from_millis(100);
+    let mut waited = Duration::ZERO;
+    loop {
+        let output = command
+            .output()
+            .map_err(|source| Error::Spawn { program, source })?;
+        // The lock's file name in git's message is never translated, so this is locale-free.
+        let locked = !output.status.success()
+            && String::from_utf8_lossy(&output.stderr).contains("index.lock");
+        if locked && waited < Duration::from_secs(3) {
+            std::thread::sleep(wait);
+            waited += wait;
+            wait *= 2;
+            continue;
+        }
+        check(program, output.status, &output.stderr)?;
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
 }
 
 /// Runs `command`, killing it after `timeout`. Its stdout is discarded and its stderr goes to a
