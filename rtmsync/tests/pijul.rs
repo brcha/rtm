@@ -98,8 +98,9 @@ fn pijul_records_only_the_file() {
         // Pijul's own override: on Windows its default comes from the system, not from `APPDATA`.
         std::env::set_var("PIJUL_CONFIG_DIR", home.join("pijul"));
     }
-    // Windows runs pijul 1.0.0-beta.12 (see rust.yml), which signs with a key file instead of the
-    // agent; it needs an identity, created here without prompts or the system keyring.
+    // Windows runs pijul 1.0.0-beta.11 (see rust.yml), which signs with a key file instead of the
+    // agent; it needs an identity, created here without prompts (and without a password, so the
+    // system keyring is not used).
     #[cfg(not(unix))]
     pijul(
         &home,
@@ -108,7 +109,6 @@ fn pijul_records_only_the_file() {
             "new",
             "--no-prompt",
             "--no-link",
-            "--no-keyring",
             "--display-name",
             "rtm test",
             "rtm-test",

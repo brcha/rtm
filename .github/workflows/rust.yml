@@ -11,31 +11,29 @@ env:
 
 jobs:
   build:
-    # A cold pijul build takes most of this; cached runs are short.
-    timeout-minutes: 60
+    timeout-minutes: 30
 
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        # The pijul that rtmsync's tests drive. Windows stays on 1.0.0-beta.12: from beta.15 on,
+        # The pijul that rtmsync's tests drive. Windows stays on 1.0.0-beta.11: from beta.15 on,
         # pijul signs changes only through the SSH agent, and its agent client (thrussh-keys 0.44)
         # is a stub on Windows that always fails, so newer releases cannot record there (RTM-58).
-        # beta.24 does not compile without its default features; beta.12 does and needs no git2.
         include:
           - os: ubuntu-latest
             pijul: 1.0.0-beta.24
           - os: macos-latest
             pijul: 1.0.0-beta.24
           - os: windows-latest
-            pijul: 1.0.0-beta.12
-            pijul-flags: --no-default-features
+            pijul: 1.0.0-beta.11
+            pijul-sha256: 7CD979499A37A8AF4AED237D5A3584F1B109281B39BC8CBD76D8CFC8D414B271
 
     runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v7
 
-    # Building pijul takes minutes, so it is installed into its own root, cached per OS and version.
+    # Building pijul takes minutes, so it goes into its own root, cached per OS and version.
     - name: Restore pijul
       id: pijul
       uses: actions/cache@v6
@@ -62,37 +60,21 @@ jobs:
 
     - name: Install pijul (Linux, macOS)
       if: runner.os != 'Windows' && steps.pijul.outputs.cache-hit != 'true'
-      run: cargo install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }} --root ~/.pijul-ci
+      # beta.24 does not compile without its default features.
+      run: cargo install pijul --locked --version ${{ matrix.pijul }} --root ~/.pijul-ci
 
-    # pijul cannot be built with MSVC: thrussh-libsodium forces libsodium-sys's pkg-config mode,
-    # whose build script panics when it is itself compiled for MSVC (it tests the host, not the
-    # target). It is built with the GNU toolchain against MSYS2's MinGW libraries, and the DLLs it
-    # loads are copied next to it, so a cache hit needs no MSYS2.
-    - name: Set up MSYS2 (Windows)
-      id: msys2
-      if: runner.os == 'Windows' && steps.pijul.outputs.cache-hit != 'true'
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: MINGW64
-        update: false
-        install: >-
-          mingw-w64-x86_64-gcc mingw-w64-x86_64-pkgconf
-          mingw-w64-x86_64-libsodium mingw-w64-x86_64-openssl
-
+    # pijul cannot be built on Windows from source (libsodium-sys panics under MSVC, and pijul's
+    # own Windows code does not compile at 1.0.0-beta.12), so Windows downloads the community
+    # build linked from pijul.org/downloads, checked against its SHA-256.
     - name: Install pijul (Windows)
       if: runner.os == 'Windows' && steps.pijul.outputs.cache-hit != 'true'
       shell: pwsh
       run: |
-        $msys = "${{ steps.msys2.outputs.msys2-location }}"
-        $env:PATH = "$msys\mingw64\bin;$env:PATH"
-        $root = "$env:USERPROFILE\.pijul-ci"
-        rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
-        cargo +stable-x86_64-pc-windows-gnu install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }} --root $root
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & "$msys\usr\bin\ldd.exe" "$root\bin\pijul.exe" |
-          Select-String '=> (/mingw64/bin/\S+)' |
-          ForEach-Object { Copy-Item ($msys + ($_.Matches[0].Groups[1].Value -replace '/', '\')) "$root\bin" }
-        Get-ChildItem "$root\bin"
+        $bin = "$env:USERPROFILE\.pijul-ci\bin"
+        New-Item -ItemType Directory -Force $bin | Out-Null
+        Invoke-WebRequest -Uri "https://github.com/boringcactus/pijul-windows-builds/releases/download/${{ matrix.pijul }}/pijul.exe" -OutFile "$bin\pijul.exe"
+        $hash = (Get-FileHash -Algorithm SHA256 "$bin\pijul.exe").Hash
+        if ($hash -ne "${{ matrix.pijul-sha256 }}") { throw "pijul.exe has SHA-256 $hash" }
 
     - name: Put pijul on PATH
       shell: bash
