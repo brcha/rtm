@@ -16,14 +16,77 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # The pijul that rtmsync's tests drive. Windows stays on 1.0.0-beta.11: from beta.15 on,
+        # pijul signs changes only through the SSH agent, and its agent client (thrussh-keys 0.44)
+        # is a stub on Windows that always fails, so newer releases cannot record there (RTM-58).
+        include:
+          - os: ubuntu-latest
+            pijul: 1.0.0-beta.24
+          - os: macos-latest
+            pijul: 1.0.0-beta.24
+          - os: windows-latest
+            pijul: 1.0.0-beta.11
+            pijul-sha256: 7CD979499A37A8AF4AED237D5A3584F1B109281B39BC8CBD76D8CFC8D414B271
 
     runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v7
 
+    # Building pijul takes minutes, so it goes into its own root, cached per OS and version.
+    - name: Restore pijul
+      id: pijul
+      uses: actions/cache@v6
+      with:
+        path: ~/.pijul-ci
+        key: pijul-${{ runner.os }}-${{ matrix.pijul }}
+
+    # pijul needs OpenSSL and libsodium to build and to run, so these steps run on cache hits too.
+    # Same hardened apt pattern as release.yml (RTM-28): pin the mirror, bound retries and timeouts.
+    - name: Install pijul's libraries (Linux)
+      if: runner.os == 'Linux'
+      timeout-minutes: 10
+      run: |
+        echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+        sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+        sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
+          libssl-dev libsodium-dev pkg-config
+
+    - name: Install pijul's libraries (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install libsodium openssl@3 pkg-config
+        echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+
+    - name: Install pijul (Linux, macOS)
+      if: runner.os != 'Windows' && steps.pijul.outputs.cache-hit != 'true'
+      # beta.24 does not compile without its default features.
+      run: cargo install pijul --locked --version ${{ matrix.pijul }} --root ~/.pijul-ci
+
+    # pijul cannot be built on Windows from source (libsodium-sys panics under MSVC, and pijul's
+    # own Windows code does not compile at 1.0.0-beta.12), so Windows downloads the community
+    # build linked from pijul.org/downloads, checked against its SHA-256.
+    - name: Install pijul (Windows)
+      if: runner.os == 'Windows' && steps.pijul.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $bin = "$env:USERPROFILE\.pijul-ci\bin"
+        New-Item -ItemType Directory -Force $bin | Out-Null
+        Invoke-WebRequest -Uri "https://github.com/boringcactus/pijul-windows-builds/releases/download/${{ matrix.pijul }}/pijul.exe" -OutFile "$bin\pijul.exe"
+        $hash = (Get-FileHash -Algorithm SHA256 "$bin\pijul.exe").Hash
+        if ($hash -ne "${{ matrix.pijul-sha256 }}") { throw "pijul.exe has SHA-256 $hash" }
+
+    - name: Put pijul on PATH
+      shell: bash
+      run: |
+        dir="$HOME/.pijul-ci/bin"
+        if [ "$RUNNER_OS" = Windows ]; then dir=$(cygpath -w "$dir"); fi
+        echo "$dir" >> "$GITHUB_PATH"
+
     - name: Build
       run: cargo build --verbose
     - name: Run tests
+      # The Pijul test fails instead of skipping when pijul is missing.
+      env:
+        RTM_REQUIRE_PIJUL: 1
       run: cargo test --verbose
-

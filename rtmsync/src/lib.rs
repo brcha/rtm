@@ -1,6 +1,27 @@
 //! Synchronisation of a todo.txt file through the version control system it lives in.
 
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus, Stdio};
+
+/// A failure to run a version control system's executable.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The executable could not be started; `NotFound` means it is not in `PATH`.
+    #[error("cannot run {program}")]
+    Spawn {
+        program: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The executable ran and failed.
+    #[error("{program} failed ({status}): {stderr}")]
+    Failed {
+        program: &'static str,
+        status: ExitStatus,
+        stderr: String,
+    },
+}
 
 /// A version control system, recognised by the marker its repositories carry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -19,6 +40,78 @@ impl Vcs {
             Vcs::Pijul => ".pijul",
         }
     }
+
+    /// Commits the current content of `file`, and nothing else in its repository, with `message`.
+    /// An untracked file is added first; an unchanged file commits nothing.
+    pub fn commit(self, file: &Path, message: &str) -> Result<(), Error> {
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        let name = file.file_name().unwrap_or_default();
+        let message = format!("--message={message}");
+        match self {
+            Vcs::Git => {
+                run("git", dir, &["--literal-pathspecs", "add"], name)?;
+                let staged = ["--literal-pathspecs", "diff", "--cached", "--quiet"];
+                if run("git", dir, &staged, name).is_ok() {
+                    return Ok(());
+                }
+                // A commit with a pathspec takes only that path, not what else is staged.
+                run(
+                    "git",
+                    dir,
+                    &["--literal-pathspecs", "commit", &message],
+                    name,
+                )
+            }
+            Vcs::Pijul => {
+                run("pijul", dir, &["add"], name)?;
+                // Records nothing, successfully, when the file is unchanged.
+                run("pijul", dir, &["record", "--all", &message], name)
+            }
+        }
+    }
+}
+
+/// `file` with its symlinks resolved, or made absolute when it does not exist.
+fn resolve(file: &Path) -> PathBuf {
+    let Ok(resolved) = std::fs::canonicalize(file) else {
+        return std::path::absolute(file).unwrap_or_else(|_| file.to_path_buf());
+    };
+    // Windows canonicalizes to a `\\?\C:\` path, which git does not accept as a working directory.
+    match resolved.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(plain) if plain.as_bytes().get(1) == Some(&b':') => PathBuf::from(plain),
+        _ => resolved,
+    }
+}
+
+/// Runs `program` with `args`, then `--` and `file`, in `dir`.
+fn run(program: &'static str, dir: &Path, args: &[&str], file: &OsStr) -> Result<(), Error> {
+    let mut command = Command::new(program);
+    command
+        .current_dir(dir)
+        .args(args)
+        .arg("--")
+        .arg(file)
+        // A prompt that reads stdin fails instead of waiting; prompts on the terminal still can.
+        .stdin(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command
+        .output()
+        .map_err(|source| Error::Spawn { program, source })?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(Error::Failed {
+            program,
+            status: output.status,
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        })
+    }
 }
 
 /// The version control systems managing `file`: the markers found in the nearest directory, from
@@ -26,9 +119,7 @@ impl Vcs {
 /// More than one means the directory is ambiguous and the caller has to choose. Symlinks are
 /// resolved first, so a link into a repository counts as versioned.
 pub fn detect(file: &Path) -> Vec<Vcs> {
-    let file = std::fs::canonicalize(file)
-        .or_else(|_| std::path::absolute(file))
-        .unwrap_or_else(|_| file.to_path_buf());
+    let file = resolve(file);
     let Some(dir) = file.parent() else {
         return Vec::new();
     };

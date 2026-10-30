@@ -3,18 +3,23 @@
 ## What This Component Is
 
 The library that synchronises a todo.txt file through the version control system it lives in
-(epic RTM-1). Git and Pijul are in scope; no others. No UI, no binary, no dependencies so far.
+(epic RTM-1). Git and Pijul are in scope; no others. No UI, no binary; `thiserror` is the only
+dependency.
 
-Done: detecting the VCS (RTM-12). Still to come: commit on change (RTM-18), the Pijul backend
-(RTM-53), the sync task (RTM-19), pull before change (RTM-21), periodic GUI sync (RTM-20).
+Done: detecting the VCS (RTM-12), committing the file (RTM-18). Still to come: the Pijul backend
+(RTM-53), the sync task (RTM-19), pull before change (RTM-21), periodic GUI sync (RTM-20). Open
+design question: a dirty repository or todo.txt when opening it (RTM-57).
 
 ---
 
 ## Architecture / Structure
 
 ```
-rtmsync/src/
-└── lib.rs     ← Vcs enum, detect(), tests
+rtmsync/
+├── src/lib.rs        ← Vcs enum, detect(), Vcs::commit(), Error, detection tests
+└── tests/
+    ├── git.rs        ← Vcs::commit with Git
+    └── pijul.rs      ← Vcs::commit with Pijul (a single test, see below)
 ```
 
 ---
@@ -32,12 +37,41 @@ rtmsync/src/
   that does not exist yet is made absolute instead, so the walk still covers its parents.
 - **VCSs are driven through their executables** (`git`, `pijul`), decided in RTM-16 and RTM-17: no
   Git or Pijul library is linked. A user with a repository has its executable.
+- **`Vcs::commit(file, message)` commits only that file.** Git: `add`, a staged-changes check, then
+  a commit with the file as pathspec, so what else the user staged stays staged. Pijul: `add`, then
+  `record --all` with the file as prefix. An untracked file is added; an unchanged file commits
+  nothing. The caller chooses the message; no frontend calls it yet (planned for RTM-21).
+- Executables run in the file's directory with the file name after `--` (`--literal-pathspecs` for
+  git), stdin null (prompts on stdin fail; terminal prompts such as pinentry still can, timeouts
+  are RTM-19's), and `CREATE_NO_WINDOW` on Windows. Errors: `Spawn` (could not start; `NotFound`
+  usually means not in `PATH`, but also a missing directory) and `Failed` (non-zero exit, with
+  stderr). Output is never parsed, so no `LC_ALL=C`.
+- Paths are resolved by one helper for `detect` and `commit`; on Windows it strips the `\\?\`
+  prefix of canonical paths, which git does not accept as a working directory.
+- **Pijul signs every change.** From 1.0.0-beta.15 on only through the SSH agent (`signing_key` in
+  its config picks a key when the agent holds several); its agent client is a stub on Windows, so
+  current pijul cannot record there and `commit` reports its error (RTM-58).
 
 ---
 
 ## Important Notes
 
-- Tests live inline in `#[cfg(test)]` and use scratch directories under the system temp directory.
-  Run with `cargo test -p rtmsync`.
+- Detection tests are inline, commit tests in `tests/`; all use scratch directories under the
+  system temp directory. Run with `cargo test -p rtmsync`.
+- `tests/git.rs` gives each scratch repository a local identity, `commit.gpgsign=false` and an empty
+  `core.hooksPath`, so the user's global config does not interfere.
+- `tests/pijul.rs` holds exactly one test, because it sets process-wide environment variables
+  (`unsafe` in Rust 2024): `HOME`, `XDG_CONFIG_HOME` and `PIJUL_CONFIG_DIR` (on Windows pijul's
+  default comes from the system, not `APPDATA`) point at scratch directories. On Unix it starts its
+  own `ssh-agent` with a generated key and gives every ssh tool that socket explicitly, so it never
+  reaches the user's agent; the socket path is relative, as the absolute one can exceed the Unix
+  limit. On Windows it writes a throwaway on-disk identity for pijul 1.0.0-beta.11 (which cannot
+  create one without a terminal on a fresh config). It skips when `pijul` is not in `PATH`, unless
+  `RTM_REQUIRE_PIJUL` is set.
+- CI (`rust.yml`) builds pijul 1.0.0-beta.24 on Linux and macOS, cached per OS and version, and
+  sets `RTM_REQUIRE_PIJUL=1`. Windows downloads the community build of 1.0.0-beta.11 linked from
+  pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
+  from source there (libsodium-sys's build script panics under MSVC, and pijul's own Windows code
+  did not compile at beta.12), and newer releases could not record anyway (RTM-58).
 - No frontend depends on the crate yet. When one does, the release workflow's `paths` filter needs
   `rtmsync/**`.
