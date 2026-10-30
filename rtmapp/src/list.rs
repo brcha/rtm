@@ -243,6 +243,7 @@ mod tests {
             show_future_items: bits & 2 != 0,
             hide_no_date: bits & 4 != 0,
             reverse_sort: bits & 8 != 0,
+            ..AppConfig::default()
         }
     }
 

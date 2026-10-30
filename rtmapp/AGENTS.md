@@ -12,7 +12,8 @@ Done: window shell in the Inter-based theme, config loading, "Load File" through
 the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
 complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
 package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); the MSI, deb and
-AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11).
+AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11); sync
+through Git or Pijul (RTM-64).
 
 ---
 
@@ -36,6 +37,7 @@ rtmapp/
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
     ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`)
+    ├── sync.rs             ← Sync through the file's repository: `find`, the worker thread
     └── theme.rs            ← Palettes, fonts, egui styling
 ```
 
@@ -47,6 +49,7 @@ rtmapp/
 |---------------------|----------------------------------------------------|
 | eframe 0.37         | Window, event loop, egui integration               |
 | todotxt (path)      | Parsing, serialization, `TodoLibrary`              |
+| rtmsync (path)      | Commit, pull and push through Git or Pijul         |
 | rfd 0.16            | Native file dialog (`xdg-portal` backend on Linux) |
 | serde, toml 0.8     | Config file                                        |
 | dirs 5              | OS config directory                                |
@@ -70,7 +73,10 @@ rtmapp/
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one the Tauri app wrote,
   so existing users' settings carry over: do not rename fields or change defaults (`#[serde(default)]`
   on `AppConfig`). The file is written after a successful file load or a filter change, never at
-  startup.
+  startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can default to true): a
+  new field gets its default there. Keys added for sync: `sync` (default true; false turns off
+  commits as well as pulls and pushes) and `vcs` (`"git"` or `"pijul"`, any case, the answer when
+  the file's directory has both; anything else means ask; cleared when another file is opened).
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
@@ -126,9 +132,34 @@ rtmapp/
   Tauri app did, so no console window opens behind the GUI. The window opens centred at 900 × 650.
   Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
   uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
+- **Sync (RTM-64)** follows rtmcli's rules (`sync::find`): `sync = false`, no repository or an
+  untracked file → no sync and no commits; both Git and Pijul → the Git-or-Pijul dialog (or "Don't
+  sync", which asks again next time); a conflicted repository (`is_conflicted`) → the file is not
+  opened and the error line says to resolve it by hand; a failed check (e.g. `git` missing) → "Not
+  syncing: …" in the header; no remote → commit only.
+  - **One worker thread** (`sync::Worker`) runs every git or pijul call: `Pull` and `CommitAndSync`
+    jobs, a result per job (`Done`), and `ctx.request_repaint()` after each, so results arrive
+    without input. `App::sync_results` applies them at the start of each frame.
+  - **Pulls happen ahead of changes:** after the file is opened, when the window regains focus
+    (`viewport().focused`), and when the edit dialog or the delete confirmation opens. A pull that
+    changed the file reloads it; the dialog's item (kept in `edited` when it opened) is found again
+    by equality, and if it is gone, or (while the delete confirmation shows) what deleting it would
+    remove changed, `stale` makes Save and Delete refuse.
+  - **Each save queues `commit_and_sync`** with rtmcli's messages (`rtm: complete …`, `rtm:
+    uncomplete …`, `rtm: add …`, `rtm: edit …`, `rtm: delete …`).
+  - **No change while a job runs** (`App::busy`): the row checkboxes, quick-add, Load File, and the
+    dialog's Save and delete buttons are disabled, and every mutation also returns early on its own,
+    so the file is never written while git works on it. The header shows "Syncing…", or "Not synced:
+    …" (git's first line; the rest on hover) after a failed pull or push.
+  - **A conflict from a job closes the file**, as on open: a reload would read the markers as items.
+  - **On exit** (`on_exit`, eframe's wgpu build), queued jobs get up to 5 s, so a change saved just
+    before closing is still committed.
 - Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
-  build `App { .. }` directly with a temp `config_path` (see `app_with`), never
+  build `App { .. }` directly with a temp `config_path` (see `app_with` and `bare_app`), never
   `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.
+  They do not start sync; the sync tests call `connect` on scratch git remotes and clones (local
+  paths, local config keeping the user's identity, signing, hooks and rerere out) and `wait` for the
+  worker, which a headless `egui::Context` serves.
 
 ---
 

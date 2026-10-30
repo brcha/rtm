@@ -8,6 +8,7 @@ repository = "https://github.com/brcha/rtm"
 
 [dependencies]
 todotxt = { path = "../todotxt" }
+rtmsync = { path = "../rtmsync" }
 eframe = "0.37"
 chrono = "0.4.31"
 serde = { version = "1", features = ["derive"] }
@@ -36,14 +37,15 @@ winresource = "0.1.34"
 # Wayland (it loads these with dlopen, so $auto cannot see them): the Wayland client and xkbcommon, a GPU
 # API (OpenGL ES through EGL, or Vulkan), fontconfig (system fonts for glyphs missing from the bundled
 # Inter), and the XDG portal with a backend that has a file chooser (not the virtual
-# xdg-desktop-portal-backend: xdg-desktop-portal-wlr provides it without one). X11 support is optional.
+# xdg-desktop-portal-backend: xdg-desktop-portal-wlr provides it without one). X11 support is optional,
+# and so are git and pijul (sync through the repository the todo.txt lives in, RTM-64).
 [package.metadata.deb]
 name = "rtmapp"
 maintainer = "Filip Brcic <filip.brcic@brcha.com>"
 section = "utils"
 priority = "optional"
 depends = "$auto, libwayland-client0, libxkbcommon0, libegl1 | libvulkan1, libwayland-egl1, libfontconfig1, xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde"
-suggests = "libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon-x11-0"
+suggests = "libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon-x11-0, git, pijul"
 assets = [
     ["target/release/rtmapp", "usr/bin/", "755"],
     ["assets/rtmapp.desktop", "usr/share/applications/", "644"],

@@ -7,6 +7,7 @@ mod calendar;
 mod config;
 mod edit;
 mod list;
+mod sync;
 mod theme;
 
 use eframe::egui;

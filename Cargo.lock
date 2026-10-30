@@ -3196,6 +3196,7 @@ dependencies = [
  "icu_calendar",
  "icu_locale_core",
  "rfd",
+ "rtmsync",
  "serde",
  "sys-locale",
  "todotxt",

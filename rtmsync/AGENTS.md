@@ -8,8 +8,8 @@ dependency.
 
 Done: detecting the VCS (RTM-12), committing the file (RTM-18), syncing with the remote (RTM-19,
 which also took Pijul's part from RTM-53), the checks the frontends need and sync in the CLI
-(RTM-21). Still to come: sync in the GUI (RTM-64), the dirty or untracked todo.txt check on open
-(RTM-63, decided in RTM-57), periodic GUI sync (RTM-20).
+(RTM-21), sync in the GUI and the `index.lock` retry (RTM-64). Still to come: the dirty or untracked
+todo.txt check on open (RTM-63, decided in RTM-57), periodic GUI sync (RTM-20).
 
 ---
 
@@ -69,6 +69,12 @@ rtmsync/
   (`Timeout`). Their stdout is discarded and their stderr goes to a temporary file, not a pipe: ssh
   can outlive git and hold a pipe open. The file is created exclusively (never an existing file or
   symlink at its predictable name) and, on Unix, readable only by the user.
+- **`index.lock`:** a local call (`add`, `diff`, `commit`, the status checks) whose stderr mentions
+  `index.lock` (the app and the CLI at once) is retried, 100 ms doubling, for about 3 s; the lock is
+  never removed. The file name in git's message is not translated, so this stays locale-free;
+  checking for the file after the failure would miss a lock held for milliseconds. Pull and push are
+  not retried: a pull that meets the lock stops before rebasing or stashing (checked) and leaves
+  nothing, so it is a "Not synced" warning that the next sync clears.
 - Paths are resolved by one helper for `detect`, `commit` and `sync`; on Windows it strips the
   `\\?\` prefix of canonical paths, which git does not accept as a working directory.
 - **Pijul signs every change.** From 1.0.0-beta.15 on only through the SSH agent (`signing_key` in
@@ -99,5 +105,5 @@ rtmsync/
   pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
   from source there (libsodium-sys's build script panics under MSVC, and pijul's own Windows code
   did not compile at beta.12), and newer releases could not record anyway (RTM-58).
-- `rtmcli` depends on the crate (RTM-21), so the Release workflow's `paths` filter includes
-  `rtmsync/**`.
+- `rtmcli` (RTM-21) and `rtmapp` (RTM-64) depend on the crate, so the Release workflow's `paths`
+  filter includes `rtmsync/**`.

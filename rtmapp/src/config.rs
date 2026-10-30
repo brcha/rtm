@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct AppConfig {
     pub file_name: Option<String>,
@@ -14,6 +14,24 @@ pub struct AppConfig {
     pub show_future_items: bool,
     pub hide_no_date: bool,
     pub reverse_sort: bool,
+    /// Commit, pull and push the file through its repository (RTM-64). On unless set to false.
+    pub sync: bool,
+    /// `"git"` or `"pijul"`: the user's choice when the file's directory belongs to both.
+    pub vcs: Option<String>,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        AppConfig {
+            file_name: None,
+            show_completed_items: false,
+            show_future_items: false,
+            hide_no_date: false,
+            reverse_sort: false,
+            sync: true,
+            vcs: None,
+        }
+    }
 }
 
 /// `<config dir>/rtm/config.toml`. Nothing is created here; `AppConfig::save` creates the directory.
@@ -66,6 +84,8 @@ mod tests {
             show_future_items: false,
             hide_no_date: true,
             reverse_sort: true,
+            sync: false,
+            vcs: Some("pijul".into()),
         };
         config.save(&path).unwrap();
         assert_eq!(AppConfig::load(&path), config);
@@ -77,6 +97,9 @@ mod tests {
         let config: AppConfig = toml::from_str("file_name = \"/tmp/todo.txt\"").unwrap();
         assert_eq!(config.file_name.as_deref(), Some("/tmp/todo.txt"));
         assert!(!config.show_completed_items && !config.hide_no_date && !config.reverse_sort);
+        // Files written before sync existed keep syncing on.
+        assert!(config.sync);
+        assert_eq!(config.vcs, None);
     }
 
     #[test]
