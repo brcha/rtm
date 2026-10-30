@@ -6,9 +6,10 @@ The library that synchronises a todo.txt file through the version control system
 (epic RTM-1). Git and Pijul are in scope; no others. No UI, no binary; `thiserror` is the only
 dependency.
 
-Done: detecting the VCS (RTM-12), committing the file (RTM-18). Still to come: the Pijul backend
-(RTM-53), the sync task (RTM-19), pull before change (RTM-21), periodic GUI sync (RTM-20). Open
-design question: a dirty repository or todo.txt when opening it (RTM-57).
+Done: detecting the VCS (RTM-12), committing the file (RTM-18), syncing with the remote (RTM-19,
+which also took Pijul's part from RTM-53). Still to come: pull before change and sync in the
+frontends (RTM-21), periodic GUI sync (RTM-20). Open design question: a dirty repository or todo.txt
+when opening it (RTM-57).
 
 ---
 
@@ -16,10 +17,10 @@ design question: a dirty repository or todo.txt when opening it (RTM-57).
 
 ```
 rtmsync/
-├── src/lib.rs        ← Vcs enum, detect(), Vcs::commit(), Error, detection tests
+├── src/lib.rs        ← Vcs enum, detect(), Vcs::commit(), Vcs::sync(), Error, unit tests
 └── tests/
-    ├── git.rs        ← Vcs::commit with Git
-    └── pijul.rs      ← Vcs::commit with Pijul (a single test, see below)
+    ├── git.rs        ← Vcs::commit and Vcs::sync with Git
+    └── pijul.rs      ← Vcs::commit and Vcs::sync with Pijul (a single test, see below)
 ```
 
 ---
@@ -42,12 +43,24 @@ rtmsync/
   `record --all` with the file as prefix. An untracked file is added; an unchanged file commits
   nothing. The caller chooses the message; no frontend calls it yet (planned for RTM-21).
 - Executables run in the file's directory with the file name after `--` (`--literal-pathspecs` for
-  git), stdin null (prompts on stdin fail; terminal prompts such as pinentry still can, timeouts
-  are RTM-19's), and `CREATE_NO_WINDOW` on Windows. Errors: `Spawn` (could not start; `NotFound`
-  usually means not in `PATH`, but also a missing directory) and `Failed` (non-zero exit, with
-  stderr). Output is never parsed, so no `LC_ALL=C`.
-- Paths are resolved by one helper for `detect` and `commit`; on Windows it strips the `\\?\`
-  prefix of canonical paths, which git does not accept as a working directory.
+  git), stdin null (prompts on stdin fail), and `CREATE_NO_WINDOW` on Windows. Only network calls
+  are timed (below), so `commit` can still wait on a terminal prompt such as pinentry. Errors:
+  `Spawn` (could not start; `NotFound` usually means not in `PATH`, but also a missing directory),
+  `Failed` (non-zero exit, with stderr), `Conflict` and `Timeout` (below). The only output parsed is
+  git's porcelain v2 status, which is locale-stable, so no `LC_ALL=C`.
+- **`Vcs::sync(file)` pulls, then pushes only if the pull applied cleanly.** Git: `pull --rebase
+  --autostash`, so local commits are rebased onto the remote; any unmerged (`u`) path in `status
+  --porcelain=v2` afterwards is `Conflict`, and the stopped rebase is left for the user (rtm never
+  aborts it). Pijul: `pull --all`, which on a conflict exits 0 and writes markers (`>>>>>>> `,
+  `======= `, `<<<<<<< `) into the file, so the todo.txt is checked for them, even after a failed
+  pull, and any is `Conflict`. Then `push` / `push --all`. A missing upstream is `Failed`.
+- Network calls (pull, push) run with `GIT_TERMINAL_PROMPT=0`: credentials come from a helper or
+  ssh-agent, never a terminal prompt (decided for the CLI too). They are killed after 60 s
+  (`Timeout`). Their stdout is discarded and their stderr goes to a temporary file, not a pipe: ssh
+  can outlive git and hold a pipe open. The file is created exclusively (never an existing file or
+  symlink at its predictable name) and, on Unix, readable only by the user.
+- Paths are resolved by one helper for `detect`, `commit` and `sync`; on Windows it strips the
+  `\\?\` prefix of canonical paths, which git does not accept as a working directory.
 - **Pijul signs every change.** From 1.0.0-beta.15 on only through the SSH agent (`signing_key` in
   its config picks a key when the agent holds several); its agent client is a stub on Windows, so
   current pijul cannot record there and `commit` reports its error (RTM-58).
@@ -56,10 +69,12 @@ rtmsync/
 
 ## Important Notes
 
-- Detection tests are inline, commit tests in `tests/`; all use scratch directories under the
-  system temp directory. Run with `cargo test -p rtmsync`.
-- `tests/git.rs` gives each scratch repository a local identity, `commit.gpgsign=false` and an empty
-  `core.hooksPath`, so the user's global config does not interfere.
+- Detection and process-runner tests are inline, commit and sync tests in `tests/`; all use scratch
+  directories under the system temp directory. Run with `cargo test -p rtmsync`.
+- `tests/git.rs` gives each scratch repository, the bare remote of the sync tests included, a local
+  identity, `commit.gpgsign=false`, an empty `core.hooksPath` and `rerere.enabled=false`, so the
+  user's global config does not interfere. The sync tests use a bare remote and two clones on local
+  paths: no network.
 - `tests/pijul.rs` holds exactly one test, because it sets process-wide environment variables
   (`unsafe` in Rust 2024): `HOME`, `XDG_CONFIG_HOME` and `PIJUL_CONFIG_DIR` (on Windows pijul's
   default comes from the system, not `APPDATA`) point at scratch directories. On Unix it starts its
@@ -67,7 +82,8 @@ rtmsync/
   reaches the user's agent; the socket path is relative, as the absolute one can exceed the Unix
   limit. On Windows it writes a throwaway on-disk identity for pijul 1.0.0-beta.11 (which cannot
   create one without a terminal on a fresh config). It skips when `pijul` is not in `PATH`, unless
-  `RTM_REQUIRE_PIJUL` is set.
+  `RTM_REQUIRE_PIJUL` is set. Its sync part clones the scratch repository twice; each clone keeps
+  its todo.txt at the same depth (`a/sub`, `b/sub`), so the relative socket path still resolves.
 - CI (`rust.yml`) builds pijul 1.0.0-beta.24 on Linux and macOS, cached per OS and version, and
   sets `RTM_REQUIRE_PIJUL=1`. Windows downloads the community build of 1.0.0-beta.11 linked from
   pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
