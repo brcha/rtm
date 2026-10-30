@@ -2,8 +2,9 @@
 
 ## What This Component Is
 
-A command-line interface for the Todo.txt manager. Uses `clap` for argument parsing and the
-`todotxt` library for all data operations.
+A command-line interface for the Todo.txt manager. Uses `clap` for argument parsing, the
+`todotxt` library for all data operations, and `rtmsync` to sync the file through its Git or Pijul
+repository (RTM-21).
 
 ---
 
@@ -12,7 +13,7 @@ A command-line interface for the Todo.txt manager. Uses `clap` for argument pars
 ```
 rtmcli/src/
 └── main.rs     ← Single file: CLI definition + all command handlers
-rtmcli/tests/   ← Integration tests
+rtmcli/tests/   ← Integration tests (sync_test.rs: sync through git)
 ```
 
 ---
@@ -25,6 +26,7 @@ rtmcli/tests/   ← Integration tests
 | `add`      | Add a new item in Todo.txt format                        |
 | `complete` | Complete items by filter, index, or UUID                 |
 | `delete`   | Delete an item and its sub-items, after confirmation     |
+| `sync`     | Pull and push the repository holding the file            |
 
 ---
 
@@ -40,6 +42,30 @@ rtmcli/tests/   ← Integration tests
   anything but `y`/`yes`, including no input, exits 0 without writing. `-y`/`--yes` skips the
   prompt.
 - No config file — stateless, all options via CLI args/env.
+
+## Sync (RTM-21)
+
+- `Repo::find` decides, before the command runs: `--no-sync` / `RTM_NO_SYNC` (clap's boolish
+  parser: `1`/`0`, `true`/`false`, `yes`/`no`, `on`/`off`) → no sync and no commits.
+  `rtmsync::detect`: none → no sync; one → it; both Git and Pijul → `--vcs` / `RTM_VCS` picks, else
+  exit 2 (a `--vcs` that the directory lacks is also exit 2). Then: an untracked file → no sync (so
+  rtmcli in a project directory never adds a stray `todo.txt` to it; RTM-63 will ask instead); a
+  conflicted repository (`Vcs::is_conflicted`) → exit 1 before loading; `has_remote` decides whether
+  to pull and push. A failed check (e.g. `git` not installed) is a "Not syncing" warning.
+- Every command syncs (pull, then push) first when there is a remote. `add`, `complete` and
+  `delete` then commit (`rtm: add <description>`, `rtm: complete <item>` or `rtm: complete <n>
+  items`, `rtm: delete <item>`) and sync again (`Repo::commit_and_sync`). Without a remote they only
+  commit, silently.
+- `complete` and `delete` resolve their items against the file **before** the pull, then find the
+  same items (equal lines) after it; if one is gone or changed, nothing is written and rtmcli exits
+  1, printing the item's new text when its UUID still exists.
+- A failed pull or push (offline, timeout, rejected push) is a "Not synced" warning; the change is
+  still saved and committed. `Conflict` exits 1 with "resolve them by hand" — also after a saved
+  and committed change, when the push afterwards meets a conflict. `rtmcli sync` exits 1 whenever it
+  cannot sync.
+- Tests: `tests/sync_test.rs`, against scratch bare git remotes and clones (local paths, no network)
+  with local config that keeps the user's identity, signing, hooks and rerere out. Pijul is covered
+  in `rtmsync`; the CLI logic does not depend on the VCS.
 
 ---
 

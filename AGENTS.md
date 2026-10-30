@@ -124,8 +124,9 @@ one that had them.
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
   (publishes a draft GitHub Release), manual `workflow_dispatch` (dry run: builds and uploads to the
   Actions run, publishes nothing, no tag required), and pull requests against `main` that touch the
-  crates, `Cargo.toml`/`Cargo.lock`, `LICENSE`, `scripts/build-appimage.sh`, `scripts/build-macos.sh` or
-  the workflow (builds and tests the packages, publishes nothing). Windows and Linux are x64 only — no
+  crates (`rtmsync` included since RTM-21), `Cargo.toml`/`Cargo.lock`, `LICENSE`,
+  `scripts/build-appimage.sh`, `scripts/build-macos.sh` or the workflow (builds and tests the
+  packages, publishes nothing). Windows and Linux are x64 only — no
   ARM64, no 32-bit; macOS is one universal (arm64 + x86_64) build (RTM-11).
 - **Assets:** `rtmapp_<v>_x64_en-US.msi`, `rtmcli-<v>-x64.exe`, `rtmapp_<v>_amd64.deb`,
   `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`, `rtmapp_<v>_universal.dmg`,

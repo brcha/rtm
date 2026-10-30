@@ -7,9 +7,9 @@ The library that synchronises a todo.txt file through the version control system
 dependency.
 
 Done: detecting the VCS (RTM-12), committing the file (RTM-18), syncing with the remote (RTM-19,
-which also took Pijul's part from RTM-53). Still to come: pull before change and sync in the
-frontends (RTM-21), periodic GUI sync (RTM-20). Open design question: a dirty repository or todo.txt
-when opening it (RTM-57).
+which also took Pijul's part from RTM-53), the checks the frontends need and sync in the CLI
+(RTM-21). Still to come: sync in the GUI (RTM-64), the dirty or untracked todo.txt check on open
+(RTM-63, decided in RTM-57), periodic GUI sync (RTM-20).
 
 ---
 
@@ -17,7 +17,8 @@ when opening it (RTM-57).
 
 ```
 rtmsync/
-├── src/lib.rs        ← Vcs enum, detect(), Vcs::commit(), Vcs::sync(), Error, unit tests
+├── src/lib.rs        ← Vcs enum, detect(), Vcs::{commit, sync, is_tracked, is_conflicted,
+│                       has_remote}, Error, unit tests
 └── tests/
     ├── git.rs        ← Vcs::commit and Vcs::sync with Git
     └── pijul.rs      ← Vcs::commit and Vcs::sync with Pijul (a single test, see below)
@@ -41,19 +42,28 @@ rtmsync/
 - **`Vcs::commit(file, message)` commits only that file.** Git: `add`, a staged-changes check, then
   a commit with the file as pathspec, so what else the user staged stays staged. Pijul: `add`, then
   `record --all` with the file as prefix. An untracked file is added; an unchanged file commits
-  nothing. The caller chooses the message; no frontend calls it yet (planned for RTM-21).
+  nothing. The caller chooses the message (rtmcli: `rtm: add <description>` and the like).
 - Executables run in the file's directory with the file name after `--` (`--literal-pathspecs` for
   git), stdin null (prompts on stdin fail), and `CREATE_NO_WINDOW` on Windows. Only network calls
   are timed (below), so `commit` can still wait on a terminal prompt such as pinentry. Errors:
   `Spawn` (could not start; `NotFound` usually means not in `PATH`, but also a missing directory),
   `Failed` (non-zero exit, with stderr), `Conflict` and `Timeout` (below). The only output parsed is
-  git's porcelain v2 status, which is locale-stable, so no `LC_ALL=C`.
+  git's porcelain v2 status and the plain path lists of `rev-parse --git-path` and `pijul ls`, and
+  whether `pijul remote` prints anything; none depends on the locale, so no `LC_ALL=C`.
 - **`Vcs::sync(file)` pulls, then pushes only if the pull applied cleanly.** Git: `pull --rebase
   --autostash`, so local commits are rebased onto the remote; any unmerged (`u`) path in `status
   --porcelain=v2` afterwards is `Conflict`, and the stopped rebase is left for the user (rtm never
   aborts it). Pijul: `pull --all`, which on a conflict exits 0 and writes markers (`>>>>>>> `,
   `======= `, `<<<<<<< `) into the file, so the todo.txt is checked for them, even after a failed
-  pull, and any is `Conflict`. Then `push` / `push --all`. A missing upstream is `Failed`.
+  pull, and any is `Conflict`. Then `push` / `push --all`. A missing upstream is `Failed`. The
+  conflict check is `Vcs::is_conflicted`, which for Git also counts a rebase or merge stopped
+  half-way (`rebase-merge`, `rebase-apply`, `MERGE_HEAD` via `git rev-parse --git-path`): after a
+  conflict the user may resolve and stage every path yet not run `git rebase --continue`, and a
+  commit then would land mid-rebase.
+- **Checks for the frontends:** `is_tracked` (Git: `ls-files --error-unmatch`; Pijul: `pijul ls`
+  lists the root-relative path), `is_conflicted` (above), `has_remote` (Git: an upstream branch;
+  Pijul: `pijul remote` prints anything). During a stopped rebase HEAD is detached and has no
+  upstream, so callers check `is_conflicted` on its own rather than relying on `sync` to notice.
 - Network calls (pull, push) run with `GIT_TERMINAL_PROMPT=0`: credentials come from a helper or
   ssh-agent, never a terminal prompt (decided for the CLI too). They are killed after 60 s
   (`Timeout`). Their stdout is discarded and their stderr goes to a temporary file, not a pipe: ssh
@@ -89,5 +99,5 @@ rtmsync/
   pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
   from source there (libsodium-sys's build script panics under MSVC, and pijul's own Windows code
   did not compile at beta.12), and newer releases could not record anyway (RTM-58).
-- No frontend depends on the crate yet. When one does, the release workflow's `paths` filter needs
+- `rtmcli` depends on the crate (RTM-21), so the Release workflow's `paths` filter includes
   `rtmsync/**`.
