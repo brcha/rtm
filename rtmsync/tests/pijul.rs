@@ -1,10 +1,10 @@
-//! `Vcs::commit` and `Vcs::sync` with Pijul. This binary holds a single test: it sets process-wide
-//! environment variables, which is only sound while no other test runs beside it.
+//! `Vcs::commit`, `Vcs::state` and `Vcs::sync` with Pijul. This binary holds a single test: it sets
+//! process-wide environment variables, which is only sound while no other test runs beside it.
 
 use std::path::Path;
 use std::process::Command;
 
-use rtmsync::{Error, Vcs};
+use rtmsync::{Error, State, Vcs};
 
 /// Runs pijul in `dir` and returns its stdout, panicking on failure.
 fn pijul(dir: &Path, args: &[&str]) -> String {
@@ -146,8 +146,24 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     pijul(&sub, &["add", "../other.txt"]);
 
     assert!(!Vcs::Pijul.is_tracked(&todo).unwrap());
+    assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Untracked);
+    let ignored = sub.join("ignored.txt");
+    std::fs::write(&ignored, "ignored\n").unwrap();
+    std::fs::write(repo.join(".ignore"), "ignored.txt\n").unwrap();
+    assert_eq!(Vcs::Pijul.state(&ignored).unwrap(), State::Ignored);
+    // At the repository root, where a todo.txt usually is: added and never recorded, untracked.
+    assert_eq!(
+        Vcs::Pijul.state(&repo.join("other.txt")).unwrap(),
+        State::Modified
+    );
+    std::fs::write(repo.join("top.txt"), "top\n").unwrap();
+    assert_eq!(
+        Vcs::Pijul.state(&repo.join("top.txt")).unwrap(),
+        State::Untracked
+    );
     Vcs::Pijul.commit(&todo, "first").unwrap();
     assert!(Vcs::Pijul.is_tracked(&todo).unwrap());
+    assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Clean);
     assert!(!Vcs::Pijul.has_remote(&todo).unwrap());
     let log = pijul(&sub, &["log"]);
     assert!(log.contains("first"), "{log}");
@@ -160,6 +176,7 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     );
 
     std::fs::write(&todo, "Buy milk\nCall mom\n").unwrap();
+    assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Modified);
     Vcs::Pijul.commit(&todo, "second").unwrap();
     assert!(pijul(&sub, &["log"]).contains("second"));
 

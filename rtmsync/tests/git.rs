@@ -1,9 +1,9 @@
-//! `Vcs::commit` and `Vcs::sync` with Git.
+//! `Vcs::commit`, `Vcs::state` and `Vcs::sync` with Git.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use rtmsync::{Error, Vcs};
+use rtmsync::{Error, State, Vcs};
 
 /// Runs git in `dir` and returns its trimmed stdout, panicking on failure.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -234,4 +234,46 @@ fn commit_gives_up_on_an_index_lock_that_stays() {
     assert!(matches!(result, Err(Error::Failed { .. })), "{result:?}");
     // rtm never removes another process's lock.
     assert!(lock.exists());
+}
+
+#[test]
+fn state_tells_untracked_clean_and_modified() {
+    let dir = repo("state");
+    let todo = dir.join("sub/todo.txt");
+    assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Untracked);
+
+    git(&dir, &["add", "sub/todo.txt"]);
+    assert_eq!(
+        Vcs::Git.state(&todo).unwrap(),
+        State::Modified,
+        "added, never committed"
+    );
+    Vcs::Git.commit(&todo, "one").unwrap();
+    assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Clean);
+
+    // Another dirty file leaves the todo.txt clean.
+    std::fs::write(dir.join("other.txt"), "other\n").unwrap();
+    git(&dir, &["add", "other.txt"]);
+    assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Clean);
+
+    std::fs::write(&todo, "one\n").unwrap();
+    assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Modified, "unstaged");
+    git(&dir, &["add", "sub/todo.txt"]);
+    assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Modified, "staged");
+    std::fs::write(&todo, "one\ntwo\n").unwrap();
+    assert_eq!(
+        Vcs::Git.state(&todo).unwrap(),
+        State::Modified,
+        "partly staged"
+    );
+}
+
+#[test]
+fn state_tells_a_file_ignored_by_name_or_by_its_directory() {
+    let dir = repo("ignored");
+    let todo = dir.join("sub/todo.txt");
+    std::fs::write(dir.join(".gitignore"), "todo.txt\n").unwrap();
+    assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Ignored);
+    std::fs::write(dir.join(".gitignore"), "sub/\n").unwrap();
+    assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Ignored);
 }

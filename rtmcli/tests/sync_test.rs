@@ -163,13 +163,93 @@ fn a_repository_without_a_remote_commits_quietly() {
 }
 
 #[test]
-fn an_untracked_todo_txt_is_left_alone() {
-    let dir = remote_and_clones("untracked", "Buy milk\n");
+fn a_missing_untracked_todo_txt_is_left_alone() {
+    let dir = remote_and_clones("missing", "Buy milk\n");
     let other = dir.join("a/other.txt");
     let output = rtmcli(&other, &["add", "Call mom"]);
     assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
     assert_eq!(last_subject(&dir.join("a")), "start");
     assert_eq!(last_subject(&dir.join("remote")), "start");
+}
+
+#[test]
+fn an_untracked_todo_txt_is_used_without_sync_and_a_hint() {
+    let dir = remote_and_clones("untracked", "Buy milk\n");
+    let other = dir.join("a/other.txt");
+    std::fs::write(&other, "Buy milk\n").unwrap();
+    let output = rtmcli(&other, &["add", "Call mom"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--commit-changes"));
+    assert!(
+        std::fs::read_to_string(&other)
+            .unwrap()
+            .contains("Call mom")
+    );
+    assert_eq!(last_subject(&dir.join("a")), "start");
+}
+
+#[test]
+fn commit_changes_adds_an_untracked_todo_txt_and_syncs() {
+    let dir = remote_and_clones("track", "Buy milk\n");
+    let other = dir.join("a/other.txt");
+    std::fs::write(&other, "Buy milk\n").unwrap();
+    let output = rtmcli(&other, &["--commit-changes", "add", "Call mom"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        git(&dir.join("remote"), &["log", "-2", "--format=%s"]),
+        "rtm: add Call mom\nrtm: track other.txt"
+    );
+}
+
+#[test]
+fn an_ignored_todo_txt_is_used_quietly_without_sync() {
+    let dir = remote_and_clones("ignored", "Buy milk\n");
+    std::fs::write(dir.join("a/.gitignore"), "other.txt\n").unwrap();
+    let other = dir.join("a/other.txt");
+    std::fs::write(&other, "Buy milk\n").unwrap();
+    let output = rtmcli(&other, &["--commit-changes", "add", "Call mom"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert_eq!(last_subject(&dir.join("a")), "start");
+}
+
+#[test]
+fn outside_changes_stop_rtmcli() {
+    let dir = remote_and_clones("modified", "Buy milk\n");
+    let todo = dir.join("a/todo.txt");
+    std::fs::write(&todo, "Buy milk\nBy hand\n").unwrap();
+    let output = rtmcli(&todo, &["list"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--commit-changes"));
+    assert_eq!(
+        std::fs::read_to_string(&todo).unwrap(),
+        "Buy milk\nBy hand\n"
+    );
+    assert_eq!(last_subject(&dir.join("a")), "start");
+}
+
+#[test]
+fn commit_changes_commits_outside_changes_first() {
+    let dir = remote_and_clones("commit changes", "Buy milk\n");
+    let todo = dir.join("a/todo.txt");
+    std::fs::write(&todo, "Buy milk\nBy hand\n").unwrap();
+    let output = rtmcli(&todo, &["--commit-changes", "add", "Call mom"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        git(&dir.join("remote"), &["log", "-2", "--format=%s"]),
+        "rtm: add Call mom\nrtm: commit outside changes"
+    );
+}
+
+#[test]
+fn no_sync_skips_the_check_for_outside_changes() {
+    let dir = remote_and_clones("no sync modified", "Buy milk\n");
+    let todo = dir.join("a/todo.txt");
+    std::fs::write(&todo, "Buy milk\nBy hand\n").unwrap();
+    let output = rtmcli(&todo, &["--no-sync", "list"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(last_subject(&dir.join("a")), "start");
 }
 
 #[test]
@@ -226,4 +306,14 @@ fn a_directory_used_by_two_vcss_needs_a_choice() {
     assert_eq!(output.status.code(), Some(2), "{output:?}");
     let chosen = rtmcli(&dir.join("a/todo.txt"), &["--vcs", "git", "list"]);
     assert!(chosen.status.success(), "{chosen:?}");
+}
+
+#[test]
+fn commit_changes_never_commits_a_deleted_todo_txt() {
+    let dir = remote_and_clones("deleted", "Buy milk\n");
+    let todo = dir.join("a/todo.txt");
+    std::fs::remove_file(&todo).unwrap();
+    let output = rtmcli(&todo, &["--commit-changes", "list"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(last_subject(&dir.join("a")), "start");
 }
