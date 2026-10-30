@@ -6,6 +6,7 @@ members = [
 	"todotxt",
 	"rtmcli",
 	"rtmapp",
+	"rtmsync",
 ]
 
 [profile.release]

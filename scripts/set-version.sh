@@ -16,6 +16,7 @@
 # Rewrites the `version` field in:
 #   - rtmapp/Cargo.toml   (the release version's source of truth; drives the installers)
 #   - rtmcli/Cargo.toml
+#   - rtmsync/Cargo.toml
 #   - todotxt/Cargo.toml
 #
 # Only the `version` key inside the `[package]` table is touched: todotxt/Cargo.toml also has a
@@ -84,6 +85,7 @@ run_awk() {
 targets=(
     rtmapp/Cargo.toml
     rtmcli/Cargo.toml
+    rtmsync/Cargo.toml
     todotxt/Cargo.toml
 )
 
