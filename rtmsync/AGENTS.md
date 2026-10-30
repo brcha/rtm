@@ -8,8 +8,9 @@ dependency.
 
 Done: detecting the VCS (RTM-12), committing the file (RTM-18), syncing with the remote (RTM-19,
 which also took Pijul's part from RTM-53), the checks the frontends need and sync in the CLI
-(RTM-21), sync in the GUI and the `index.lock` retry (RTM-64). Still to come: the dirty or untracked
-todo.txt check on open (RTM-63, decided in RTM-57), periodic GUI sync (RTM-20).
+(RTM-21), sync in the GUI and the `index.lock` retry (RTM-64), the todo.txt's state for the check on
+open and its use in the CLI (RTM-63, decided in RTM-57). Still to come: background GUI sync, which
+replaces RTM-64's per-change sync and takes over the GUI's check on open (RTM-20).
 
 ---
 
@@ -17,11 +18,11 @@ todo.txt check on open (RTM-63, decided in RTM-57), periodic GUI sync (RTM-20).
 
 ```
 rtmsync/
-├── src/lib.rs        ← Vcs enum, detect(), Vcs::{commit, sync, is_tracked, is_conflicted,
-│                       has_remote}, Error, unit tests
+├── src/lib.rs        ← Vcs enum, detect(), Vcs::{commit, sync, state, is_tracked,
+│                       is_conflicted, has_remote}, State, Error, unit tests
 └── tests/
-    ├── git.rs        ← Vcs::commit and Vcs::sync with Git
-    └── pijul.rs      ← Vcs::commit and Vcs::sync with Pijul (a single test, see below)
+    ├── git.rs        ← Vcs::commit, Vcs::state and Vcs::sync with Git
+    └── pijul.rs      ← Vcs::commit, Vcs::state and Vcs::sync with Pijul (a single test, see below)
 ```
 
 ---
@@ -44,12 +45,13 @@ rtmsync/
   `record --all` with the file as prefix. An untracked file is added; an unchanged file commits
   nothing. The caller chooses the message (rtmcli: `rtm: add <description>` and the like).
 - Executables run in the file's directory with the file name after `--` (`--literal-pathspecs` for
-  git), stdin null (prompts on stdin fail), and `CREATE_NO_WINDOW` on Windows. Only network calls
+  git, except `check-ignore`, which takes path names and refuses it), stdin null (prompts on stdin fail), and `CREATE_NO_WINDOW` on Windows. Only network calls
   are timed (below), so `commit` can still wait on a terminal prompt such as pinentry. Errors:
   `Spawn` (could not start; `NotFound` usually means not in `PATH`, but also a missing directory),
   `Failed` (non-zero exit, with stderr), `Conflict` and `Timeout` (below). The only output parsed is
-  git's porcelain v2 status and the plain path lists of `rev-parse --git-path` and `pijul ls`, and
-  whether `pijul remote` prints anything; none depends on the locale, so no `LC_ALL=C`.
+  git's porcelain v2 status, the plain path lists of `rev-parse --git-path` and `pijul ls`, the
+  `U <path>` and `A <path>` lines of `pijul diff --short --untracked`, and whether `pijul remote` or
+  `pijul diff --short` prints anything; none depends on the locale, so no `LC_ALL=C`.
 - **`Vcs::sync(file)` pulls, then pushes only if the pull applied cleanly.** Git: `pull --rebase
   --autostash`, so local commits are rebased onto the remote; any unmerged (`u`) path in `status
   --porcelain=v2` afterwards is `Conflict`, and the stopped rebase is left for the user (rtm never
@@ -64,6 +66,32 @@ rtmsync/
   lists the root-relative path), `is_conflicted` (above), `has_remote` (Git: an upstream branch;
   Pijul: `pijul remote` prints anything). During a stopped rebase HEAD is detached and has no
   upstream, so callers check `is_conflicted` on its own rather than relying on `sync` to notice.
+- **`Vcs::state(file)` (RTM-63):** `Clean`, `Modified` (uncommitted changes, staged or not, or
+  added and never committed), `Untracked` or `Ignored`. Git: `is_tracked`, then porcelain v2 status
+  of the file (`1`, `2` or `u` lines) for a tracked one, or `check-ignore -q` (exit 0 ignored, 1
+  not; status shows nothing for an ignored file) for an untracked one. Pijul: `is_tracked`, then
+  whether `pijul diff --short -- <file>` prints anything, or whether `pijul diff --short
+  --untracked .` in the file's directory lists it, as `U <path>` at the repository root and
+  `A <path>` below it (pijul 1.0.0-beta.18; beta.11 has the flag); an ignored file is left out.
+  Without `--untracked` an untracked file at the root is not listed, and `pijul add` cannot tell
+  either, as it reports success for an ignored file. A missing file is not classified reliably (a
+  deleted tracked file is `Modified` for Git, a missing untracked one `Ignored` for Pijul), so
+  callers skip the check for one.
+- **The check on open (RTM-57 decision)**, before the first pull, whenever the frontend would commit
+  or sync (the opt-out turns off commits too, so it skips the check):
+
+  | State | What the frontend does |
+  |---|---|
+  | clean | nothing extra |
+  | modified | asks to commit the outside changes (rtmcli: exits 1 unless `--commit-changes`); yes: commit with a fixed message, then pull; declined: not opened (the user commits or reverts by hand) |
+  | untracked | offers to add it (rtmcli: a hint unless `--commit-changes`); declined: used without sync, asked again next time |
+  | ignored | not versioned: used, never synced, never asked |
+  | other files dirty | nothing extra (`git pull --autostash` keeps their content, not their staging) |
+  | conflicted | not opened until the user resolves it (RTM-16 rule 8) |
+  | missing | unchanged (the frontend's missing-file behaviour) |
+
+  rtmcli implements it (RTM-63); the GUI's part comes with RTM-20, since whether a dirty todo.txt at
+  open is an outside change depends on how the app buffers changes between syncs.
 - Network calls (pull, push) run with `GIT_TERMINAL_PROMPT=0`: credentials come from a helper or
   ssh-agent, never a terminal prompt (decided for the CLI too). They are killed after 60 s
   (`Timeout`). Their stdout is discarded and their stderr goes to a temporary file, not a pipe: ssh

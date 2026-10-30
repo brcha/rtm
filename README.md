@@ -159,7 +159,12 @@ its window comes back to the front and when you open an item; every change is co
 While the app syncs ("Syncing…" in its title bar), changes wait until it is done.
 
 - Commit the todo.txt to the repository once (`git add todo.txt` and commit, or `pijul add` and
-  `pijul record`); rtm never adds an untracked file on its own.
+  `pijul record`), or let rtmcli do it with `--commit-changes`; rtm never adds an untracked file
+  on its own. rtmcli reminds you of an untracked todo.txt on every run; ignore the file in the
+  repository (`.gitignore`, or `.ignore` for Pijul) to silence it; rtm then never syncs it.
+- If the todo.txt has changes rtm did not commit (edited by hand, or with `--no-sync`), rtmcli
+  stops before syncing: commit or revert them, or run it with `--commit-changes` to commit them
+  first. (The desktop app does not check this yet.)
 - Without a remote (no upstream branch for Git), changes are committed but not pushed.
 - `rtmcli sync` only pulls and pushes. `--no-sync` (or `RTM_NO_SYNC=1`) works on the file without
   committing, pulling or pushing; in the desktop app, put `sync = false` in `rtm/config.toml` in
