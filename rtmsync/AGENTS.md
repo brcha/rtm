@@ -65,8 +65,9 @@ rtmsync/
   default comes from the system, not `APPDATA`) point at scratch directories. On Unix it starts its
   own `ssh-agent` with a generated key and gives every ssh tool that socket explicitly, so it never
   reaches the user's agent; the socket path is relative, as the absolute one can exceed the Unix
-  limit. On Windows it creates an on-disk identity for pijul 1.0.0-beta.11. It skips when `pijul`
-  is not in `PATH`, unless `RTM_REQUIRE_PIJUL` is set.
+  limit. On Windows it writes a throwaway on-disk identity for pijul 1.0.0-beta.11 (which cannot
+  create one without a terminal on a fresh config). It skips when `pijul` is not in `PATH`, unless
+  `RTM_REQUIRE_PIJUL` is set.
 - CI (`rust.yml`) builds pijul 1.0.0-beta.24 on Linux and macOS, cached per OS and version, and
   sets `RTM_REQUIRE_PIJUL=1`. Windows downloads the community build of 1.0.0-beta.11 linked from
   pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
