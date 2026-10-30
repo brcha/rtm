@@ -9,6 +9,7 @@ Subpart AGENTS.md files:
 - [`todotxt/AGENTS.md`](todotxt/AGENTS.md) — core library
 - [`rtmcli/AGENTS.md`](rtmcli/AGENTS.md) — CLI frontend
 - [`rtmapp/AGENTS.md`](rtmapp/AGENTS.md) — egui desktop app
+- [`rtmsync/AGENTS.md`](rtmsync/AGENTS.md) — sync through a VCS (epic RTM-1)
 
 ---
 
@@ -19,11 +20,12 @@ rtm/                        ← Cargo workspace root
 ├── todotxt/                ← Core library (no UI, no binary)
 ├── rtmcli/                 ← CLI (clap-based)
 ├── rtmapp/                 ← Desktop app (egui/eframe)
+├── rtmsync/                ← Sync of todo.txt through Git or Pijul (library)
 ├── flake.nix, default.nix  ← Nix packages
 └── shell.nix               ← Nix dev shell
 ```
 
-`todotxt`, `rtmcli` and `rtmapp` share the root Cargo workspace (`Cargo.lock` at root). The `todotxt`
+`todotxt`, `rtmcli`, `rtmapp` and `rtmsync` share the root Cargo workspace (`Cargo.lock` at root). The `todotxt`
 library is the single source of truth for parsing, serialization, and business logic. Frontends depend
 on it via `path` dependency.
 
@@ -140,11 +142,11 @@ one that had them.
   packages whose internal version disagrees with their file names.
 - **`scripts/set-version.ps1`** (PowerShell) and **`scripts/set-version.sh`** (bash) are two ports of
   one manual pre-release tool, not something CI invokes; keep them in step. Run either locally to bump
-  the version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml` and `todotxt/Cargo.toml` in lockstep,
-  review the diff, commit it, and only then tag. It scopes its match to the `[package]` table
-  specifically — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table with its own `version`
-  key. A new release must have a higher version than the last one, or neither the MSI nor apt
-  replaces the installed copy.
+  the version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml`, `rtmsync/Cargo.toml` and
+  `todotxt/Cargo.toml` in lockstep, review the diff, commit it, and only then tag. It scopes its match
+  to the `[package]` table specifically — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table
+  with its own `version` key. A new release must have a higher version than the last one, or neither
+  the MSI nor apt replaces the installed copy.
 - **Identity:** the binary is `rtmapp` everywhere (`flake.nix`/`default.nix` `mainProgram`, the desktop
   entry's `Exec=rtmapp`, `Icon=rtmapp` and `StartupWMClass=rtmapp`, the deb package name); the display
   name is "Rusty Todo.txt Manager"; the reverse-DNS identifier (Tauri's `identifier`, kept for a macOS
