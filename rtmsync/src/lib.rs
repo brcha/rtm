@@ -84,7 +84,8 @@ impl Vcs {
 
     /// Syncs the repository holding `file` with its remote: pulls, then pushes if the pull applied
     /// cleanly. Git rebases local commits onto the remote. A pull that leaves conflicts is
-    /// `Conflict`; rtm leaves them, and any stopped rebase, for the user.
+    /// `Conflict`, and so is a rebase or merge already stopped, even with every path resolved; rtm
+    /// leaves them for the user.
     pub fn sync(self, file: &Path) -> Result<(), Error> {
         let file = resolve(file);
         let dir = file.parent().unwrap_or(Path::new("."));
@@ -102,7 +103,7 @@ impl Vcs {
                     command("git", dir).args(["status", "--porcelain=v2"]),
                 )?;
                 // Also catches an autostash that did not reapply cleanly.
-                if status.lines().any(|line| line.starts_with("u ")) {
+                if status.lines().any(|line| line.starts_with("u ")) || git_stopped(dir)? {
                     return Err(Error::Conflict);
                 }
                 pulled?;
@@ -126,6 +127,24 @@ impl Vcs {
             }
         }
     }
+}
+
+/// Whether the git repository at `dir` has a rebase or merge stopped half-way. Its paths can all
+/// be resolved (no unmerged entries) while the rebase still waits for `git rebase --continue`.
+fn git_stopped(dir: &Path) -> Result<bool, Error> {
+    let paths = output(
+        "git",
+        command("git", dir).args([
+            "rev-parse",
+            "--git-path",
+            "rebase-merge",
+            "--git-path",
+            "rebase-apply",
+            "--git-path",
+            "MERGE_HEAD",
+        ]),
+    )?;
+    Ok(paths.lines().any(|path| dir.join(path).exists()))
 }
 
 /// `file` with its symlinks resolved, or made absolute when it does not exist.
