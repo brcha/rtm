@@ -22,6 +22,7 @@ on:
       - 'Cargo.lock'
       - 'LICENSE'
       - 'scripts/build-appimage.sh'
+      - 'scripts/build-macos.sh'
       - '.github/workflows/release.yml'
 
 permissions:
@@ -31,7 +32,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Extracted into its own job so both platform jobs depend on the same tag-vs-manifest check
+  # Extracted into its own job so all platform jobs depend on the same tag-vs-manifest check
   # via `needs:` instead of duplicating it. Runs on ubuntu-latest purely as a cheap host for
   # pwsh; it builds nothing.
   version:
@@ -387,8 +388,8 @@ jobs:
           if-no-files-found: ignore
 
       # Handed off to the shared `publish` job rather than uploaded/released here directly.
-      # Calling softprops/action-gh-release independently from both platform jobs would race to
-      # create the same tagged release -- publish happens exactly once, after both finish.
+      # Calling softprops/action-gh-release independently from each platform job would race to
+      # create the same tagged release -- publish happens exactly once, after all finish.
       - name: Upload windows artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -687,11 +688,175 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  # Single point of publication for both platforms -- avoids two concurrent jobs racing to
+  # One universal (arm64 + x86_64) dmg for rtmapp and one tarball for rtmcli, built on the arm64
+  # runner by cross-compiling the x86_64 slice. Ad-hoc signed only: no Developer ID yet (RTM-54).
+  # No upgrade test: replacing a .app carries no installer state, and no earlier release has one.
+  macos:
+    needs: version
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      # Both slices; also the value of LSMinimumSystemVersion in rtmapp/assets/Info.plist.
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build rtmapp and rtmcli
+        run: |
+          cargo build --release -p rtmapp -p rtmcli --target aarch64-apple-darwin
+          cargo build --release -p rtmapp -p rtmcli --target x86_64-apple-darwin
+
+      # The bundle is signed by build-macos.sh; rtmcli ships bare, so it is signed here.
+      - name: Join the universal binaries
+        run: |
+          mkdir -p target/universal
+          for bin in rtmapp rtmcli; do
+            lipo -create -output "target/universal/$bin" \
+              "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
+          done
+          codesign --force --sign - --timestamp=none target/universal/rtmcli
+
+      - name: Package the dmg and the rtmcli tarball
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          scripts/build-macos.sh target/universal/rtmapp "$VERSION" "dist/rtmapp_${VERSION}_universal.dmg"
+          stage="$RUNNER_TEMP/rtmcli"
+          mkdir -p "$stage"
+          cp target/universal/rtmcli LICENSE "$stage/"
+          tar -czf "dist/rtmcli-${VERSION}-macos-universal.tar.gz" -C "$stage" rtmcli LICENSE
+
+      # Fail loudly if an asset is missing rather than silently shipping without it.
+      - name: Check staged artifacts
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for f in "dist/rtmapp_${VERSION}_universal.dmg" \
+                   "dist/rtmcli-${VERSION}-macos-universal.tar.gz"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Expected release artifact missing after staging: $f"
+              exit 1
+            fi
+          done
+
+          echo 'Staged artifacts:'
+          ls -la dist
+
+      # Installs the app from the dmg the way a user does (copy to /Applications), then checks the
+      # bundle: Info.plist values, both slices, the deployment target, the signature and the
+      # resources. Then the tarball's rtmcli runs, natively and under Rosetta when it is installed.
+      - name: Verify packages
+        timeout-minutes: 10
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          name='Rusty Todo.txt Manager'
+          app="/Applications/$name.app"
+
+          mnt="$RUNNER_TEMP/dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "dist/rtmapp_${VERSION}_universal.dmg"
+          [ -d "$mnt/$name.app" ] || fail "The dmg has no $name.app."
+          [ "$(readlink "$mnt/Applications")" = /Applications ] || fail 'The dmg has no link to /Applications.'
+          ditto "$mnt/$name.app" "$app"
+          hdiutil detach "$mnt" || hdiutil detach -force "$mnt"
+
+          plist="$app/Contents/Info.plist"
+          check_key() {
+            value=$(plutil -extract "$1" raw -o - "$plist")
+            echo "$1 = $value"
+            [ "$value" = "$2" ] || fail "Info.plist has $1 = '$value', expected '$2'."
+          }
+          check_key CFBundleIdentifier com.brcha.rtm
+          check_key CFBundleExecutable rtmapp
+          check_key CFBundleShortVersionString "$VERSION"
+          check_key CFBundleVersion "$VERSION"
+          check_key LSMinimumSystemVersion "$MACOSX_DEPLOYMENT_TARGET"
+
+          for f in rtmapp.icns LICENSE Inter-LICENSE.txt; do
+            [ -f "$app/Contents/Resources/$f" ] || fail "The bundle has no Contents/Resources/$f."
+          done
+
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          cli="$RUNNER_TEMP/rtmcli-extract"
+          mkdir -p "$cli"
+          tar -xzf "dist/rtmcli-${VERSION}-macos-universal.tar.gz" -C "$cli"
+          [ -f "$cli/LICENSE" ] || fail 'The rtmcli tarball has no LICENSE.'
+          codesign --verify --strict --verbose=2 "$cli/rtmcli"
+
+          # lipo lists the slices in the order they were joined; check each one is there.
+          for bin in "$app/Contents/MacOS/rtmapp" "$cli/rtmcli"; do
+            archs=$(lipo -archs "$bin")
+            echo "$bin: $archs"
+            for arch in arm64 x86_64; do
+              case " $archs " in
+                *" $arch "*) ;;
+                *) fail "$bin has no $arch slice." ;;
+              esac
+              # Captured first: grep -q in a pipe can SIGPIPE vtool, which pipefail reports.
+              build=$(vtool -arch "$arch" -show-build "$bin")
+              grep -q "minos $MACOSX_DEPLOYMENT_TARGET" <<< "$build" \
+                || fail "The $arch slice of $bin does not target macOS $MACOSX_DEPLOYMENT_TARGET."
+            done
+          done
+
+          "$cli/rtmcli" --help
+          if arch -x86_64 /usr/bin/true 2> /dev/null; then
+            arch -x86_64 "$cli/rtmcli" --help
+          else
+            echo '::notice::Rosetta is not installed: the x86_64 slice of rtmcli was not run.'
+          fi
+
+      # Starts the installed app through Launch Services with a sample todo.txt (the runner's home is
+      # ephemeral, so its real config path is used) and expects it running after 5 s. A window check
+      # would need Accessibility permission for osascript, which the runner does not grant.
+      - name: Smoke launch
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          smoke="$RUNNER_TEMP/smoke"
+          config="$HOME/Library/Application Support/rtm"
+          mkdir -p "$smoke" "$config"
+          printf '(A) Smoke test +rtm @ci\nx 2026-10-29 Done item\n' > "$smoke/todo.txt"
+          printf 'file_name = "%s"\n' "$smoke/todo.txt" > "$config/config.toml"
+
+          open -n -a '/Applications/Rusty Todo.txt Manager.app' \
+            --env RUST_LOG=info,zbus=warn,tracing=warn --stderr "$smoke/stderr.log"
+          sleep 5
+          status=0
+          if pgrep -x rtmapp; then
+            echo 'Smoke launch: rtmapp is running after 5 s.'
+            pkill -x rtmapp
+          else
+            echo '::error::rtmapp is not running 5 s after it was opened.'
+            status=1
+          fi
+          cat "$smoke/stderr.log" 2> /dev/null || true
+          exit "$status"
+
+      - name: Upload macos artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-macos
+          path: dist/*
+          if-no-files-found: error
+
+  # Single point of publication for all platforms -- avoids two concurrent jobs racing to
   # create or update the same tagged GitHub Release. Pull requests stop after the platform jobs.
   publish:
     if: github.event_name != 'pull_request'
-    needs: [version, windows, linux]
+    needs: [version, windows, linux, macos]
     runs-on: ubuntu-latest
 
     steps:
