@@ -52,6 +52,78 @@ impl Vcs {
         }
     }
 
+    /// Whether `file` is tracked by its repository.
+    pub fn is_tracked(self, file: &Path) -> Result<bool, Error> {
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        match self {
+            Vcs::Git => {
+                let args = ["--literal-pathspecs", "ls-files", "--error-unmatch"];
+                let name = file.file_name().unwrap_or_default();
+                succeeded(run("git", dir, &args, name))
+            }
+            Vcs::Pijul => {
+                // `pijul ls` lists tracked paths relative to the repository root, with `/`.
+                let Some(root) = dir.ancestors().find(|d| d.join(".pijul").exists()) else {
+                    return Ok(false);
+                };
+                let relative = file.strip_prefix(root).unwrap_or(&file);
+                let relative: Vec<_> = relative.iter().map(|c| c.to_string_lossy()).collect();
+                let listed = output("pijul", command("pijul", dir).arg("ls"))?;
+                Ok(listed.lines().any(|line| line == relative.join("/")))
+            }
+        }
+    }
+
+    /// Whether the repository holding `file` is in a state rtm must leave to the user: unmerged
+    /// paths or a rebase or merge stopped half-way (Git), or conflict markers in `file` (Pijul,
+    /// which writes them into the file on a conflicting pull). A conflicted todo.txt would be read
+    /// with its markers as items.
+    pub fn is_conflicted(self, file: &Path) -> Result<bool, Error> {
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        match self {
+            Vcs::Git => {
+                let status = output(
+                    "git",
+                    command("git", dir).args(["status", "--porcelain=v2"]),
+                )?;
+                Ok(status.lines().any(|line| line.starts_with("u ")) || git_stopped(dir)?)
+            }
+            Vcs::Pijul => {
+                let text = std::fs::read_to_string(&file).unwrap_or_default();
+                let marker = |line: &str| {
+                    [">>>>>>> ", "======= ", "<<<<<<< "]
+                        .iter()
+                        .any(|m| line.starts_with(m))
+                };
+                Ok(text.lines().any(marker))
+            }
+        }
+    }
+
+    /// Whether the repository holding `file` has a remote to sync with: an upstream branch for
+    /// Git, any remote for Pijul.
+    pub fn has_remote(self, file: &Path) -> Result<bool, Error> {
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        match self {
+            Vcs::Git => {
+                let args = [
+                    "rev-parse",
+                    "--abbrev-ref",
+                    "--symbolic-full-name",
+                    "@{upstream}",
+                ];
+                succeeded(output("git", command("git", dir).args(args)).map(drop))
+            }
+            // Prints nothing in a repository without remotes.
+            Vcs::Pijul => Ok(!output("pijul", command("pijul", dir).arg("remote"))?
+                .trim()
+                .is_empty()),
+        }
+    }
+
     /// Commits the current content of `file`, and nothing else in its repository, with `message`.
     /// An untracked file is added first; an unchanged file commits nothing.
     pub fn commit(self, file: &Path, message: &str) -> Result<(), Error> {
@@ -84,7 +156,8 @@ impl Vcs {
 
     /// Syncs the repository holding `file` with its remote: pulls, then pushes if the pull applied
     /// cleanly. Git rebases local commits onto the remote. A pull that leaves conflicts is
-    /// `Conflict`; rtm leaves them, and any stopped rebase, for the user.
+    /// `Conflict`, and so is a rebase or merge already stopped, even with every path resolved; rtm
+    /// leaves them for the user.
     pub fn sync(self, file: &Path) -> Result<(), Error> {
         let file = resolve(file);
         let dir = file.parent().unwrap_or(Path::new("."));
@@ -97,12 +170,8 @@ impl Vcs {
         match self {
             Vcs::Git => {
                 let pulled = network("git", &["pull", "--rebase", "--autostash"]);
-                let status = output(
-                    "git",
-                    command("git", dir).args(["status", "--porcelain=v2"]),
-                )?;
                 // Also catches an autostash that did not reapply cleanly.
-                if status.lines().any(|line| line.starts_with("u ")) {
+                if self.is_conflicted(&file)? {
                     return Err(Error::Conflict);
                 }
                 pulled?;
@@ -112,13 +181,7 @@ impl Vcs {
                 // Pijul applies conflicting changes, exits 0 and writes markers into the file. A
                 // pull cut short may have written them too, so they are checked either way.
                 let pulled = network("pijul", &["pull", "--all"]);
-                let text = std::fs::read_to_string(&file).unwrap_or_default();
-                let marker = |line: &str| {
-                    [">>>>>>> ", "======= ", "<<<<<<< "]
-                        .iter()
-                        .any(|m| line.starts_with(m))
-                };
-                if text.lines().any(marker) {
+                if self.is_conflicted(&file)? {
                     return Err(Error::Conflict);
                 }
                 pulled?;
@@ -126,6 +189,33 @@ impl Vcs {
             }
         }
     }
+}
+
+/// `true` for success, `false` for a program that ran and said no; other errors pass through.
+fn succeeded(result: Result<(), Error>) -> Result<bool, Error> {
+    match result {
+        Ok(()) => Ok(true),
+        Err(Error::Failed { .. }) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// Whether the git repository at `dir` has a rebase or merge stopped half-way. Its paths can all
+/// be resolved (no unmerged entries) while the rebase still waits for `git rebase --continue`.
+fn git_stopped(dir: &Path) -> Result<bool, Error> {
+    let paths = output(
+        "git",
+        command("git", dir).args([
+            "rev-parse",
+            "--git-path",
+            "rebase-merge",
+            "--git-path",
+            "rebase-apply",
+            "--git-path",
+            "MERGE_HEAD",
+        ]),
+    )?;
+    Ok(paths.lines().any(|path| dir.join(path).exists()))
 }
 
 /// `file` with its symlinks resolved, or made absolute when it does not exist.
@@ -360,7 +450,17 @@ mod tests {
             .parse()
             .unwrap();
         let taken = path.with_file_name(format!("rtmsync-{}-{}.stderr", std::process::id(), n + 1));
-        std::fs::write(&taken, "keep").unwrap();
+        // Claimed exclusively: a test running alongside may already use that name for its own
+        // stderr, and must not have it overwritten or deleted.
+        let Ok(mut claimed) = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&taken)
+        else {
+            let _ = std::fs::remove_file(path);
+            return;
+        };
+        std::io::Write::write_all(&mut claimed, b"keep").unwrap();
         let (other, _) = private_temp_file().unwrap();
         assert_ne!(other, taken);
         assert_eq!(std::fs::read_to_string(&taken).unwrap(), "keep");

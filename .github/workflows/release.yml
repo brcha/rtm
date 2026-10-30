@@ -17,6 +17,7 @@ on:
     paths:
       - 'rtmapp/**'
       - 'rtmcli/**'
+      - 'rtmsync/**'
       - 'todotxt/**'
       - 'Cargo.toml'
       - 'Cargo.lock'

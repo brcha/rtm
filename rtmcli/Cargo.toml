@@ -10,8 +10,9 @@ repository = "https://github.com/brcha/rtm"
 
 [dependencies]
 todotxt = { path = "../todotxt" }
+rtmsync = { path = "../rtmsync" }
 chrono = "0.4.31"
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4.0", features = ["derive", "env"] }
 uuid = "1.18.1"
 
 # cargo-deb metadata -- RTM-8. name is pinned explicitly rather than left to derive from
@@ -22,6 +23,8 @@ name = "rtmcli"
 maintainer = "Filip Brcic <filip.brcic@brcha.com>"
 section = "utils"
 priority = "optional"
+# Sync runs through the repository's own executable; without one rtmcli works unsynced.
+suggests = "git, pijul"
 assets = [
     ["target/release/rtmcli", "usr/bin/", "755"],
     ["../LICENSE", "usr/share/doc/rtmcli/copyright", "644"],

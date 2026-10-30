@@ -162,3 +162,46 @@ fn sync_without_an_upstream_fails() {
     let result = Vcs::Git.sync(&dir.join("sub/todo.txt"));
     assert!(matches!(result, Err(Error::Failed { .. })), "{result:?}");
 }
+
+#[test]
+fn sync_treats_a_resolved_but_unfinished_rebase_as_a_conflict() {
+    let dir = remote_and_clones("unfinished");
+    git(&dir.join("b"), &["pull", "--quiet"]);
+    std::fs::write(dir.join("b/sub/todo.txt"), "one\nfrom b\n").unwrap();
+    Vcs::Git.commit(&dir.join("b/sub/todo.txt"), "b").unwrap();
+    git(&dir.join("b"), &["push", "--quiet"]);
+    std::fs::write(dir.join("a/sub/todo.txt"), "one\nfrom a\n").unwrap();
+    Vcs::Git.commit(&dir.join("a/sub/todo.txt"), "a").unwrap();
+    assert!(matches!(
+        Vcs::Git.sync(&dir.join("a/sub/todo.txt")),
+        Err(Error::Conflict)
+    ));
+    // The user resolves the file but does not run `git rebase --continue`.
+    std::fs::write(dir.join("a/sub/todo.txt"), "one\nfrom b\nfrom a\n").unwrap();
+    git(&dir.join("a"), &["add", "sub/todo.txt"]);
+    // A detached HEAD has no upstream, so callers must not rely on has_remote to reach sync.
+    assert!(Vcs::Git.is_conflicted(&dir.join("a/sub/todo.txt")).unwrap());
+    let result = Vcs::Git.sync(&dir.join("a/sub/todo.txt"));
+    assert!(matches!(result, Err(Error::Conflict)), "{result:?}");
+    assert_eq!(git(&dir.join("remote"), &["log", "-1", "--format=%s"]), "b");
+}
+
+#[test]
+fn a_file_is_tracked_once_committed() {
+    let dir = repo("tracked");
+    assert!(!Vcs::Git.is_conflicted(&dir.join("sub/todo.txt")).unwrap());
+    assert!(!Vcs::Git.is_tracked(&dir.join("sub/todo.txt")).unwrap());
+    Vcs::Git.commit(&dir.join("sub/todo.txt"), "first").unwrap();
+    assert!(Vcs::Git.is_tracked(&dir.join("sub/todo.txt")).unwrap());
+}
+
+#[test]
+fn only_a_clone_with_an_upstream_has_a_remote() {
+    let plain = repo("no remote");
+    Vcs::Git
+        .commit(&plain.join("sub/todo.txt"), "first")
+        .unwrap();
+    assert!(!Vcs::Git.has_remote(&plain.join("sub/todo.txt")).unwrap());
+    let dir = remote_and_clones("remote");
+    assert!(Vcs::Git.has_remote(&dir.join("a/sub/todo.txt")).unwrap());
+}
