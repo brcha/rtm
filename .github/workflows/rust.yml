@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    # A cold pijul build (vcpkg OpenSSL on Windows) takes most of this; cached runs are short.
+    # A cold pijul build takes most of this; cached runs are short.
     timeout-minutes: 60
 
     strategy:
@@ -35,17 +35,16 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    # Building pijul takes minutes, so the binary is cached per OS and version.
+    # Building pijul takes minutes, so it is installed into its own root, cached per OS and version.
     - name: Restore pijul
       id: pijul
       uses: actions/cache@v6
       with:
-        path: ~/.cargo/bin/pijul${{ runner.os == 'Windows' && '.exe' || '' }}
+        path: ~/.pijul-ci
         key: pijul-${{ runner.os }}-${{ matrix.pijul }}
 
-    # pijul needs OpenSSL and libsodium to build, and on Linux and macOS also to run, so those
-    # steps run on cache hits too (Windows links them statically). Same hardened apt pattern as
-    # release.yml (RTM-28): pin the mirror, bound retries and timeouts.
+    # pijul needs OpenSSL and libsodium to build and to run, so these steps run on cache hits too.
+    # Same hardened apt pattern as release.yml (RTM-28): pin the mirror, bound retries and timeouts.
     - name: Install pijul's libraries (Linux)
       if: runner.os == 'Linux'
       timeout-minutes: 10
@@ -61,17 +60,48 @@ jobs:
         brew install libsodium openssl@3 pkg-config
         echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
 
-    - name: Install pijul's libraries (Windows)
+    - name: Install pijul (Linux, macOS)
+      if: runner.os != 'Windows' && steps.pijul.outputs.cache-hit != 'true'
+      run: cargo install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }} --root ~/.pijul-ci
+
+    # pijul cannot be built for MSVC: thrussh-libsodium forces libsodium-sys's pkg-config mode,
+    # which panics there. It is built for the GNU target against MSYS2's MinGW libraries, and the
+    # DLLs it loads are copied next to it, so a cache hit needs no MSYS2.
+    - name: Set up MSYS2 (Windows)
+      id: msys2
+      if: runner.os == 'Windows' && steps.pijul.outputs.cache-hit != 'true'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: false
+        install: >-
+          mingw-w64-x86_64-gcc mingw-w64-x86_64-pkgconf
+          mingw-w64-x86_64-libsodium mingw-w64-x86_64-openssl
+
+    # PowerShell rather than the MSYS2 shell, whose /usr/bin/link would shadow MSVC's link.exe
+    # for the build scripts.
+    - name: Install pijul (Windows)
       if: runner.os == 'Windows' && steps.pijul.outputs.cache-hit != 'true'
       shell: pwsh
       run: |
-        & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" install openssl:x64-windows-static-md libsodium:x64-windows-static-md
-        "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
-        "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+        $msys = "${{ steps.msys2.outputs.msys2-location }}"
+        $env:PATH = "$msys\mingw64\bin;$env:PATH"
+        $env:PKG_CONFIG_ALLOW_CROSS = "1"
+        $root = "$env:USERPROFILE\.pijul-ci"
+        rustup target add x86_64-pc-windows-gnu
+        cargo install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }} --target x86_64-pc-windows-gnu --root $root
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & "$msys\usr\bin\ldd.exe" "$root\bin\pijul.exe" |
+          Select-String '=> (/mingw64/bin/\S+)' |
+          ForEach-Object { Copy-Item ($msys + ($_.Matches[0].Groups[1].Value -replace '/', '\')) "$root\bin" }
+        Get-ChildItem "$root\bin"
 
-    - name: Install pijul
-      if: steps.pijul.outputs.cache-hit != 'true'
-      run: cargo install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }}
+    - name: Put pijul on PATH
+      shell: bash
+      run: |
+        dir="$HOME/.pijul-ci/bin"
+        if [ "$RUNNER_OS" = Windows ]; then dir=$(cygpath -w "$dir"); fi
+        echo "$dir" >> "$GITHUB_PATH"
 
     - name: Build
       run: cargo build --verbose
