@@ -64,9 +64,10 @@ jobs:
       if: runner.os != 'Windows' && steps.pijul.outputs.cache-hit != 'true'
       run: cargo install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }} --root ~/.pijul-ci
 
-    # pijul cannot be built for MSVC: thrussh-libsodium forces libsodium-sys's pkg-config mode,
-    # which panics there. It is built for the GNU target against MSYS2's MinGW libraries, and the
-    # DLLs it loads are copied next to it, so a cache hit needs no MSYS2.
+    # pijul cannot be built with MSVC: thrussh-libsodium forces libsodium-sys's pkg-config mode,
+    # whose build script panics when it is itself compiled for MSVC (it tests the host, not the
+    # target). It is built with the GNU toolchain against MSYS2's MinGW libraries, and the DLLs it
+    # loads are copied next to it, so a cache hit needs no MSYS2.
     - name: Set up MSYS2 (Windows)
       id: msys2
       if: runner.os == 'Windows' && steps.pijul.outputs.cache-hit != 'true'
@@ -78,18 +79,15 @@ jobs:
           mingw-w64-x86_64-gcc mingw-w64-x86_64-pkgconf
           mingw-w64-x86_64-libsodium mingw-w64-x86_64-openssl
 
-    # PowerShell rather than the MSYS2 shell, whose /usr/bin/link would shadow MSVC's link.exe
-    # for the build scripts.
     - name: Install pijul (Windows)
       if: runner.os == 'Windows' && steps.pijul.outputs.cache-hit != 'true'
       shell: pwsh
       run: |
         $msys = "${{ steps.msys2.outputs.msys2-location }}"
         $env:PATH = "$msys\mingw64\bin;$env:PATH"
-        $env:PKG_CONFIG_ALLOW_CROSS = "1"
         $root = "$env:USERPROFILE\.pijul-ci"
-        rustup target add x86_64-pc-windows-gnu
-        cargo install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }} --target x86_64-pc-windows-gnu --root $root
+        rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+        cargo +stable-x86_64-pc-windows-gnu install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }} --root $root
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         & "$msys\usr\bin\ldd.exe" "$root\bin\pijul.exe" |
           Select-String '=> (/mingw64/bin/\S+)' |
