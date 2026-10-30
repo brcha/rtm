@@ -379,7 +379,17 @@ mod tests {
             .parse()
             .unwrap();
         let taken = path.with_file_name(format!("rtmsync-{}-{}.stderr", std::process::id(), n + 1));
-        std::fs::write(&taken, "keep").unwrap();
+        // Claimed exclusively: a test running alongside may already use that name for its own
+        // stderr, and must not have it overwritten or deleted.
+        let Ok(mut claimed) = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&taken)
+        else {
+            let _ = std::fs::remove_file(path);
+            return;
+        };
+        std::io::Write::write_all(&mut claimed, b"keep").unwrap();
         let (other, _) = private_temp_file().unwrap();
         assert_ne!(other, taken);
         assert_eq!(std::fs::read_to_string(&taken).unwrap(), "keep");
