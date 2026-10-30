@@ -1,10 +1,10 @@
-//! `Vcs::commit` with Pijul. This binary holds a single test: it sets process-wide environment
-//! variables, which is only sound while no other test runs beside it.
+//! `Vcs::commit` and `Vcs::sync` with Pijul. This binary holds a single test: it sets process-wide
+//! environment variables, which is only sound while no other test runs beside it.
 
 use std::path::Path;
 use std::process::Command;
 
-use rtmsync::Vcs;
+use rtmsync::{Error, Vcs};
 
 /// Runs pijul in `dir` and returns its stdout, panicking on failure.
 fn pijul(dir: &Path, args: &[&str]) -> String {
@@ -75,7 +75,7 @@ impl Drop for Agent {
 }
 
 #[test]
-fn pijul_records_only_the_file() {
+fn pijul_records_only_the_file_and_syncs() {
     if Command::new("pijul").arg("--version").output().is_err() {
         assert!(
             std::env::var_os("RTM_REQUIRE_PIJUL").is_none(),
@@ -163,4 +163,29 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     let pending = pijul(&sub, &["diff", "--short"]);
     assert!(pending.contains("other.txt"), "{pending}");
     assert!(!pending.contains("todo.txt"), "{pending}");
+
+    // Sync between two clones of `repo`, their remote. Each todo.txt sits at the same depth as
+    // `repo/sub/todo.txt`, so the relative agent socket path still resolves.
+    pijul(&dir, &["clone", "repo", "a"]);
+    pijul(&dir, &["clone", "repo", "b"]);
+    let (a, b) = (dir.join("a/sub/todo.txt"), dir.join("b/sub/todo.txt"));
+
+    std::fs::write(&a, "Buy milk\nCall mom\nFrom a\n").unwrap();
+    Vcs::Pijul.commit(&a, "from a").unwrap();
+    Vcs::Pijul.sync(&a).unwrap();
+    assert!(pijul(&repo, &["log"]).contains("from a"));
+    Vcs::Pijul.sync(&b).unwrap();
+    assert!(std::fs::read_to_string(&b).unwrap().contains("From a"));
+
+    std::fs::write(&a, "Buy milk\nCall mom\nFrom a\nAgain a\n").unwrap();
+    Vcs::Pijul.commit(&a, "again a").unwrap();
+    Vcs::Pijul.sync(&a).unwrap();
+    std::fs::write(&b, "Buy milk\nCall mom\nFrom a\nThen b\n").unwrap();
+    Vcs::Pijul.commit(&b, "then b").unwrap();
+    let result = Vcs::Pijul.sync(&b);
+    assert!(matches!(result, Err(Error::Conflict)), "{result:?}");
+    assert!(
+        !pijul(&repo, &["log"]).contains("then b"),
+        "a conflicted sync pushed"
+    );
 }

@@ -3,6 +3,11 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, Instant};
+
+/// How long a network call (pull, push) may run before it is killed.
+const NETWORK_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A failure to run a version control system's executable.
 #[derive(Debug, thiserror::Error)]
@@ -21,6 +26,12 @@ pub enum Error {
         status: ExitStatus,
         stderr: String,
     },
+    /// The pull left the repository conflicted; the user resolves it by hand before syncing again.
+    #[error("the repository has conflicts to resolve by hand")]
+    Conflict,
+    /// A network call ran too long and was killed.
+    #[error("{program} timed out")]
+    Timeout { program: &'static str },
 }
 
 /// A version control system, recognised by the marker its repositories carry.
@@ -70,6 +81,51 @@ impl Vcs {
             }
         }
     }
+
+    /// Syncs the repository holding `file` with its remote: pulls, then pushes if the pull applied
+    /// cleanly. Git rebases local commits onto the remote. A pull that leaves conflicts is
+    /// `Conflict`; rtm leaves them, and any stopped rebase, for the user.
+    pub fn sync(self, file: &Path) -> Result<(), Error> {
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        let network = |program, args: &[&str]| {
+            let mut command = command(program, dir);
+            // Credentials come from a helper or ssh-agent; git never asks on the terminal.
+            command.args(args).env("GIT_TERMINAL_PROMPT", "0");
+            output_within(program, &mut command, NETWORK_TIMEOUT)
+        };
+        match self {
+            Vcs::Git => {
+                let pulled = network("git", &["pull", "--rebase", "--autostash"]);
+                let status = output(
+                    "git",
+                    command("git", dir).args(["status", "--porcelain=v2"]),
+                )?;
+                // Also catches an autostash that did not reapply cleanly.
+                if status.lines().any(|line| line.starts_with("u ")) {
+                    return Err(Error::Conflict);
+                }
+                pulled?;
+                network("git", &["push"])
+            }
+            Vcs::Pijul => {
+                // Pijul applies conflicting changes, exits 0 and writes markers into the file. A
+                // pull cut short may have written them too, so they are checked either way.
+                let pulled = network("pijul", &["pull", "--all"]);
+                let text = std::fs::read_to_string(&file).unwrap_or_default();
+                let marker = |line: &str| {
+                    [">>>>>>> ", "======= ", "<<<<<<< "]
+                        .iter()
+                        .any(|m| line.starts_with(m))
+                };
+                if text.lines().any(marker) {
+                    return Err(Error::Conflict);
+                }
+                pulled?;
+                network("pijul", &["push", "--all"])
+            }
+        }
+    }
 }
 
 /// `file` with its symlinks resolved, or made absolute when it does not exist.
@@ -86,12 +142,16 @@ fn resolve(file: &Path) -> PathBuf {
 
 /// Runs `program` with `args`, then `--` and `file`, in `dir`.
 fn run(program: &'static str, dir: &Path, args: &[&str], file: &OsStr) -> Result<(), Error> {
+    let mut command = command(program, dir);
+    command.args(args).arg("--").arg(file);
+    output(program, &mut command).map(drop)
+}
+
+/// A command for `program` in `dir`.
+fn command(program: &str, dir: &Path) -> Command {
     let mut command = Command::new(program);
     command
         .current_dir(dir)
-        .args(args)
-        .arg("--")
-        .arg(file)
         // A prompt that reads stdin fails instead of waiting; prompts on the terminal still can.
         .stdin(Stdio::null());
     #[cfg(windows)]
@@ -100,16 +160,84 @@ fn run(program: &'static str, dir: &Path, args: &[&str], file: &OsStr) -> Result
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
+    command
+}
+
+/// Runs `command` to completion and returns its stdout.
+fn output(program: &'static str, command: &mut Command) -> Result<String, Error> {
     let output = command
         .output()
         .map_err(|source| Error::Spawn { program, source })?;
-    if output.status.success() {
+    check(program, output.status, &output.stderr)?;
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Runs `command`, killing it after `timeout`. Its stdout is discarded and its stderr goes to a
+/// temporary file rather than a pipe: children such as `ssh` can outlive the program and hold a
+/// pipe open, so reading one to its end could block long after the program exited or was killed.
+fn output_within(
+    program: &'static str,
+    command: &mut Command,
+    timeout: Duration,
+) -> Result<(), Error> {
+    let spawn = |source| Error::Spawn { program, source };
+    let (stderr_path, stderr) = private_temp_file().map_err(spawn)?;
+    let result = (|| {
+        let mut child = command
+            .stdout(Stdio::null())
+            .stderr(stderr)
+            .spawn()
+            .map_err(spawn)?;
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(spawn)? {
+                break status;
+            }
+            if started.elapsed() > timeout {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Error::Timeout { program });
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        check(
+            program,
+            status,
+            &std::fs::read(&stderr_path).unwrap_or_default(),
+        )
+    })();
+    let _ = std::fs::remove_file(&stderr_path);
+    result
+}
+
+/// A new file in the temporary directory, readable only by this user. It is never an existing
+/// file or symlink: the directory is shared, and its names are predictable.
+fn private_temp_file() -> std::io::Result<(PathBuf, std::fs::File)> {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut tries = 0;
+    loop {
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("rtmsync-{}-{n}.stderr", std::process::id()));
+        match options.open(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && tries < 100 => tries += 1,
+            opened => return opened.map(|file| (path, file)),
+        }
+    }
+}
+
+/// `Failed` with `stderr` unless `status` is a success.
+fn check(program: &'static str, status: ExitStatus, stderr: &[u8]) -> Result<(), Error> {
+    if status.success() {
         Ok(())
     } else {
         Err(Error::Failed {
             program,
-            status: output.status,
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            status,
+            stderr: String::from_utf8_lossy(stderr).trim().to_owned(),
         })
     }
 }
@@ -201,5 +329,54 @@ mod tests {
         let outside = scratch("symlink outside");
         std::os::unix::fs::symlink(dir.join("sub/todo.txt"), outside.join("todo.txt")).unwrap();
         assert_eq!(detect(&outside.join("todo.txt")), [Vcs::Git]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_timeout_returns_even_when_a_child_holds_the_output_open() {
+        let started = Instant::now();
+        let mut command = command("sh", Path::new("."));
+        // The backgrounded sleep outlives the killed shell, as ssh can outlive git.
+        command.args(["-c", "sleep 3 & sleep 3"]);
+        let result = output_within("sh", &mut command, Duration::from_millis(200));
+        assert!(
+            matches!(result, Err(Error::Timeout { program: "sh" })),
+            "{result:?}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_temporary_file_never_reuses_an_existing_path() {
+        let (path, _file) = private_temp_file().unwrap();
+        // The name a second call would try first, taken by a file that must survive.
+        let n: u32 = path
+            .to_str()
+            .unwrap()
+            .rsplit('-')
+            .next()
+            .unwrap()
+            .trim_end_matches(".stderr")
+            .parse()
+            .unwrap();
+        let taken = path.with_file_name(format!("rtmsync-{}-{}.stderr", std::process::id(), n + 1));
+        std::fs::write(&taken, "keep").unwrap();
+        let (other, _) = private_temp_file().unwrap();
+        assert_ne!(other, taken);
+        assert_eq!(std::fs::read_to_string(&taken).unwrap(), "keep");
+        for p in [path, taken, other] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    #[test]
+    fn a_failing_timed_call_reports_its_stderr() {
+        let mut command = command("git", Path::new("."));
+        command.arg("no-such-command");
+        let result = output_within("git", &mut command, Duration::from_secs(10));
+        assert!(
+            matches!(&result, Err(Error::Failed { stderr, .. }) if stderr.contains("no-such-command")),
+            "{result:?}"
+        );
     }
 }
