@@ -34,6 +34,19 @@ pub enum Error {
     Timeout { program: &'static str },
 }
 
+/// The state of a file in its repository, which rtm checks when it opens the file (RTM-63).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum State {
+    /// Tracked, with nothing uncommitted.
+    Clean,
+    /// Tracked, with uncommitted changes (staged or not), or added and never committed.
+    Modified,
+    /// Not tracked, and not ignored.
+    Untracked,
+    /// Excluded by the repository's ignore rules (`.gitignore`, Pijul's `.ignore`).
+    Ignored,
+}
+
 /// A version control system, recognised by the marker its repositories carry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Vcs {
@@ -63,14 +76,77 @@ impl Vcs {
                 succeeded(run("git", dir, &args, name))
             }
             Vcs::Pijul => {
-                // `pijul ls` lists tracked paths relative to the repository root, with `/`.
-                let Some(root) = dir.ancestors().find(|d| d.join(".pijul").exists()) else {
+                let Some(path) = pijul_path(&file) else {
                     return Ok(false);
                 };
-                let relative = file.strip_prefix(root).unwrap_or(&file);
-                let relative: Vec<_> = relative.iter().map(|c| c.to_string_lossy()).collect();
                 let listed = output("pijul", command("pijul", dir).arg("ls"))?;
-                Ok(listed.lines().any(|line| line == relative.join("/")))
+                Ok(listed.lines().any(|line| line == path))
+            }
+        }
+    }
+
+    /// The state of `file` in its repository. A missing file is not classified reliably: Git
+    /// reports a deleted tracked file as `Modified`, Pijul a missing untracked one as `Ignored`.
+    pub fn state(self, file: &Path) -> Result<State, Error> {
+        let tracked = self.is_tracked(file)?;
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        let name = file.file_name().unwrap_or_default();
+        match (self, tracked) {
+            (Vcs::Git, true) => {
+                let mut status = command("git", dir);
+                status
+                    .args(["--literal-pathspecs", "status", "--porcelain=v2", "--"])
+                    .arg(name);
+                let changed = output("git", &mut status)?
+                    .lines()
+                    .any(|line| ["1 ", "2 ", "u "].iter().any(|p| line.starts_with(p)));
+                Ok(if changed {
+                    State::Modified
+                } else {
+                    State::Clean
+                })
+            }
+            // Status shows nothing for an ignored file; check-ignore exits 1 for one not ignored.
+            // It takes path names, not pathspecs, and refuses `--literal-pathspecs`.
+            (Vcs::Git, false) => {
+                let args = ["check-ignore", "-q"];
+                match run("git", dir, &args, name) {
+                    Ok(()) => Ok(State::Ignored),
+                    Err(Error::Failed { status, .. }) if status.code() == Some(1) => {
+                        Ok(State::Untracked)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            (Vcs::Pijul, true) => {
+                let mut diff = command("pijul", dir);
+                diff.args(["diff", "--short", "--"]).arg(name);
+                let changed = !output("pijul", &mut diff)?.trim().is_empty();
+                Ok(if changed {
+                    State::Modified
+                } else {
+                    State::Clean
+                })
+            }
+            // Lists untracked files that are not ignored, and leaves ignored ones out; `pijul add`
+            // cannot tell, it reports success for an ignored file. Such a file shows as `U <path>`
+            // at the repository root and as `A <path>` below it (pijul 1.0.0-beta.18).
+            (Vcs::Pijul, false) => {
+                let path = pijul_path(&file).unwrap_or_default();
+                let listed = output(
+                    "pijul",
+                    command("pijul", dir).args(["diff", "--short", "--untracked", "."]),
+                )?;
+                let untracked = listed.lines().any(|line| {
+                    let listed = line.strip_prefix("A ").or_else(|| line.strip_prefix("U "));
+                    listed.map(str::trim_start) == Some(&path)
+                });
+                Ok(if untracked {
+                    State::Untracked
+                } else {
+                    State::Ignored
+                })
             }
         }
     }
@@ -198,6 +274,17 @@ fn succeeded(result: Result<(), Error>) -> Result<bool, Error> {
         Err(Error::Failed { .. }) => Ok(false),
         Err(e) => Err(e),
     }
+}
+
+/// `file` relative to the root of its Pijul repository, joined with `/`, as pijul lists paths.
+fn pijul_path(file: &Path) -> Option<String> {
+    let root = file
+        .ancestors()
+        .skip(1)
+        .find(|d| d.join(".pijul").exists())?;
+    let relative = file.strip_prefix(root).unwrap_or(file);
+    let relative: Vec<_> = relative.iter().map(|c| c.to_string_lossy()).collect();
+    Some(relative.join("/"))
 }
 
 /// Whether the git repository at `dir` has a rebase or merge stopped half-way. Its paths can all
