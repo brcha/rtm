@@ -239,6 +239,34 @@ impl App {
         self.editing = None;
     }
 
+    /// Shows the delete confirmation with the number of sub-items the delete would take, counted by
+    /// removing from a copy so it is exactly what `delete_item` will remove.
+    fn ask_delete(&mut self) {
+        let (Some(form), Some(library)) = (&mut self.editing, &self.library) else {
+            self.editing = None;
+            return;
+        };
+        match library.clone().remove_item(form.index) {
+            Some(removed) => form.confirm_delete = Some(removed.len() - 1),
+            None => self.editing = None,
+        }
+    }
+
+    /// Deletes the edited item and its sub-items and saves at once, like the other mutations.
+    fn delete_item(&mut self) {
+        let (Some(form), Some(library)) = (&self.editing, &mut self.library) else {
+            self.editing = None;
+            return;
+        };
+        if library.remove_item(form.index).is_some() {
+            self.error = library
+                .save()
+                .err()
+                .map(|e| format!("{}: {e}", library.file_name));
+        }
+        self.editing = None;
+    }
+
     /// The error line, the add row and the list. Returns what was clicked in the list.
     fn content(&mut self, ui: &mut Ui, p: &Palette) -> Option<RowAction> {
         if let Some(error) = &self.error {
@@ -316,6 +344,8 @@ impl eframe::App for App {
             match edit::show(ui.ctx(), p, form) {
                 Some(Outcome::Save) => self.save_edit(),
                 Some(Outcome::Cancel) => self.editing = None,
+                Some(Outcome::AskDelete) => self.ask_delete(),
+                Some(Outcome::Delete) => self.delete_item(),
                 None => {}
             }
         }
@@ -568,6 +598,61 @@ mod tests {
             std::fs::read_to_string(dir.join("todo.txt")).unwrap(),
             "First\n"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A parent (index 2) with a sub-item before it and one after it, between two plain items.
+    const LINKED: &str = "First\n\
+        Child A sub:5a1f3c2e-8d4b-4e6f-9a7c-1b2d3e4f5a6b\n\
+        Parent uuid:5a1f3c2e-8d4b-4e6f-9a7c-1b2d3e4f5a6b\n\
+        Child B sub:5a1f3c2e-8d4b-4e6f-9a7c-1b2d3e4f5a6b\n\
+        Last\n";
+
+    #[test]
+    fn asking_to_delete_counts_the_sub_items() {
+        let dir = temp_dir("ask-delete");
+        let mut app = app_with(&dir, LINKED);
+        // load() drops a line whose uuid does not parse; make sure none was.
+        assert_eq!(app.library.as_ref().unwrap().item_count(), 5);
+
+        open_editor(&mut app, 2);
+        app.ask_delete();
+        assert_eq!(app.editing.as_ref().unwrap().confirm_delete, Some(2));
+
+        open_editor(&mut app, 0);
+        app.ask_delete();
+        assert_eq!(app.editing.as_ref().unwrap().confirm_delete, Some(0));
+        // Counting changes nothing.
+        assert_eq!(app.library.as_ref().unwrap().item_count(), 5);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn deleting_removes_the_item_and_its_sub_items() {
+        let dir = temp_dir("delete");
+        let mut app = app_with(&dir, LINKED);
+        assert_eq!(app.library.as_ref().unwrap().item_count(), 5);
+        open_editor(&mut app, 2);
+
+        app.delete_item();
+
+        assert_eq!(app.error, None);
+        assert!(app.editing.is_none());
+        assert_eq!(file_lines(&dir), ["First", "Last"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn deleting_a_plain_item_removes_only_it() {
+        let dir = temp_dir("delete-plain");
+        let mut app = app_with(&dir, "First\nSecond\nThird\n");
+        open_editor(&mut app, 1);
+
+        app.delete_item();
+
+        assert_eq!(app.error, None);
+        assert!(app.editing.is_none());
+        assert_eq!(file_lines(&dir), ["First", "Third"]);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -12,7 +12,7 @@ Done: window shell in the Inter-based theme, config loading, "Load File" through
 the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
 complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
 package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); the MSI, deb and
-AppImage (RTM-38). Still to come: a macOS bundle (RTM-11).
+AppImage (RTM-38); deleting from the edit dialog (RTM-24). Still to come: a macOS bundle (RTM-11).
 
 ---
 
@@ -30,7 +30,7 @@ rtmapp/
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
     ├── app.rs              ← App state, panels, Load File, filters, quick-add, complete/uncomplete,
-    │                         saving an edit
+    │                         saving an edit, deleting
     ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
@@ -74,11 +74,7 @@ rtmapp/
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
   (`ctx.set_sublayer`), or a click in the dialog draws the dialog over it. `Sense::click()` includes
   `FOCUSABLE`: hit areas inside a popup use `Sense::CLICK`, so Tab does not walk into them.
-- **Look:** palettes and sizes come from the Tauri app's `rtmapp/src/styles.css` (at `5076649`), as
-  worked out in `spikes/egui-theme/` (see its `FINDINGS.md`; `shots.sh` there takes comparison
-  screenshots). egui has no font weights: Inter Regular is the text face and SemiBold is the `bold`
-  family (title, headings, priorities). The ☐ and ☑ glyphs are missing from most fonts, so checkboxes
-  are painted.
+- **Look:** reproduces the Tauri app's `styles.css`; see "Look" below.
 - **Filtering and sorting** (`list::visible`) follow the Tauri app's `get_items`, and a test checks the
   filters against its predicate, copied verbatim, for every flag combination. Sorting puts items
   without a due date first, then dated items, with priority as the tie-break (none last). **One
@@ -91,7 +87,8 @@ rtmapp/
 - **Mutations** call the same `TodoLibrary` methods in the same order as the Tauri app did and save at
   once: add is `add_item` (which sets a creation date when the item has none) then `save`; uncomplete
   is `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
-  recurring item that has a due date) then `save`, then `load` once the save succeeded. Errors go to
+  recurring item that has a due date) then `save`, then `load` once the save succeeded; delete is
+  `remove_item` (which also removes the item's sub-items) then `save`. Errors go to
   the error line above the list, not to a dialog; the quick-add input is cleared only after a
   successful save. Every save rewrites the whole file, and recurrence goes through `Display`, so a
   count of 1 is written in its short form (`rec:+1m` becomes `rec:+m`); this is intended.
@@ -103,7 +100,11 @@ rtmapp/
   the Tauri app dropped the field silently; one leading `+` or `@` on a project or context name is
   stripped, and a name with whitespace is refused, where the Tauri app wrote it as typed and it split
   into several words on reload; Escape and a click outside the dialog cancel, where the Tauri app
-  closed only on its buttons.
+  closed only on its buttons. **Delete** (RTM-24, the Tauri app had none): a trash button at the
+  left of the button row, opposite Cancel/Save, asks inline. The question gets its own line above
+  the row ("Delete this item?", or "… and N sub-items?" with the count from `remove_item` on a copy
+  of the library, since `uuid`/`sub` are not shown anywhere), and Delete (red) and Keep replace the
+  trash button; Keep goes back, Escape or the backdrop cancel the whole dialog.
 - **Calendar** (`calendar.rs`): Due Date and Threshold are text fields (typing still works, as
   flatpickr's `allowInput` did) with a popup drawn at the sizes of the flatpickr popup the Tauri app
   used (`rtmapp/src/assets/flatpickr.min.css` at `5076649`). It opens on a click or focus and closes on
@@ -126,6 +127,35 @@ rtmapp/
 - Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
   build `App { .. }` directly with a temp `config_path` (see `app_with`), never
   `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.
+
+---
+
+## Look
+
+`theme.rs` and the widgets reproduce the palettes, spacing, radii, borders and shadows of the Tauri
+app's `rtmapp/src/styles.css` (at `5076649`), in both themes. The theme follows the system preference;
+`RTMAPP_THEME=light` or `dark` forces one.
+
+- **Reference sizes,** read from the Tauri app's DOM: header 50 px, sidebar 220 px, text input 37 px,
+  list rows 46 px, dialog 500 px wide. The sidebar and dialog widths are set directly; the others
+  follow from the CSS paddings and font sizes the code reproduces.
+- **How it was compared (RTM-33):** the unmodified Tauri frontend in Chromium with a mocked
+  `window.__TAURI__`, against screenshots of an egui prototype with the same sample items. Chromium is
+  not the WebKitGTK webview the Tauri app used, so small text-rendering differences were expected.
+- **Focus ring:** a 3 px translucent stroke painted outside the input's border.
+- **Item text:** one `LayoutJob` per row (`list::row_job`), with per-span font, colour and
+  strikethrough.
+- **Known differences from the Tauri look:**
+  - egui has no font weights: Inter Regular is the text face and SemiBold is the `bold` family (title,
+    headings, priorities). The CSS weight 500 of the labels rendered regular under
+    `font-synthesis: none`, so labels are regular.
+  - The ☐ and ☑ glyphs are missing from most fonts, so the list's checkboxes are painted, and so is
+    the edit dialog's trash button (`theme::trash_button`, with an accessible name). The sidebar
+    filters use egui's checkbox with a grey outline, and the dialog's priority a `ComboBox` styled like
+    the text inputs, in place of the native checkbox and `<select>`.
+  - The CSS 0.2 s hover transition and egui's modal fade are not matched.
+- **History:** the egui prototype, its full findings (`FINDINGS.md`) and its screenshot script
+  (`shots.sh`) were in `spikes/egui-theme/`, last changed in `5076649`, until RTM-47 removed them.
 
 ---
 

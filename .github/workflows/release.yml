@@ -4,7 +4,12 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      previous:
+        description: 'Release tag to test the upgrade from (vX.Y.Z), instead of the newest earlier release'
+        required: false
+        default: ''
   # Builds and tests the packages (publishes nothing) when a pull request touches anything that
   # goes into them, so packaging breaks are caught before a tag rather than at release time.
   pull_request:
@@ -33,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      previous: ${{ steps.previous.outputs.previous }}
 
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +83,33 @@ jobs:
           }
 
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+
+      # The release the upgrade tests start from: the newest published (non-draft) release below the
+      # version being built. Prereleases count -- every release so far is one. Empty if there is
+      # none. A manual run can name one with the `previous` input instead.
+      - name: Find the previous release
+        id: previous
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PREVIOUS_INPUT: ${{ inputs.previous }}
+        run: |
+          $pattern = '^v(\d+\.\d+\.\d+)$'
+          if ($env:PREVIOUS_INPUT) {
+            if ($env:PREVIOUS_INPUT -notmatch $pattern) { throw "Input 'previous' must look like v1.2.3, got '$env:PREVIOUS_INPUT'." }
+            $previous = $env:PREVIOUS_INPUT
+            Write-Host "Previous release (from the input): $previous"
+          } else {
+            $releases = gh release list --repo $env:GITHUB_REPOSITORY --exclude-drafts --limit 100 --json tagName | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw "gh release list failed ($LASTEXITCODE)." }
+            $previous = $releases.tagName |
+              Where-Object { $_ -match $pattern -and [version]$Matches[1] -lt [version]$env:VERSION } |
+              Sort-Object { [version]($_ -replace '^v', '') } |
+              Select-Object -Last 1
+            Write-Host "Previous release: $(if ($previous) { $previous } else { 'none' })"
+          }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "previous=$previous"
 
   windows:
     needs: version
@@ -207,6 +240,29 @@ jobs:
           Write-Host "rtmapp.exe: ProductName '$($info.ProductName)', FileDescription '$($info.FileDescription)', ProductVersion '$($info.ProductVersion)'"
           if ($info.ProductName -ne 'Rusty Todo.txt Manager') { throw 'rtmapp.exe has no embedded version information (build.rs).' }
 
+          # Smoke launch with a sample todo.txt: still running after 5 s means it got a window and an
+          # adapter (WARP if the runner has no GPU). A warning only, as the runner's desktop session
+          # is not under our control. The release exe has no console, so stderr goes to a log.
+          $todo = Join-Path $env:RUNNER_TEMP 'todo.txt'
+          Set-Content -Path $todo -Value @('(A) Smoke test +rtm @ci', 'x 2026-10-29 Done item')
+          New-Item -ItemType Directory -Force -Path (Join-Path $env:APPDATA 'rtm') | Out-Null
+          Set-Content -Path (Join-Path $env:APPDATA 'rtm\config.toml') -Value "file_name = '$todo'"
+          $env:RUST_LOG = 'info'
+          $app = $null
+          try {
+            $app = Start-Process $exe -PassThru -RedirectStandardError 'smoke-windows.log'
+            $null = $app.Handle  # without an open handle, ExitCode stays empty after the exit
+            Start-Sleep -Seconds 5
+            if ($app.HasExited) { throw "rtmapp.exe exited within 5 s with exit code $($app.ExitCode)." }
+            Write-Host 'Smoke launch: rtmapp.exe is running after 5 s.'
+          } catch {
+            Write-Host "::warning::Smoke launch failed: $_"
+          } finally {
+            # Before the uninstall: a running exe would keep its files.
+            if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -ErrorAction SilentlyContinue; $app.WaitForExit() }
+            if (Test-Path 'smoke-windows.log') { Get-Content 'smoke-windows.log' }
+          }
+
           Invoke-Msiexec @('/x', $products[0].Code) 'uninstall-fresh.log'
           if ((Get-Installed).Count -ne 0) { throw 'The product is still registered after uninstalling.' }
           if (Test-Path -LiteralPath $exe) { throw "Still present after uninstalling: $exe" }
@@ -255,6 +311,72 @@ jobs:
           if (-not (Test-Path -LiteralPath $exe)) { throw "Missing after the upgrade: $exe (the install folder was not kept)." }
 
           Invoke-Msiexec @('/x', $after[0].Code) 'uninstall-upgrade.log'
+
+      # The upgrade users will actually make: the previous release's MSI in the default folder, then
+      # the new one over it. Skipped for v0.1.3, which the step above covers, unless a manual run
+      # names it with the `previous` input.
+      - name: Verify upgrade from the previous release
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+          PREVIOUS_INPUT: ${{ inputs.previous }}
+        run: |
+          if (-not $env:PREVIOUS) { Write-Host '::notice::No previous release: upgrade test skipped.'; exit 0 }
+          if ($env:PREVIOUS -eq 'v0.1.3' -and -not $env:PREVIOUS_INPUT) {
+            Write-Host '::notice::The previous release is v0.1.3, covered by the Tauri MSI upgrade step: skipped.'
+            exit 0
+          }
+          $oldVersion = $env:PREVIOUS -replace '^v', ''
+          $asset = "rtmapp_${oldVersion}_x64_en-US.msi"
+          $assets = (gh release view $env:PREVIOUS --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json).assets.name
+          if ($LASTEXITCODE -ne 0) { throw "gh release view $env:PREVIOUS failed ($LASTEXITCODE)." }
+          if ($assets -notcontains $asset) { Write-Host "::notice::$env:PREVIOUS has no $asset`: upgrade test skipped."; exit 0 }
+
+          $exe = Join-Path $env:ProgramFiles 'Rusty Todo.txt Manager\rtmapp.exe'
+
+          function Invoke-Msiexec([string[]] $arguments, [string] $log) {
+            $p = Start-Process msiexec.exe -ArgumentList ($arguments + @('/qn', '/norestart', '/l*v', $log)) -Wait -PassThru
+            if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+              Get-Content $log -Tail 60
+              throw "msiexec $($arguments -join ' ') failed with exit code $($p.ExitCode)."
+            }
+          }
+          # Installed products of that name, from the uninstall entries Windows Installer writes.
+          function Get-Installed {
+            @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -eq 'Rusty Todo.txt Manager' } |
+              ForEach-Object { [pscustomobject]@{ Code = [string]$_.PSChildName; Version = [string]$_.DisplayVersion } })
+          }
+
+          foreach ($leftover in Get-Installed) { Invoke-Msiexec @('/x', $leftover.Code) 'uninstall-leftover-previous.log' }
+          # A folder remembered from the step above would send this install there instead of the default.
+          $key = 'HKCU:\Software\brcha\Rusty Todo.txt Manager'
+          $remembered = (Get-ItemProperty $key -Name InstallDir -ErrorAction SilentlyContinue).InstallDir
+          if ($remembered) {
+            Write-Host "Removing the remembered install folder '$remembered'."
+            Remove-ItemProperty $key -Name InstallDir
+          }
+
+          gh release download $env:PREVIOUS --repo $env:GITHUB_REPOSITORY --pattern $asset --dir previous-msi
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)." }
+
+          Invoke-Msiexec @('/i', (Resolve-Path "previous-msi/$asset").Path) 'install-previous.log'
+          $before = Get-Installed
+          Write-Host "Installed ${env:PREVIOUS}: $($before | Out-String)"
+          if ($before.Count -ne 1) { throw "Expected one product after installing $env:PREVIOUS, found $($before.Count)." }
+
+          Invoke-Msiexec @('/i', (Resolve-Path "dist/rtmapp_${env:VERSION}_x64_en-US.msi").Path) 'install-upgrade-previous.log'
+          $after = Get-Installed
+          Write-Host "After the upgrade: $($after | Out-String)"
+          if ($after.Count -ne 1) { throw "Expected one product after the upgrade, found $($after.Count): the new MSI installed beside the old one." }
+          if ($after[0].Code -eq $before[0].Code) { throw "The product code did not change: the new MSI did not replace $env:PREVIOUS." }
+          if ($after[0].Version -ne $env:VERSION) { throw "Installed version after the upgrade is '$($after[0].Version)', expected '$env:VERSION'." }
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing after the upgrade: $exe" }
+
+          Invoke-Msiexec @('/x', $after[0].Code) 'uninstall-upgrade-previous.log'
 
       - name: Upload MSI logs
         if: always()
@@ -402,8 +524,141 @@ jobs:
             exit 1
           fi
 
-      # A launch requires a display server and is out of scope here. Extraction proves the
-      # AppImage is well-formed rather than a truncated or corrupt build.
+      # Smoke launch of the installed app on X11 (the fallback without WAYLAND_DISPLAY), under Xvfb
+      # with Mesa software rendering: lavapipe for Vulkan, llvmpipe for GL. Still running after 5 s
+      # with its window mapped means it got a surface and an adapter; RUST_LOG=info logs which one.
+      # The 24-bit screen is explicit: older xvfb-run scripts default to 8 bit, which has no visual
+      # GL or Vulkan can use. The X11 libraries are the rtmapp deb's Suggests.
+      - name: Smoke launch on X11
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
+            xvfb x11-utils libgl1-mesa-dri libegl-mesa0 mesa-vulkan-drivers \
+            libx11-6 libx11-xcb1 libxcursor1 libxi6 libxkbcommon-x11-0
+
+          # Also used by the Wayland launch below.
+          smoke="$RUNNER_TEMP/smoke"
+          mkdir -p "$smoke/rtm"
+          printf '(A) Smoke test +rtm @ci\nx 2026-10-29 Done item\n' > "$smoke/todo.txt"
+          printf 'file_name = "%s"\n' "$smoke/todo.txt" > "$smoke/rtm/config.toml"
+
+          status=0
+          # shellcheck disable=SC2016 # the inner script expands its own variables
+          env -u WAYLAND_DISPLAY XDG_CONFIG_HOME="$smoke" RUST_LOG=info,zbus=warn,tracing=warn LIBGL_ALWAYS_SOFTWARE=1 SMOKE_LOG="$smoke/x11.log" \
+            xvfb-run -a -s '-screen 0 1280x1024x24' bash -c '
+              rtmapp 2> "$SMOKE_LOG" &
+              pid=$!
+              trap "kill $pid 2> /dev/null" EXIT
+              sleep 5
+              if ! kill -0 "$pid" 2> /dev/null; then
+                echo "::error::rtmapp exited within 5 s on X11."
+                exit 1
+              fi
+              if ! xwininfo -root -tree | grep -F "\"Rusty Todo.txt Manager\""; then
+                echo "::error::rtmapp is running on X11 but has no window."
+                exit 1
+              fi
+              echo "Smoke launch: rtmapp is running on X11 after 5 s."
+              kill "$pid"
+              wait "$pid" 2> /dev/null
+              exit 0
+            ' || status=$?
+          cat "$smoke/x11.log"
+          exit "$status"
+
+      # The same on Wayland, the main path, under a headless Weston (Weston 9 on jammy names the
+      # backend by its module). Non-blocking: without a GPU there is no dmabuf, and whether wgpu
+      # finds a software path that Weston accepts is not guaranteed. A failure shows as a warning.
+      - name: Smoke launch on Wayland
+        continue-on-error: true
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          # Not -e (the default shell sets it): the kill in the trap and the wait may fail harmlessly.
+          set +e -uo pipefail
+          smoke="$RUNNER_TEMP/smoke"
+          fail() { echo "::warning::Wayland smoke launch failed: $1"; exit 1; }
+          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
+            weston || fail 'could not install weston'
+
+          XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 "$XDG_RUNTIME_DIR"
+          export XDG_RUNTIME_DIR
+          weston --version
+          # The default (no-op) renderer: with --use-pixman, jammy's Weston 9.0.0 segfaulted once rtmapp
+          # connected and drew.
+          weston --backend=headless-backend.so --socket=wayland-rtm --idle-time=0 > "$smoke/weston.log" 2>&1 &
+          weston_pid=$!
+          app_pid=
+          trap 'kill ${app_pid:+"$app_pid"} "$weston_pid" 2> /dev/null; cat "$smoke/weston.log" "$smoke/wayland.log" 2> /dev/null' EXIT
+
+          for _ in $(seq 20); do
+            [ -S "$XDG_RUNTIME_DIR/wayland-rtm" ] && break
+            sleep 0.5
+          done
+          [ -S "$XDG_RUNTIME_DIR/wayland-rtm" ] || fail 'Weston did not create its socket'
+          sleep 1
+          kill -0 "$weston_pid" 2> /dev/null || fail 'Weston exited before any client connected'
+
+          WAYLAND_DISPLAY=wayland-rtm XDG_CONFIG_HOME="$smoke" RUST_LOG=info,zbus=warn,tracing=warn rtmapp 2> "$smoke/wayland.log" &
+          app_pid=$!
+          sleep 5
+          kill -0 "$weston_pid" 2> /dev/null || fail 'Weston exited after rtmapp connected'
+          kill -0 "$app_pid" 2> /dev/null || fail 'rtmapp exited within 5 s'
+          echo 'Smoke launch: rtmapp is running on Wayland after 5 s.'
+          kill "$app_pid"
+          wait "$app_pid" 2> /dev/null
+          exit 0
+
+      # The upgrade users will actually make: the previous release's debs, then the new ones over
+      # them. Runs after the fresh install above, which proves the Depends resolve from nothing (an
+      # upgrade could mask a missing one). Unlike on Windows, v0.1.3 is not skipped: it is the Tauri
+      # deb (also named rtmapp) and nothing else tests that upgrade. Its webkit2gtk dependencies make
+      # this the slowest apt step while v0.1.3 is the previous release.
+      - name: Verify upgrade from the previous release
+        if: always()
+        timeout-minutes: 15
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIOUS" ]; then
+            echo "::notice::No previous release: upgrade test skipped."
+            exit 0
+          fi
+          old="${PREVIOUS#v}"
+          assets=$(gh release view "$PREVIOUS" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          for asset in "rtmapp_${old}_amd64.deb" "rtmcli_${old}_amd64.deb"; do
+            if ! grep -qxF "$asset" <<< "$assets"; then
+              echo "::notice::$PREVIOUS has no $asset: upgrade test skipped."
+              exit 0
+            fi
+          done
+
+          apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          sudo apt-get purge -y rtmapp rtmcli
+          gh release download "$PREVIOUS" --repo "$GITHUB_REPOSITORY" --pattern '*_amd64.deb' --dir previous-debs
+          sudo apt-get install -y "${apt_opts[@]}" \
+            "./previous-debs/rtmapp_${old}_amd64.deb" "./previous-debs/rtmcli_${old}_amd64.deb"
+          sudo apt-get install -y "${apt_opts[@]}" \
+            "./dist/rtmapp_${VERSION}_amd64.deb" "./dist/rtmcli_${VERSION}_amd64.deb"
+
+          for pkg in rtmapp rtmcli; do
+            installed=$(dpkg-query -W -f='${Version}' "$pkg")
+            echo "$pkg after the upgrade: $installed"
+            if [ "$installed" != "$VERSION" ]; then
+              echo "::error::$pkg is at '$installed' after upgrading from $PREVIOUS, expected '$VERSION'."
+              exit 1
+            fi
+          done
+
+      # The AppImage holds the same binary the smoke launches above ran, so it is only extracted:
+      # that proves it is well-formed rather than a truncated or corrupt build.
       - name: Verify AppImage integrity
         shell: bash
         env:
