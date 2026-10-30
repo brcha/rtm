@@ -153,20 +153,23 @@ ARM64 and 32-bit Windows builds are not currently produced.
 
 ## Syncing through Git or Pijul
 
-`rtmcli` syncs your todo.txt when it is tracked in a Git or Pijul repository (the desktop app will
-follow). Nothing to set up: every command pulls first, and every change is committed and pushed.
+`rtmcli` and the desktop app sync your todo.txt when it is tracked in a Git or Pijul repository.
+Nothing to set up: rtmcli pulls before every command, the desktop app when it opens the file, when
+its window comes back to the front and when you open an item; every change is committed and pushed.
+While the app syncs ("Syncing…" in its title bar), changes wait until it is done.
 
 - Commit the todo.txt to the repository once (`git add todo.txt` and commit, or `pijul add` and
-  `pijul record`); rtmcli never adds an untracked file on its own.
+  `pijul record`); rtm never adds an untracked file on its own.
 - Without a remote (no upstream branch for Git), changes are committed but not pushed.
 - `rtmcli sync` only pulls and pushes. `--no-sync` (or `RTM_NO_SYNC=1`) works on the file without
-  committing, pulling or pushing. If the folder holds both a Git and a Pijul repository, choose with
-  `--vcs git` or `--vcs pijul` (or `RTM_VCS`).
-- Offline, changes are still saved and committed, with a "Not synced" warning; the next command
-  pushes them.
-- If a pull conflicts, rtmcli stops and leaves the conflict for you to resolve in the repository
-  (for Git: fix the file, `git add` it and `git rebase --continue`).
-- rtmcli uses the `git` or `pijul` you already have, with your SSH keys and credential helpers, and
+  committing, pulling or pushing; in the desktop app, put `sync = false` in `rtm/config.toml` in
+  your config folder. If the folder holds both a Git and a Pijul repository, choose with `--vcs git`
+  or `--vcs pijul` (or `RTM_VCS`); the desktop app asks and remembers the answer.
+- Offline, changes are still saved and committed, with a "Not synced" warning; the next sync pushes
+  them.
+- If a pull conflicts, rtm stops (the desktop app closes the file) and leaves the conflict for you
+  to resolve in the repository (for Git: fix the file, `git add` it and `git rebase --continue`).
+- rtm uses the `git` or `pijul` you already have, with your SSH keys and credential helpers, and
   never asks for a password. For an HTTPS remote, set up a git credential helper (Git Credential
   Manager, `osxkeychain`, `libsecret`, ...); otherwise use an SSH remote with `ssh-agent`.
 

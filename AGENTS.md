@@ -42,7 +42,8 @@ one that had them.
 
 - **Rust edition:** 2024 everywhere.
 - **No async** in the core library, the CLI or the desktop app.
-- **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file.
+- **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file. `rtmapp`
+  also has `sync` (default true) and `vcs` (`"git"`/`"pijul"`), see `rtmapp/AGENTS.md`.
 - **Date format:** `%Y-%m-%d` everywhere (chrono `NaiveDate`).
 - **Priority encoding:** stored as `u8` (0 = A, 1 = B, …).
 - All `save()` calls happen immediately after mutations (no deferred/batched writes).
