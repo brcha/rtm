@@ -20,6 +20,14 @@ sys-locale = "0.3"
 icu_calendar = "2.4"
 icu_locale_core = "2.4"
 
+# The taskbar ID (AppUserModelID); 0.52 is the version winit already pulls in.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_UI_Shell"] }
+
+# CoTaskMemFree, for the test that reads the ID back.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Com"] }
+
 [build-dependencies]
 # Embeds the exe icon on Windows targets (see build.rs).
 winresource = "0.1.34"

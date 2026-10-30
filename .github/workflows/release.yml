@@ -195,8 +195,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "gh release download failed ($LASTEXITCODE)." }
 
       # Building an MSI is not evidence it installs. A fresh, silent install of the new MSI (both
-      # shortcut features are on by default), its files and the exe's embedded version
-      # information, then an uninstall.
+      # shortcut features are on by default), its files, the shortcuts' AppUserModelID and the exe's
+      # embedded version information, then an uninstall.
       - name: Verify MSI install
         shell: pwsh
         env:
@@ -228,6 +228,13 @@ jobs:
 
           foreach ($f in @($exe, (Join-Path $installDir 'LICENSE.txt'), (Join-Path $installDir 'Inter-LICENSE.txt'), $startMenu, $desktop)) {
             if (-not (Test-Path -LiteralPath $f)) { throw "Missing after install: $f" }
+          }
+          # The taskbar ID (RTM-48), through the shell's property system.
+          $shell = New-Object -ComObject Shell.Application
+          foreach ($lnk in @($startMenu, $desktop)) {
+            $id = $shell.NameSpace((Split-Path $lnk)).ParseName((Split-Path $lnk -Leaf)).ExtendedProperty('System.AppUserModel.ID')
+            Write-Host "${lnk}: AppUserModelID '$id'"
+            if ($id -ne 'com.brcha.rtm') { throw "Shortcut has AppUserModelID '$id', expected 'com.brcha.rtm': $lnk" }
           }
           $info = (Get-Item $exe).VersionInfo
           Write-Host "rtmapp.exe: ProductName '$($info.ProductName)', FileDescription '$($info.FileDescription)', ProductVersion '$($info.ProductVersion)'"
