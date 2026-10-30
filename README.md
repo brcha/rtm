@@ -38,10 +38,24 @@ systems:
 
 Nix users can build both from the flake (`nix build .#rtmcli` / `nix build .#rtmapp`).
 
-### macOS
+### macOS (Apple Silicon and Intel)
 
-Not yet packaged for release. Build from source (see `AGENTS.md` and the per-component `AGENTS.md`
-files).
+From the same releases, universal binaries for macOS 11 (Big Sur) and later:
+
+- **`rtmapp_<version>_universal.dmg`** — the desktop GUI. Open it and drag "Rusty Todo.txt Manager"
+  to Applications. Its settings are in `~/Library/Application Support/rtm/config.toml`.
+- **`rtmcli-<version>-macos-universal.tar.gz`** — the CLI. Extract it and put `rtmcli` somewhere on
+  your `PATH`.
+
+Both are signed ad hoc only, not with an Apple Developer ID, so Gatekeeper blocks the first launch.
+After the first attempt, choose **Open Anyway** in System Settings > Privacy & Security (on macOS 14
+and earlier, Control-click the app and choose Open also works). Alternatively, remove the quarantine
+attribute:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Rusty Todo.txt Manager.app"
+xattr -d com.apple.quarantine rtmcli
+```
 
 ## General plan
 

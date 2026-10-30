@@ -116,22 +116,24 @@ one that had them.
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
   (publishes a draft GitHub Release), manual `workflow_dispatch` (dry run: builds and uploads to the
   Actions run, publishes nothing, no tag required), and pull requests against `main` that touch the
-  crates, `Cargo.toml`/`Cargo.lock`, `LICENSE`, `scripts/build-appimage.sh` or the workflow (builds and
-  tests the packages, publishes nothing). x64 only — no ARM64, no 32-bit, on either platform.
+  crates, `Cargo.toml`/`Cargo.lock`, `LICENSE`, `scripts/build-appimage.sh`, `scripts/build-macos.sh` or
+  the workflow (builds and tests the packages, publishes nothing). Windows and Linux are x64 only — no
+  ARM64, no 32-bit; macOS is one universal (arm64 + x86_64) build (RTM-11).
 - **Assets:** `rtmapp_<v>_x64_en-US.msi`, `rtmcli-<v>-x64.exe`, `rtmapp_<v>_amd64.deb`,
-  `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`. Since RTM-38 they are built without Tauri:
-  cargo-wix, cargo-deb and appimagetool.
+  `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`, `rtmapp_<v>_universal.dmg`,
+  `rtmcli-<v>-macos-universal.tar.gz`. Since RTM-38 they are built without Tauri: cargo-wix, cargo-deb,
+  appimagetool, and (RTM-11) `scripts/build-macos.sh`.
 - **Previous release (RTM-49):** the `version` job also outputs `previous`, the newest published
   (non-draft, prereleases included) release below the version being built, for the upgrade tests.
   A manual run can name another one with the `previous` input (`gh workflow run Release --ref <branch>
   -f previous=v0.1.3`), which also lifts the Windows v0.1.3 skip.
 - **Job structure:** `version` (resolves and verifies the release version once, on `ubuntu-latest`)
-  → `windows` and `linux` (build and test in parallel, each `needs: version`, each uploading its own
-  `dist/` as a plain build artifact — `dist-windows` / `dist-linux`) → `publish` (`needs: [version,
-  windows, linux]`, skipped on pull requests, downloads both artifact sets and performs the dry-run
-  upload or draft-release publish exactly once). Both platform jobs deliberately do **not** call
-  `softprops/action-gh-release` themselves — two independent jobs calling it concurrently would race
-  to create/update the same tagged release.
+  → `windows`, `linux` and `macos` (build and test in parallel, each `needs: version`, each uploading
+  its own `dist/` as a plain build artifact — `dist-windows` / `dist-linux` / `dist-macos`) → `publish`
+  (`needs: [version, windows, linux, macos]`, skipped on pull requests, downloads all artifact sets and
+  performs the dry-run upload or draft-release publish exactly once). The platform jobs deliberately do
+  **not** call `softprops/action-gh-release` themselves — independent jobs calling it concurrently
+  would race to create/update the same tagged release.
 - **Versioning:** `major.minor.patch`, all numeric (MSI `ProductVersion` allows nothing else). Releases
   stay on 0.x while the project is in alpha; the switch to CalVer (`YY.minor.patch`) comes later. The
   `[package]` version of `rtmapp/Cargo.toml` is the single source of truth — the release workflow reads
@@ -147,17 +149,21 @@ one that had them.
   replaces the installed copy.
 - **Identity:** the binary is `rtmapp` everywhere (`flake.nix`/`default.nix` `mainProgram`, the desktop
   entry's `Exec=rtmapp`, `Icon=rtmapp` and `StartupWMClass=rtmapp`, the deb package name); the display
-  name is "Rusty Todo.txt Manager"; the reverse-DNS identifier (Tauri's `identifier`, kept for a macOS
-  bundle, RTM-11) is `com.brcha.rtm`. It is also the Windows AppUserModelID, set by the app at startup
-  and on both MSI shortcuts (RTM-48).
+  name is "Rusty Todo.txt Manager", also the macOS bundle's name (`Rusty Todo.txt Manager.app`, whose
+  executable is `rtmapp`); the reverse-DNS identifier (Tauri's `identifier`) is `com.brcha.rtm`. It is
+  the macOS `CFBundleIdentifier` (RTM-11) and the Windows AppUserModelID, set by the app at startup and
+  on both MSI shortcuts (RTM-48).
 - **Merges are squashes.** One PR becomes exactly one commit on `main`, so PR titles are the
   changelog — the release workflow's `generate_release_notes: true` consumes them directly, and
   `.github/workflows/pr-title.yml` already forces them to be conventional and RTM-tagged.
 - **No raw platform binaries are published redundantly with their installer.** `rtmapp.exe` is not
   staged on Windows — the MSI installs the identical binary. `rtmcli.exe` **is** staged, because
   neither the MSI nor (on Linux) the `rtmapp` deb packages the CLI; it is the only channel for
-  `rtmcli` on Windows. This asymmetry is deliberate, not an oversight — do not "fix" it for symmetry.
-- **Unsigned** for now (RTM-10).
+  `rtmcli` on Windows. The same holds for the macOS `rtmcli` tarball: the dmg has only the app. This
+  asymmetry is deliberate, not an oversight — do not "fix" it for symmetry.
+- **Signing:** the Windows and Linux packages are unsigned; the macOS ones are signed ad hoc only (arm64
+  code must carry a signature to run), so Gatekeeper asks on first launch. Developer ID signing and
+  notarization: RTM-54.
 
 ### Windows
 
@@ -220,6 +226,28 @@ one that had them.
   --locked --version 3.7.0` instead, which links against the runner's own glibc by construction.
   **This generalizes:** prefer `cargo install --locked` for Rust tooling on this job unless a tool's
   release process is confirmed to target the jammy floor specifically.
+
+### macOS (RTM-11)
+
+- **Runner:** `macos-latest` (arm64). Both targets (`aarch64-apple-darwin`, `x86_64-apple-darwin`) are
+  built there, with `MACOSX_DEPLOYMENT_TARGET=11.0` for the job (also `LSMinimumSystemVersion` in
+  `rtmapp/assets/Info.plist`; keep the two equal, the job checks it), and joined with `lipo` into universal binaries. Each
+  release build takes about 5 minutes per target.
+- **dmg:** `scripts/build-macos.sh <binary> <version> <output.dmg>` lays out `Rusty Todo.txt
+  Manager.app` by hand (binary, `Info.plist` with `@VERSION@` filled in, `icon.icns` as
+  `Resources/rtmapp.icns`, both licences in `Resources/`), signs it ad hoc and packs it with an
+  `/Applications` link using `hdiutil` (retried: it can fail with "Resource busy" on runners). Only
+  tools that ship with macOS, no downloads. The rtmcli tarball (binary and `LICENSE`) is made in the
+  workflow; its `rtmcli` is signed ad hoc there.
+- **Tests in the job:** the dmg is mounted and the app copied to `/Applications`; then the Info.plist
+  values, the resources, `codesign --verify --strict` on the app and `rtmcli`, both slices and their
+  `minos` (`vtool`), `rtmcli --help` natively and under Rosetta (skipped with a notice without it).
+  Then a smoke launch through Launch Services (`open -a`) with a sample `todo.txt` in the runner's own
+  config path, expected running after 5 s. It proves only that the process stays up: there is no window
+  check (`osascript` would need Accessibility permission), and `open --stderr` captured no log in the
+  first run.
+- **No upgrade test:** replacing a `.app` carries no installer state, unlike the MSI and the debs.
+- `rust.yml` also runs the test suite on `macos-latest`.
 
 ## Future Plans
 

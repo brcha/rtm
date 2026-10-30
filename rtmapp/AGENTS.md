@@ -12,7 +12,7 @@ Done: window shell in the Inter-based theme, config loading, "Load File" through
 the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
 complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
 package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); the MSI, deb and
-AppImage (RTM-38); deleting from the edit dialog (RTM-24). Still to come: a macOS bundle (RTM-11).
+AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11).
 
 ---
 
@@ -26,6 +26,7 @@ rtmapp/
 ├── assets/
 │   ├── fonts/              ← Inter Regular and SemiBold (OTF) and the licence
 │   ├── icons/              ← App icon: SVG masters and the files generated from them (see App icon)
+│   ├── Info.plist          ← macOS bundle metadata (scripts/build-macos.sh)
 │   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
@@ -63,8 +64,9 @@ rtmapp/
 - **Rust edition:** 2024. No async.
 - **Identity:** crate, binary, Nix package and eframe app name are `rtmapp`. The app name is also the
   Wayland app id and the X11 `WM_CLASS`, so it must match the desktop entry's file name and its
-  `StartupWMClass`; `Exec=rtmapp` and `Icon=rtmapp` match the binary and the installed icons. Keep the
-  four in agreement.
+  `StartupWMClass`; `Exec=rtmapp` and `Icon=rtmapp` match the binary and the installed icons, and
+  `CFBundleExecutable` in `assets/Info.plist` matches the binary (the macOS bundle does not start
+  otherwise). Keep them all in agreement.
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one the Tauri app wrote,
   so existing users' settings carry over: do not rename fields or change defaults (`#[serde(default)]`
   on `AppConfig`). The file is written after a successful file load or a filter change, never at
@@ -165,8 +167,8 @@ Inter 4.0 (`Inter-Regular.otf`, `Inter-SemiBold.otf`) is embedded with `include_
 official `Inter-4.0.zip` release of github.com/rsms/inter, with `assets/fonts/Inter-LICENSE.txt` (SIL
 Open Font License 1.1) next to it. The licence requires its text and the copyright notice to accompany
 every redistributed copy, so **installers and packages must ship `Inter-LICENSE.txt`**. The Nix package
-installs it under `share/licenses/rtmapp`, the deb and the AppImage under `usr/share/doc/rtmapp/`, and
-the MSI next to `rtmapp.exe`.
+installs it under `share/licenses/rtmapp`, the deb and the AppImage under `usr/share/doc/rtmapp/`, the
+MSI next to `rtmapp.exe`, and the macOS bundle in `Contents/Resources/`.
 
 ---
 
@@ -196,7 +198,7 @@ master as `scalable/apps/rtmapp.svg`; the 16 and 24 px PNGs keep panels from sca
 
 The window icon (title bar and taskbar on Windows and X11) is `128x128@2x.png`, embedded in `main.rs`;
 a test checks that it decodes. Wayland compositors take the icon from the desktop entry instead, and
-macOS from a bundle's `icon.icns` (RTM-11). Explorer and the taskbar take `rtmapp.exe`'s icon from its
+macOS (Finder, Dock) from the bundle, which carries `icon.icns` as `Contents/Resources/rtmapp.icns`. Explorer and the taskbar take `rtmapp.exe`'s icon from its
 resources: `build.rs` embeds `icon.ico` there (an installer can only set its shortcuts' icon). The deb
 and the AppImage install the same icons and desktop entry as the Nix package; the MSI uses `icon.ico`
 for its shortcuts and the Add/Remove Programs entry.
@@ -268,12 +270,18 @@ screenshots of both themes; any other value is ignored.
 
 Built by the Release workflow (root `AGENTS.md`, "Release Process"). The deb and the AppImage install
 the binary, the desktop entry, the hicolor icons and both licences; the MSI installs `rtmapp.exe`
-(icon embedded), both licences and the Start Menu and desktop shortcuts.
+(icon embedded), both licences and the Start Menu and desktop shortcuts; the dmg holds the bundle with
+the binary, `Info.plist`, the icon and both licences.
 
 - **deb:** `[package.metadata.deb]` in `Cargo.toml` (cargo-deb). `depends` and `suggests` follow the
   run-time list under Build & Run.
 - **AppImage:** `scripts/build-appimage.sh <binary> <version> <output>` (also runs locally; set
   `APPIMAGE_TOOLS_DIR` to keep its downloads).
+- **dmg:** `scripts/build-macos.sh <binary> <version> <output.dmg>`, on a Mac only. Bundle
+  `Rusty Todo.txt Manager.app`, executable `rtmapp`, metadata from `assets/Info.plist` (identifier
+  `com.brcha.rtm`, minimum macOS 11.0, `@VERSION@` replaced by the version), ad-hoc signature. The
+  Release workflow passes a universal binary; a local `target/release/rtmapp` works too, for the host's
+  architecture only. Gatekeeper blocks the first launch of a downloaded copy (see the README).
 - **MSI:** `wix/main.wxs`, built with `cargo wix -p rtmapp --no-build` on Windows. It replaces the Tauri
   MSI of versions up to 0.1.3, so it keeps what that MSI had where it matters. The Tauri MSI, decompiled
   with WiX's `dark.exe` during RTM-38, had:
