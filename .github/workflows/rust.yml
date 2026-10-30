@@ -11,19 +11,72 @@ env:
 
 jobs:
   build:
-    timeout-minutes: 30
+    # A cold pijul build (vcpkg OpenSSL on Windows) takes most of this; cached runs are short.
+    timeout-minutes: 60
 
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # The pijul that rtmsync's tests drive. Windows stays on 1.0.0-beta.12: from beta.15 on,
+        # pijul signs changes only through the SSH agent, and its agent client (thrussh-keys 0.44)
+        # is a stub on Windows that always fails, so newer releases cannot record there (RTM-58).
+        # beta.24 does not compile without its default features; beta.12 does and needs no git2.
+        include:
+          - os: ubuntu-latest
+            pijul: 1.0.0-beta.24
+          - os: macos-latest
+            pijul: 1.0.0-beta.24
+          - os: windows-latest
+            pijul: 1.0.0-beta.12
+            pijul-flags: --no-default-features
 
     runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v7
 
+    # Building pijul takes minutes, so the binary is cached per OS and version.
+    - name: Restore pijul
+      id: pijul
+      uses: actions/cache@v6
+      with:
+        path: ~/.cargo/bin/pijul${{ runner.os == 'Windows' && '.exe' || '' }}
+        key: pijul-${{ runner.os }}-${{ matrix.pijul }}
+
+    # pijul needs OpenSSL and libsodium to build, and on Linux and macOS also to run, so those
+    # steps run on cache hits too (Windows links them statically). Same hardened apt pattern as
+    # release.yml (RTM-28): pin the mirror, bound retries and timeouts.
+    - name: Install pijul's libraries (Linux)
+      if: runner.os == 'Linux'
+      timeout-minutes: 10
+      run: |
+        echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+        sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+        sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
+          libssl-dev libsodium-dev pkg-config
+
+    - name: Install pijul's libraries (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install libsodium openssl@3 pkg-config
+        echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+
+    - name: Install pijul's libraries (Windows)
+      if: runner.os == 'Windows' && steps.pijul.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" install openssl:x64-windows-static-md libsodium:x64-windows-static-md
+        "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+        "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+
+    - name: Install pijul
+      if: steps.pijul.outputs.cache-hit != 'true'
+      run: cargo install pijul --locked --version ${{ matrix.pijul }} ${{ matrix.pijul-flags }}
+
     - name: Build
       run: cargo build --verbose
     - name: Run tests
+      # The Pijul test fails instead of skipping when pijul is missing.
+      env:
+        RTM_REQUIRE_PIJUL: 1
       run: cargo test --verbose
-
