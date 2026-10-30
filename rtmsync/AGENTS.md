@@ -68,6 +68,8 @@ rtmsync/
   limit. On Windows it creates an on-disk identity for pijul 1.0.0-beta.12. It skips when `pijul`
   is not in `PATH`, unless `RTM_REQUIRE_PIJUL` is set.
 - CI (`rust.yml`) builds pijul on all three OSs (beta.24 on Linux and macOS, beta.12 on Windows),
-  cached per OS and version, and sets `RTM_REQUIRE_PIJUL=1`.
+  cached per OS and version, and sets `RTM_REQUIRE_PIJUL=1`. On Windows it is built for the GNU
+  target with MSYS2's MinGW libraries, with their DLLs copied next to it: `thrussh-libsodium` forces
+  libsodium-sys's pkg-config mode, which panics on MSVC.
 - No frontend depends on the crate yet. When one does, the release workflow's `paths` filter needs
   `rtmsync/**`.

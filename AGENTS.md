@@ -80,8 +80,9 @@ one that had them.
 
   **Test tools are not native dependencies.** `rust.yml` builds `pijul` (RTM-18), which the
   `rtmsync` tests drive, and installs the libraries it needs: OpenSSL and libsodium from apt on
-  Linux and Homebrew on macOS, and from vcpkg on Windows. No crate links them, so they do not go
-  into the Nix lists or the debs. See `rtmsync/AGENTS.md`.
+  Linux and Homebrew on macOS, and MSYS2's MinGW packages on Windows (pijul cannot be built for
+  MSVC). No crate links them, so they do not go into the Nix lists or the debs. See
+  `rtmsync/AGENTS.md`.
 - **Linux CI apt hardening (RTM-28):** GitHub-hosted Ubuntu runners resolve apt through a
   mirrorlist that tries `azure.archive.ubuntu.com` before falling back to `archive.ubuntu.com`.
   When the Azure-local mirror degrades — dropping connections rather than refusing them — apt
