@@ -168,8 +168,9 @@ fn delete_question(sub_items: usize) -> String {
 
 /// The modal. Returns `Save` on the Save button or Enter in a field, `Cancel` on the Cancel
 /// button, Escape or a click outside the dialog (the Tauri app closed only on its buttons),
-/// `AskDelete` on the trash button and `Delete` once the deletion is confirmed.
-pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
+/// `AskDelete` on the trash button and `Delete` once the deletion is confirmed. While `busy` (a
+/// sync is running), Save and the delete buttons are disabled and Enter does not save.
+pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm, busy: bool) -> Option<Outcome> {
     // CSS: 500 px wide with 24 px padding, 8 px corners and a soft shadow; dark adds a border.
     let frame = Frame::new()
         .fill(p.dialog_bg)
@@ -191,7 +192,7 @@ pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Out
             // shortcut: no CSS max-height: 90vh scrolling. A ScrollArea inside the modal sizes itself
             // from the modal's previous size and stays too short; the dialog is about 560 px tall and
             // the window opens at 650 px. Revisit if the form grows or small windows matter.
-            outcome = form_ui(ui, p, form);
+            outcome = form_ui(ui, p, form, busy);
         });
     // Escape or a click on the backdrop.
     if modal.should_close() {
@@ -200,7 +201,7 @@ pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Out
     outcome
 }
 
-fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
+fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm, busy: bool) -> Option<Outcome> {
     let mut submit = false;
     // CSS: 16 px between the groups, and between the two columns of a `.form-row`.
     ui.spacing_mut().item_spacing = egui::vec2(16.0, 16.0);
@@ -258,7 +259,11 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     // Top-aligned: a centred cross axis would stretch the row over all the height below it.
     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        if theme::success_button(ui, "Save").clicked() {
+        if ui
+            .add_enabled_ui(!busy, |ui| theme::success_button(ui, "Save"))
+            .inner
+            .clicked()
+        {
             outcome = Some(Outcome::Save);
         }
         if theme::secondary_button(ui, "Cancel").clicked() {
@@ -266,22 +271,24 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
         }
         // The rest of the row, from the far left: the trash button, or Delete and Keep.
         ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-            if form.confirm_delete.is_some() {
-                // The question line shifts Delete under where the trash button was, so the second
-                // click of a double-click on the trash button must not confirm.
-                let delete = theme::danger_button(ui, "Delete");
-                if delete.clicked() && !delete.double_clicked() {
-                    outcome = Some(Outcome::Delete);
+            ui.add_enabled_ui(!busy, |ui| {
+                if form.confirm_delete.is_some() {
+                    // The question line shifts Delete under where the trash button was, so the
+                    // second click of a double-click on the trash button must not confirm.
+                    let delete = theme::danger_button(ui, "Delete");
+                    if delete.clicked() && !delete.double_clicked() {
+                        outcome = Some(Outcome::Delete);
+                    }
+                    if theme::secondary_button(ui, "Keep").clicked() {
+                        form.confirm_delete = None;
+                    }
+                } else if theme::trash_button(ui, p).clicked() {
+                    outcome = Some(Outcome::AskDelete);
                 }
-                if theme::secondary_button(ui, "Keep").clicked() {
-                    form.confirm_delete = None;
-                }
-            } else if theme::trash_button(ui, p).clicked() {
-                outcome = Some(Outcome::AskDelete);
-            }
+            });
         });
     });
-    if submit {
+    if submit && !busy {
         outcome = Some(Outcome::Save);
     }
     outcome
