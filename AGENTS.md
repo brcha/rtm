@@ -57,8 +57,9 @@ one that had them.
 - **Native dependency sync:** When adding a new system/native library dependency to any crate in
   the workspace, register it in **all three** of the following locations to keep CI, Nix flake
   builds, and legacy nix-build in sync:
-  1. `.github/workflows/rust.yml` — an `apt-get install` step (there is none today: no crate links a
-     native library; reuse the hardened pattern from `release.yml` when adding one, see RTM-28 below)
+  1. `.github/workflows/rust.yml` — an `apt-get install` step (no crate links a native library
+     today; the existing apt step installs pijul's libraries for the `rtmsync` tests, see below;
+     use the hardened pattern from `release.yml`, see RTM-28 below)
   2. `flake.nix` — the matching list (`eguiDeps` today), and `devShells.default` if needed
   3. `default.nix` — the matching list
 
@@ -76,16 +77,21 @@ one that had them.
   transitively, so an apt list is intentionally a minimal subset of what the Nix lists declare. Do
   not trim the Nix lists to match — Nix `buildInputs` do not propagate `pkg-config` search paths the
   way apt's package interdependencies do.
+
+  **Test tools are not native dependencies.** `rust.yml` builds `pijul` (RTM-18), which the
+  `rtmsync` tests drive, and installs the libraries it needs: OpenSSL and libsodium from apt on
+  Linux and Homebrew on macOS, and from vcpkg on Windows. No crate links them, so they do not go
+  into the Nix lists or the debs. See `rtmsync/AGENTS.md`.
 - **Linux CI apt hardening (RTM-28):** GitHub-hosted Ubuntu runners resolve apt through a
   mirrorlist that tries `azure.archive.ubuntu.com` before falling back to `archive.ubuntu.com`.
   When the Azure-local mirror degrades — dropping connections rather than refusing them — apt
   retries it per index file across roughly twenty files, which can stall a job for hours with no
-  bound. Any job that installs apt packages (today only `release.yml`'s Linux job; `rust.yml` needs
-  none since RTM-39) overwrites `/etc/apt/apt-mirrors.txt` with the canonical archive before
-  updating, and passes explicit `Acquire::Retries`/timeout options to both `apt-get update` and
-  `apt-get install` as defence in depth. **Do not revert this for a marginally faster "good day"
-  run** — it trades a small, predictable slowdown for an unbounded hang becoming a fast, loud
-  failure instead.
+  bound. Any job that installs apt packages (`release.yml`'s Linux job, and `rust.yml`'s Linux job
+  for pijul's libraries since RTM-18) overwrites `/etc/apt/apt-mirrors.txt` with the canonical
+  archive before updating, and passes explicit `Acquire::Retries`/timeout options to both
+  `apt-get update` and `apt-get install` as defence in depth. **Do not revert this for a marginally
+  faster "good day" run** — it trades a small, predictable slowdown for an unbounded hang becoming
+  a fast, loud failure instead.
 
 ---
 
