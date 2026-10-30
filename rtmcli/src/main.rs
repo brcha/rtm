@@ -1,6 +1,6 @@
 use chrono::{Duration, Local};
 use clap::{Parser, Subcommand, ValueEnum};
-use rtmsync::Vcs;
+use rtmsync::{State, Vcs};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use todotxt::TodoItem;
@@ -22,6 +22,10 @@ struct Cli {
     /// Version control system to use when the file's directory belongs to several
     #[arg(long, global = true, env = "RTM_VCS", value_enum)]
     vcs: Option<VcsName>,
+
+    /// Commit changes to the file made outside rtm, or add an untracked file, before syncing
+    #[arg(long, global = true)]
+    commit_changes: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -94,9 +98,16 @@ struct Repo {
 
 impl Repo {
     /// The repository holding `file`, when it should be synced: sync is not turned off, the file
-    /// is tracked, and its directory belongs to one VCS (or `choice` picks one). Exits on an
-    /// ambiguous directory, a mismatching `choice` or a conflicted repository.
-    fn find(file: &str, no_sync: bool, choice: Option<VcsName>) -> Option<Repo> {
+    /// is tracked, and its directory belongs to one VCS (or `choice` picks one). With
+    /// `commit_changes`, changes made outside rtm are committed first, and an untracked file is
+    /// added. Exits on an ambiguous directory, a mismatching `choice`, a conflicted repository,
+    /// and outside changes without `commit_changes`.
+    fn find(
+        file: &str,
+        no_sync: bool,
+        choice: Option<VcsName>,
+        commit_changes: bool,
+    ) -> Option<Repo> {
         if no_sync {
             return None;
         }
@@ -121,14 +132,35 @@ impl Repo {
                 std::process::exit(2);
             }
         };
-        match vcs.is_tracked(&file) {
-            Ok(true) => {}
-            Ok(false) => return None,
+        let state = if file.exists() {
+            vcs.state(&file)
+        } else {
+            // A missing file's state cannot be told reliably; it keeps the behaviour from before
+            // the check: synced when tracked, silently not otherwise.
+            vcs.is_tracked(&file).map(|tracked| {
+                if tracked {
+                    State::Clean
+                } else {
+                    State::Ignored
+                }
+            })
+        };
+        let state = match state {
+            Ok(State::Ignored) => return None,
+            Ok(State::Untracked) if !commit_changes => {
+                eprintln!(
+                    "'{}' is not tracked by {vcs:?}; run with --commit-changes to add it and sync, \
+                     or ignore it in the repository to silence this",
+                    file.display()
+                );
+                return None;
+            }
+            Ok(state) => state,
             Err(e) => {
                 eprintln!("Not syncing: {e}");
                 return None;
             }
-        }
+        };
         match vcs.is_conflicted(&file) {
             Ok(false) => {}
             Ok(true) => conflicted(&file),
@@ -136,6 +168,28 @@ impl Repo {
                 eprintln!("Not syncing: {e}");
                 return None;
             }
+        }
+        let message = match state {
+            State::Modified if !commit_changes => {
+                eprintln!(
+                    "'{}' has changes not committed by rtm (made by hand, or with --no-sync); \
+                     commit or revert them, or run with --commit-changes",
+                    file.display()
+                );
+                std::process::exit(1);
+            }
+            State::Modified => Some("rtm: commit outside changes".to_owned()),
+            State::Untracked => Some(format!(
+                "rtm: track {}",
+                file.file_name().unwrap_or_default().to_string_lossy()
+            )),
+            State::Clean | State::Ignored => None,
+        };
+        if let Some(message) = message
+            && let Err(e) = vcs.commit(&file, &message)
+        {
+            eprintln!("Not committed: {e}");
+            std::process::exit(1);
         }
         let remote = vcs.has_remote(&file).unwrap_or(false);
         Some(Repo { vcs, file, remote })
@@ -231,7 +285,7 @@ fn main() {
         .unwrap_or_else(|| std::env::var("TODOTXT").unwrap_or_else(|_| "todo.txt".to_string()));
 
     let mut lib = TodoLibrary::new(file_name.clone());
-    let repo = Repo::find(&file_name, cli.no_sync, cli.vcs);
+    let repo = Repo::find(&file_name, cli.no_sync, cli.vcs, cli.commit_changes);
     let repo = repo.as_ref();
 
     match cli.command {
