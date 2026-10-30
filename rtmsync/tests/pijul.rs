@@ -98,22 +98,37 @@ fn pijul_records_only_the_file() {
         // Pijul's own override: on Windows its default comes from the system, not from `APPDATA`.
         std::env::set_var("PIJUL_CONFIG_DIR", home.join("pijul"));
     }
-    // Windows runs pijul 1.0.0-beta.11 (see rust.yml), which signs with a key file instead of the
-    // agent; it needs an identity, created here without prompts (and without a password, so the
-    // system keyring is not used).
+    // Windows runs pijul 1.0.0-beta.11 (see rust.yml), which signs with an unencrypted key file
+    // instead of the agent. It needs an identity, and on a fresh config it would first prompt for
+    // one (failing without a terminal, even under `identity new --no-prompt`), so a throwaway
+    // test identity is written directly. It signs nothing but these scratch changes.
     #[cfg(not(unix))]
-    pijul(
-        &home,
-        &[
-            "identity",
-            "new",
-            "--no-prompt",
-            "--no-link",
-            "--display-name",
-            "rtm test",
-            "rtm-test",
-        ],
-    );
+    {
+        let identity = home.join("pijul/identities/rtm-test");
+        std::fs::create_dir_all(&identity).unwrap();
+        std::fs::write(
+            identity.join("identity.toml"),
+            r#"display_name = "rtm test"
+last_modified = "2026-10-30T10:36:41.494964317Z"
+
+[public_key]
+version = 0
+algorithm = "Ed25519"
+signature = "3d826vxwEZsqKL8AusPJfQB1mZ4RTx9zjYgQTHviA6WtvgHuyEYnDCTGjo5b4s1xFcJzcPsCG6b4E4rafYZo2493"
+key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            identity.join("secret_key.json"),
+            r#"{
+  "version": 0,
+  "algorithm": "Ed25519",
+  "key": "V5NBHDdTNKpvsycNoHeomfZD72qEMf4xC4AQwMooTpjH9jowhQcbkowtBNkg15CpiZfdyxmubB1oJCgNyq24Xim"
+}"#,
+        )
+        .unwrap();
+    }
     #[cfg(unix)]
     let _agent = {
         let agent = Agent::start(&dir);
