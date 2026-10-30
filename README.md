@@ -2,9 +2,9 @@
 
 This is a [Todo.txt](https://github.com/todotxt/todo.txt) managment app, written in Rust. Very early development, but a few things already work.
 
-Here's a screenshot of the GUI:
+Here are screenshots of the GUI, in the light and the dark theme:
 
-![screenshot_gui](screenshot_gui.png "RTM GUI")
+<img src="screenshot_gui.png" alt="rtmapp, light theme" title="RTM GUI, light theme" width="49%"> <img src="screenshot_gui_dark.png" alt="rtmapp, dark theme" title="RTM GUI, dark theme" width="49%">
 
 and of the CLI:
 
