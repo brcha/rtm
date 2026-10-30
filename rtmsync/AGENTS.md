@@ -65,12 +65,12 @@ rtmsync/
   default comes from the system, not `APPDATA`) point at scratch directories. On Unix it starts its
   own `ssh-agent` with a generated key and gives every ssh tool that socket explicitly, so it never
   reaches the user's agent; the socket path is relative, as the absolute one can exceed the Unix
-  limit. On Windows it creates an on-disk identity for pijul 1.0.0-beta.12. It skips when `pijul`
+  limit. On Windows it creates an on-disk identity for pijul 1.0.0-beta.11. It skips when `pijul`
   is not in `PATH`, unless `RTM_REQUIRE_PIJUL` is set.
-- CI (`rust.yml`) builds pijul on all three OSs (beta.24 on Linux and macOS, beta.12 on Windows),
-  cached per OS and version, and sets `RTM_REQUIRE_PIJUL=1`. On Windows it is built with the GNU
-  toolchain (host, not only target) and MSYS2's MinGW libraries, with their DLLs copied next to it:
-  `thrussh-libsodium` forces libsodium-sys's pkg-config mode, whose build script panics when it is
-  compiled for MSVC.
+- CI (`rust.yml`) builds pijul 1.0.0-beta.24 on Linux and macOS, cached per OS and version, and
+  sets `RTM_REQUIRE_PIJUL=1`. Windows downloads the community build of 1.0.0-beta.11 linked from
+  pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
+  from source there (libsodium-sys's build script panics under MSVC, and pijul's own Windows code
+  did not compile at beta.12), and newer releases could not record anyway (RTM-58).
 - No frontend depends on the crate yet. When one does, the release workflow's `paths` filter needs
   `rtmsync/**`.
