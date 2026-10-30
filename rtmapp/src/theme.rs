@@ -144,6 +144,48 @@ pub fn secondary_button(ui: &mut Ui, text: &str) -> egui::Response {
     filled_button(ui, text, rgb(0x6a, 0x73, 0x7d), rgb(0x58, 0x60, 0x69))
 }
 
+/// The red "Delete" button (Bootstrap's `.btn-danger` pair, like the other button colours).
+pub fn danger_button(ui: &mut Ui, text: &str) -> egui::Response {
+    filled_button(ui, text, rgb(0xdc, 0x35, 0x45), rgb(0xc8, 0x23, 0x33))
+}
+
+/// A painted trash bin as a button (Inter has no such glyph): grey, red when hovered or focused.
+/// Square and as tall as the filled buttons (12.6 px text, about 15 px, plus 2 × 10 px padding).
+pub fn trash_button(ui: &mut Ui, p: &Palette) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(35.0, 35.0), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Delete item")
+    });
+    let response = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Delete item");
+    let color = if response.hovered() || response.has_focus() {
+        p.due
+    } else {
+        p.muted
+    };
+    let stroke = Stroke::new(1.5, color);
+    let c = rect.center();
+    let at = |x: f32, y: f32| c + egui::vec2(x, y);
+    let painter = ui.painter();
+    // Lid, handle, then the body narrowing towards the bottom, with two ribs.
+    painter.line_segment([at(-7.0, -5.0), at(7.0, -5.0)], stroke);
+    painter.add(egui::Shape::line(
+        vec![at(-2.5, -5.0), at(-2.5, -7.5), at(2.5, -7.5), at(2.5, -5.0)],
+        stroke,
+    ));
+    painter.add(egui::Shape::line(
+        vec![at(-5.5, -5.0), at(-4.5, 7.5), at(4.5, 7.5), at(5.5, -5.0)],
+        stroke,
+    ));
+    painter.line_segment([at(-1.8, -2.0), at(-1.6, 4.5)], stroke);
+    painter.line_segment([at(1.8, -2.0), at(1.6, 4.5)], stroke);
+    if response.has_focus() {
+        painter.rect_stroke(rect, 6.0, Stroke::new(1.0, color), egui::StrokeKind::Inside);
+    }
+    response
+}
+
 /// A single-line input like the CSS ones: 1 px border, 6 px corners, 12 px side padding and
 /// `pad_y` above and below, and when focused a `focus` border with a soft 3 px glow.
 pub fn text_input(
