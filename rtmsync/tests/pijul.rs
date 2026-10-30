@@ -145,7 +145,10 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     std::fs::write(repo.join("other.txt"), "other\n").unwrap();
     pijul(&sub, &["add", "../other.txt"]);
 
+    assert!(!Vcs::Pijul.is_tracked(&todo).unwrap());
     Vcs::Pijul.commit(&todo, "first").unwrap();
+    assert!(Vcs::Pijul.is_tracked(&todo).unwrap());
+    assert!(!Vcs::Pijul.has_remote(&todo).unwrap());
     let log = pijul(&sub, &["log"]);
     assert!(log.contains("first"), "{log}");
 
@@ -169,6 +172,7 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     pijul(&dir, &["clone", "repo", "a"]);
     pijul(&dir, &["clone", "repo", "b"]);
     let (a, b) = (dir.join("a/sub/todo.txt"), dir.join("b/sub/todo.txt"));
+    assert!(Vcs::Pijul.has_remote(&a).unwrap());
 
     std::fs::write(&a, "Buy milk\nCall mom\nFrom a\n").unwrap();
     Vcs::Pijul.commit(&a, "from a").unwrap();
@@ -182,8 +186,10 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     Vcs::Pijul.sync(&a).unwrap();
     std::fs::write(&b, "Buy milk\nCall mom\nFrom a\nThen b\n").unwrap();
     Vcs::Pijul.commit(&b, "then b").unwrap();
+    assert!(!Vcs::Pijul.is_conflicted(&b).unwrap());
     let result = Vcs::Pijul.sync(&b);
     assert!(matches!(result, Err(Error::Conflict)), "{result:?}");
+    assert!(Vcs::Pijul.is_conflicted(&b).unwrap());
     assert!(
         !pijul(&repo, &["log"]).contains("then b"),
         "a conflicted sync pushed"

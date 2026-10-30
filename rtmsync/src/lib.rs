@@ -52,6 +52,78 @@ impl Vcs {
         }
     }
 
+    /// Whether `file` is tracked by its repository.
+    pub fn is_tracked(self, file: &Path) -> Result<bool, Error> {
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        match self {
+            Vcs::Git => {
+                let args = ["--literal-pathspecs", "ls-files", "--error-unmatch"];
+                let name = file.file_name().unwrap_or_default();
+                succeeded(run("git", dir, &args, name))
+            }
+            Vcs::Pijul => {
+                // `pijul ls` lists tracked paths relative to the repository root, with `/`.
+                let Some(root) = dir.ancestors().find(|d| d.join(".pijul").exists()) else {
+                    return Ok(false);
+                };
+                let relative = file.strip_prefix(root).unwrap_or(&file);
+                let relative: Vec<_> = relative.iter().map(|c| c.to_string_lossy()).collect();
+                let listed = output("pijul", command("pijul", dir).arg("ls"))?;
+                Ok(listed.lines().any(|line| line == relative.join("/")))
+            }
+        }
+    }
+
+    /// Whether the repository holding `file` is in a state rtm must leave to the user: unmerged
+    /// paths or a rebase or merge stopped half-way (Git), or conflict markers in `file` (Pijul,
+    /// which writes them into the file on a conflicting pull). A conflicted todo.txt would be read
+    /// with its markers as items.
+    pub fn is_conflicted(self, file: &Path) -> Result<bool, Error> {
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        match self {
+            Vcs::Git => {
+                let status = output(
+                    "git",
+                    command("git", dir).args(["status", "--porcelain=v2"]),
+                )?;
+                Ok(status.lines().any(|line| line.starts_with("u ")) || git_stopped(dir)?)
+            }
+            Vcs::Pijul => {
+                let text = std::fs::read_to_string(&file).unwrap_or_default();
+                let marker = |line: &str| {
+                    [">>>>>>> ", "======= ", "<<<<<<< "]
+                        .iter()
+                        .any(|m| line.starts_with(m))
+                };
+                Ok(text.lines().any(marker))
+            }
+        }
+    }
+
+    /// Whether the repository holding `file` has a remote to sync with: an upstream branch for
+    /// Git, any remote for Pijul.
+    pub fn has_remote(self, file: &Path) -> Result<bool, Error> {
+        let file = resolve(file);
+        let dir = file.parent().unwrap_or(Path::new("."));
+        match self {
+            Vcs::Git => {
+                let args = [
+                    "rev-parse",
+                    "--abbrev-ref",
+                    "--symbolic-full-name",
+                    "@{upstream}",
+                ];
+                succeeded(output("git", command("git", dir).args(args)).map(drop))
+            }
+            // Prints nothing in a repository without remotes.
+            Vcs::Pijul => Ok(!output("pijul", command("pijul", dir).arg("remote"))?
+                .trim()
+                .is_empty()),
+        }
+    }
+
     /// Commits the current content of `file`, and nothing else in its repository, with `message`.
     /// An untracked file is added first; an unchanged file commits nothing.
     pub fn commit(self, file: &Path, message: &str) -> Result<(), Error> {
@@ -98,12 +170,8 @@ impl Vcs {
         match self {
             Vcs::Git => {
                 let pulled = network("git", &["pull", "--rebase", "--autostash"]);
-                let status = output(
-                    "git",
-                    command("git", dir).args(["status", "--porcelain=v2"]),
-                )?;
                 // Also catches an autostash that did not reapply cleanly.
-                if status.lines().any(|line| line.starts_with("u ")) || git_stopped(dir)? {
+                if self.is_conflicted(&file)? {
                     return Err(Error::Conflict);
                 }
                 pulled?;
@@ -113,19 +181,22 @@ impl Vcs {
                 // Pijul applies conflicting changes, exits 0 and writes markers into the file. A
                 // pull cut short may have written them too, so they are checked either way.
                 let pulled = network("pijul", &["pull", "--all"]);
-                let text = std::fs::read_to_string(&file).unwrap_or_default();
-                let marker = |line: &str| {
-                    [">>>>>>> ", "======= ", "<<<<<<< "]
-                        .iter()
-                        .any(|m| line.starts_with(m))
-                };
-                if text.lines().any(marker) {
+                if self.is_conflicted(&file)? {
                     return Err(Error::Conflict);
                 }
                 pulled?;
                 network("pijul", &["push", "--all"])
             }
         }
+    }
+}
+
+/// `true` for success, `false` for a program that ran and said no; other errors pass through.
+fn succeeded(result: Result<(), Error>) -> Result<bool, Error> {
+    match result {
+        Ok(()) => Ok(true),
+        Err(Error::Failed { .. }) => Ok(false),
+        Err(e) => Err(e),
     }
 }
 
