@@ -1,6 +1,8 @@
 use chrono::{Duration, Local};
 use clap::{Parser, Subcommand, ValueEnum};
+use rtmsync::Vcs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use todotxt::TodoItem;
 use todotxt::TodoLibrary;
 
@@ -11,6 +13,15 @@ struct Cli {
     /// Todo.txt file name
     #[arg(short = 'f', long)]
     file: Option<String>,
+
+    /// Do not commit, pull or push, even in a repository
+    #[arg(long, global = true, env = "RTM_NO_SYNC",
+          value_parser = clap::builder::BoolishValueParser::new())]
+    no_sync: bool,
+
+    /// Version control system to use when the file's directory belongs to several
+    #[arg(long, global = true, env = "RTM_VCS", value_enum)]
+    vcs: Option<VcsName>,
 
     #[command(subcommand)]
     command: Commands,
@@ -54,6 +65,143 @@ enum Commands {
         #[arg(short, long)]
         yes: bool,
     },
+    /// Pull and push the repository holding the file
+    Sync,
+}
+
+#[derive(ValueEnum, Clone, Copy, PartialEq)]
+enum VcsName {
+    Git,
+    Pijul,
+}
+
+impl VcsName {
+    fn vcs(self) -> Vcs {
+        match self {
+            VcsName::Git => Vcs::Git,
+            VcsName::Pijul => Vcs::Pijul,
+        }
+    }
+}
+
+/// The repository a todo.txt is synced through: every change is committed, and pushed when the
+/// repository has a remote.
+struct Repo {
+    vcs: Vcs,
+    file: PathBuf,
+    remote: bool,
+}
+
+impl Repo {
+    /// The repository holding `file`, when it should be synced: sync is not turned off, the file
+    /// is tracked, and its directory belongs to one VCS (or `choice` picks one). Exits on an
+    /// ambiguous directory, a mismatching `choice` or a conflicted repository.
+    fn find(file: &str, no_sync: bool, choice: Option<VcsName>) -> Option<Repo> {
+        if no_sync {
+            return None;
+        }
+        let file = PathBuf::from(file);
+        let found = rtmsync::detect(&file);
+        let vcs = match (found.as_slice(), choice.map(VcsName::vcs)) {
+            ([], _) => return None,
+            ([only], None) => *only,
+            (found, Some(chosen)) if found.contains(&chosen) => chosen,
+            ([only], Some(chosen)) => {
+                eprintln!(
+                    "'{}' is in a {only:?} repository, not {chosen:?}",
+                    file.display()
+                );
+                std::process::exit(2);
+            }
+            (found, _) => {
+                eprintln!(
+                    "'{}' is in a directory used by {found:?}; choose one with --vcs or RTM_VCS",
+                    file.display()
+                );
+                std::process::exit(2);
+            }
+        };
+        match vcs.is_tracked(&file) {
+            Ok(true) => {}
+            Ok(false) => return None,
+            Err(e) => {
+                eprintln!("Not syncing: {e}");
+                return None;
+            }
+        }
+        match vcs.is_conflicted(&file) {
+            Ok(false) => {}
+            Ok(true) => conflicted(&file),
+            Err(e) => {
+                eprintln!("Not syncing: {e}");
+                return None;
+            }
+        }
+        let remote = vcs.has_remote(&file).unwrap_or(false);
+        Some(Repo { vcs, file, remote })
+    }
+
+    /// Pulls and pushes when there is a remote. Returns whether it synced; a failure other than
+    /// a conflict is only a warning, since the file is still saved and committed locally.
+    fn sync(&self) -> bool {
+        if !self.remote {
+            return false;
+        }
+        match self.vcs.sync(&self.file) {
+            Ok(()) => true,
+            Err(rtmsync::Error::Conflict) => conflicted(&self.file),
+            Err(e) => {
+                eprintln!("Not synced: {e}");
+                false
+            }
+        }
+    }
+
+    /// Commits the saved file with `message`, then syncs (pulls and pushes) when there is a remote.
+    fn commit_and_sync(&self, message: &str) {
+        if let Err(e) = self.vcs.commit(&self.file, message) {
+            eprintln!("Not committed: {e}");
+            return;
+        }
+        self.sync();
+    }
+}
+
+/// Exits: the repository has conflicts the user resolves by hand.
+fn conflicted(file: &Path) -> ! {
+    eprintln!(
+        "The repository holding '{}' has conflicts or a stopped rebase or merge; resolve them by \
+         hand, then run rtmcli again",
+        file.display()
+    );
+    std::process::exit(1);
+}
+
+/// Pulls (when `repo` has a remote), then reloads `lib` so it holds what the pull brought.
+fn pull_and_reload(repo: Option<&Repo>, lib: &mut TodoLibrary, file_name: &str) {
+    if repo.is_some_and(Repo::sync)
+        && let Err(e) = lib.load()
+    {
+        eprintln!("Error loading file '{}': {}", file_name, e);
+        std::process::exit(1);
+    }
+}
+
+/// The index of `target` in `lib` after a pull, or exits: the pull changed or removed it, and the
+/// change the user asked for no longer applies to what they saw.
+fn find_again(lib: &TodoLibrary, target: &TodoItem, taken: &[usize]) -> usize {
+    let items = lib.list_items();
+    if let Some(i) = (0..items.len()).find(|i| items[*i] == *target && !taken.contains(i)) {
+        return i;
+    }
+    eprintln!("The sync changed or removed '{target}'; nothing was changed.");
+    if let Some(fresh) = target
+        .uuid
+        .and_then(|uuid| items.iter().find(|item| item.uuid == Some(uuid)))
+    {
+        eprintln!("It now reads: {fresh}");
+    }
+    std::process::exit(1);
 }
 
 #[derive(ValueEnum, Clone, PartialEq)]
@@ -83,9 +231,14 @@ fn main() {
         .unwrap_or_else(|| std::env::var("TODOTXT").unwrap_or_else(|_| "todo.txt".to_string()));
 
     let mut lib = TodoLibrary::new(file_name.clone());
+    let repo = Repo::find(&file_name, cli.no_sync, cli.vcs);
+    let repo = repo.as_ref();
 
     match cli.command {
         Commands::List { completed, filter } => {
+            if let Some(repo) = repo {
+                repo.sync();
+            }
             if let Err(e) = lib.load() {
                 eprintln!("Error loading file '{}': {}", file_name, e);
                 std::process::exit(1);
@@ -125,6 +278,9 @@ fn main() {
             }
         }
         Commands::Add { description } => {
+            if let Some(repo) = repo {
+                repo.sync();
+            }
             // Try to load existing items to preserve them
             let _ = lib.load(); // Ignore error if file doesn't exist
             let item: TodoItem = description.parse().unwrap_or_else(|e| {
@@ -137,6 +293,9 @@ fn main() {
                 std::process::exit(1);
             }
             println!("Added item to '{}'", file_name);
+            if let Some(repo) = repo {
+                repo.commit_and_sync(&format!("rtm: add {description}"));
+            }
         }
         Commands::Complete { arg1, arg2 } => {
             if let Err(e) = lib.load() {
@@ -229,6 +388,19 @@ fn main() {
                 }
             }
 
+            // Resolved above against the file before the pull; the same items are looked up again
+            // after it, so a pull that renumbered items cannot redirect the change.
+            let targets: Vec<TodoItem> = indices_to_complete
+                .iter()
+                .map(|&i| items[i].clone())
+                .collect();
+            pull_and_reload(repo, &mut lib, &file_name);
+            let mut indices_to_complete = Vec::new();
+            for target in &targets {
+                let i = find_again(&lib, target, &indices_to_complete);
+                indices_to_complete.push(i);
+            }
+
             for &i in &indices_to_complete {
                 lib.complete_item(i).unwrap();
             }
@@ -243,6 +415,13 @@ fn main() {
                     indices_to_complete.len(),
                     file_name
                 );
+                let message = match targets.as_slice() {
+                    [one] => format!("rtm: complete {one}"),
+                    many => format!("rtm: complete {} items", many.len()),
+                };
+                if let Some(repo) = repo {
+                    repo.commit_and_sync(&message);
+                }
             } else {
                 println!("No items matched the criteria");
             }
@@ -276,8 +455,12 @@ fn main() {
                 std::process::exit(1);
             };
 
-            // Removed in memory only; the file is written after confirmation.
+            // Resolved against the file before the pull, then looked up again after it.
             let target = items[index].clone();
+            pull_and_reload(repo, &mut lib, &file_name);
+            let index = find_again(&lib, &target, &[]);
+
+            // Removed in memory only; the file is written after confirmation.
             let mut removed = lib.remove_item(index).unwrap();
             // remove_item returns file order, where a sub-item can precede its parent.
             let pos = removed.iter().position(|item| *item == target).unwrap();
@@ -305,6 +488,23 @@ fn main() {
                 std::process::exit(1);
             }
             println!("Deleted {} item(s) from '{}'", removed.len() + 1, file_name);
+            if let Some(repo) = repo {
+                repo.commit_and_sync(&format!("rtm: delete {target}"));
+            }
         }
+        Commands::Sync => match repo {
+            Some(repo) if !repo.remote => println!("'{}' has no remote to sync with", file_name),
+            Some(repo) => {
+                // The pull and push are this command's whole job, so failing them is an error.
+                if !repo.sync() {
+                    std::process::exit(1);
+                }
+                println!("Synced '{}'", file_name);
+            }
+            None => println!(
+                "'{}' is not synced (not in a repository, not tracked, or sync is off)",
+                file_name
+            ),
+        },
     }
 }
