@@ -12,8 +12,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Whether the pull request changes anything but Markdown. Runs on every event and never under an
-  # `if:`: the build jobs need it, and on other events it always reports code.
+  # Whether the pull request changes anything the build and tests read (RTM-82). Runs on every
+  # event and never under an `if:`: the build jobs need it, and on other events it always reports
+  # code.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -33,7 +34,10 @@ jobs:
         # HEAD is the pull request's merge commit, HEAD^1 the base it merges into. --no-renames
         # lists both paths of a rename, so renaming a source file to .md still counts as code.
         files=$(git diff --name-only --no-renames HEAD^1 HEAD)
-        if grep -qv '\.md$' <<< "$files"; then
+        inputs='^(rtmapp|rtmcli|rtmsync|todotxt)/|^(Cargo\.toml|Cargo\.lock|\.github/workflows/rust\.yml)$'
+        # No -q at the end: grep -q exits early, and pipefail would read the first grep's
+        # SIGPIPE as "no code".
+        if grep -E "$inputs" <<< "$files" | grep -v '\.md$' > /dev/null; then
           echo code=true >> "$GITHUB_OUTPUT"
         else
           echo code=false >> "$GITHUB_OUTPUT"
@@ -123,7 +127,8 @@ jobs:
       run: cargo test --verbose
 
   # The check the main ruleset requires (RTM-76): passes when the builds passed, or were skipped
-  # because the pull request changes only Markdown; fails when any of them failed or was cancelled.
+  # because the pull request changes none of their inputs; fails when any of them failed or was
+  # cancelled.
   rust:
     if: always()
     needs: [changes, build]
