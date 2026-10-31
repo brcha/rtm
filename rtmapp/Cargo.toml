@@ -2,7 +2,7 @@
 name = "rtmapp"
 version = "0.1.4"
 edition = "2024"
-description = "Desktop app (egui) for rtm"
+description = "Rusty Todo.txt Manager — desktop app"
 license = "MIT"
 repository = "https://github.com/brcha/rtm"
 

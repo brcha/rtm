@@ -1,4 +1,4 @@
-# Legacy nix-build entry point. For flakes, use flake.nix.
+# The packages, built with nix-build or through flake.nix, which imports them from here.
 # Usage:
 #   nix-build -A rtmcli
 #   nix-build -A rtmapp   # desktop app
@@ -30,11 +30,23 @@ let
     fontconfig
   ];
 
+  # pname, version and meta from a crate's [package], so nothing here can drift from it.
+  fromCargo = crate:
+    let p = (pkgs.lib.importTOML (./. + "/${crate}/Cargo.toml")).package; in {
+      pname = p.name;
+      inherit (p) version;
+      meta = {
+        inherit (p) description;
+        homepage = p.repository;
+        # getLicenseFromSpdxId only warns on an unknown ID.
+        license  = pkgs.lib.getLicenseFromSpdxIdOr p.license
+          (throw "${crate}: unknown SPDX licence ${p.license}");
+      };
+    };
+
 in {
   # ── rtmcli ──────────────────────────────────────────────────────────────────
-  rtmcli = pkgs.rustPlatform.buildRustPackage {
-    pname   = "rtmcli";
-    version = "0.1.0";
+  rtmcli = let crate = fromCargo "rtmcli"; in pkgs.rustPlatform.buildRustPackage (crate // {
     inherit src;
     cargoLock.lockFile = ./Cargo.lock;
     cargoBuildFlags    = [ "-p" "rtmcli" ];
@@ -43,20 +55,16 @@ in {
     nativeCheckInputs  = with pkgs; [ gitMinimal pijul openssh ];
     # Without it the Pijul test skips itself when pijul is missing.
     env.RTM_REQUIRE_PIJUL = "1";
-    meta = with pkgs.lib; {
-      description = "Rusty Todo.txt Manager — CLI";
-      license     = licenses.mit;
-      platforms   = platforms.all;
+    meta = crate.meta // {
+      platforms   = pkgs.lib.platforms.all;
       mainProgram = "rtmcli";
     };
-  };
+  });
 
   # ── rtmapp ──────────────────────────────────────────────────────────────────
   # The egui desktop app. No native build inputs: on Linux every library is loaded at run time, on
   # macOS the system frameworks come from stdenv's Apple SDK.
-  rtmapp = pkgs.rustPlatform.buildRustPackage {
-    pname   = "rtmapp";
-    version = (pkgs.lib.importTOML ./rtmapp/Cargo.toml).package.version;
+  rtmapp = let crate = fromCargo "rtmapp"; in pkgs.rustPlatform.buildRustPackage (crate // {
     inherit src;
     cargoLock.lockFile = ./Cargo.lock;
     cargoBuildFlags    = [ "-p" "rtmapp" ];
@@ -84,11 +92,11 @@ in {
     postFixup = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
       patchelf --add-rpath ${pkgs.lib.makeLibraryPath eguiDeps} $out/bin/rtmapp
     '';
-    meta = with pkgs.lib; {
-      description = "Rusty Todo.txt Manager — desktop app";
-      license     = licenses.mit;
-      platforms   = platforms.linux ++ platforms.darwin;
+    # For the dev shell (shell.nix), which puts them on LD_LIBRARY_PATH.
+    passthru = { inherit eguiDeps; };
+    meta = crate.meta // {
+      platforms   = with pkgs.lib.platforms; linux ++ darwin;
       mainProgram = "rtmapp";
     };
-  };
+  });
 }
