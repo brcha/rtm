@@ -6,7 +6,7 @@ on:
     paths-ignore: [ '**/*.md' ]
   # Pull requests always run it, so the required gate check below always reports.
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "releases/**" ]
 
 env:
   CARGO_TERM_COLOR: always

@@ -97,9 +97,10 @@ one that had them.
   faster "good day" run** — it trades a small, predictable slowdown for an unbounded hang becoming
   a fast, loud failure instead.
 - **Which changes start which build (RTM-76):** Markdown alone (`**/*.md`) starts no build.
-  - The `main` ruleset ("Run tests in the PR") requires the checks `validate` (`pr-title.yml`)
-    and `rust`, `nix` and `release`: one gate job per workflow, which passes when its builds
-    passed or were skipped and fails when any failed or was cancelled.
+  - The ruleset "Run tests in the PR" covers `main` and `releases/**` (RTM-78). It requires the
+    checks `validate` (`pr-title.yml`) and `rust`, `nix` and `release`: one gate job per
+    workflow, which passes when its builds passed or were skipped and fails when any failed or was
+    cancelled.
   - So `rust.yml`, `nix.yml` and `release.yml` run on every pull request, never filtered by
     `paths` on the trigger: a workflow skipped by a path filter never reports its checks, and the
     required check would block the merge. Their `changes` job reads the pull request's diff and
@@ -110,7 +111,10 @@ one that had them.
   - Pushes to `main` start Rust and Nix unless every changed file is Markdown (`paths-ignore`; no
     checks are required there). Release also runs on `v*` tags and by manual dispatch, always
     building.
-  - `pr-title.yml` runs on every pull request against `main` or `releases/**`.
+  - All four workflows run on every pull request against `main` or `releases/**`. The required
+    checks are not enforced when a branch is created (`do_not_enforce_on_create`), so a release
+    branch can be cut by pushing a `main` commit, which has no PR checks. Besides the checks, the
+    ruleset forbids deleting and force-pushing those branches and allows only squash-merged PRs.
 
   A new required check needs the same shape: a gate job that always runs, not a path filter.
 
@@ -141,7 +145,8 @@ one that had them.
   also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul test cannot skip itself. At
   run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
 - **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
-  macOS for pushes to and pull requests against `main` that change more than Markdown (RTM-76).
+  macOS for pushes to `main` and pull requests against `main` or `releases/**` (RTM-78) that change
+  more than Markdown (RTM-76).
   `nix-build` is not run in CI (it takes the caller's `<nixpkgs>`), but the flake builds the same
   definitions from `default.nix` with its pin.
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
@@ -163,10 +168,13 @@ one that had them.
 - **Making a release (RTM-72):** releases are made on demand, when a user-visible change is worth
   shipping, from release branches `releases/vYY.M` cut from `main`. Each release has a YouTrack
   issue "Release X.Y.Z" (Component Packaging) whose key its PRs carry. After the cut, changes
-  reach a release branch only through squash-merged PRs against it. `main` always carries the next
-  release's version.
+  reach a release branch only through squash-merged PRs against it, which need the same checks as
+  on `main` (the ruleset covers both, RTM-78). `main` always carries the next release's version.
   - **Minor release `YY.M.0`:**
-    1. Cut `releases/vYY.M` from `main` (already at `YY.M.0`) and push it.
+    1. Cut `releases/vYY.M` from `main` (already at `YY.M.0`) and push it. The ruleset allows
+       creating it without checks (`do_not_enforce_on_create`). If the push is still rejected
+       (not tried yet; the ruleset has no bypass), remove `refs/heads/releases/**` from the
+       ruleset's branches, push, and put the pattern back; record the outcome here.
     2. On `main`, a PR `build: set version to <next> -- RTM-NN` (`scripts/set-version.sh`, then
        `cargo update --workspace` to refresh `Cargo.lock`): the next minor, `YY.(M+1).0`, or the
        next year's first version (`27.1.0`) when no further minor release is wanted this year.
