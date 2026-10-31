@@ -14,6 +14,7 @@ on:
         default: ''
   # Builds and tests the packages (publishes nothing) when a pull request touches anything that
   # goes into them, so packaging breaks are caught before a tag rather than at release time.
+  # Markdown alone does not start it.
   pull_request:
     branches: [ "main", "releases/**" ]
     paths:
@@ -27,6 +28,7 @@ on:
       - 'scripts/build-appimage.sh'
       - 'scripts/build-macos.sh'
       - '.github/workflows/release.yml'
+      - '!**/*.md'
 
 permissions:
   contents: write
