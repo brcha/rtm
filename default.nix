@@ -1,7 +1,7 @@
 # Legacy nix-build entry point. For flakes, use flake.nix.
 # Usage:
 #   nix-build -A rtmcli
-#   nix-build -A rtmapp   # desktop app (Linux only)
+#   nix-build -A rtmapp   # desktop app
 
 { pkgs ? import <nixpkgs> {} }:
 
@@ -38,7 +38,11 @@ in {
     inherit src;
     cargoLock.lockFile = ./Cargo.lock;
     cargoBuildFlags    = [ "-p" "rtmcli" ];
-    cargoTestFlags     = [ "-p" "rtmcli" "-p" "todotxt" ];
+    cargoTestFlags     = [ "-p" "rtmcli" "-p" "todotxt" "-p" "rtmsync" ];
+    # The sync tests drive git and pijul; pijul signs through a scratch ssh-agent.
+    nativeCheckInputs  = with pkgs; [ gitMinimal pijul openssh ];
+    # Without it the Pijul test skips itself when pijul is missing.
+    env.RTM_REQUIRE_PIJUL = "1";
     meta = with pkgs.lib; {
       description = "Rusty Todo.txt Manager — CLI";
       license     = licenses.mit;
@@ -48,7 +52,8 @@ in {
   };
 
   # ── rtmapp ──────────────────────────────────────────────────────────────────
-  # The egui desktop app. No native build inputs: every library is loaded at run time.
+  # The egui desktop app. No native build inputs: on Linux every library is loaded at run time, on
+  # macOS the system frameworks come from stdenv's Apple SDK.
   rtmapp = pkgs.rustPlatform.buildRustPackage {
     pname   = "rtmapp";
     version = (pkgs.lib.importTOML ./rtmapp/Cargo.toml).package.version;
@@ -56,6 +61,8 @@ in {
     cargoLock.lockFile = ./Cargo.lock;
     cargoBuildFlags    = [ "-p" "rtmapp" ];
     cargoTestFlags     = [ "-p" "rtmapp" ];
+    # The sync tests drive git.
+    nativeCheckInputs  = [ pkgs.gitMinimal ];
     postInstall = ''
       # The embedded Inter fonts' licence (SIL OFL) must ship with every copy.
       install -Dm644 $src/rtmapp/assets/fonts/Inter-LICENSE.txt \
@@ -74,13 +81,13 @@ in {
       install -Dm644 $icons/rtmapp.svg     $hicolor/scalable/apps/rtmapp.svg
     '';
     # After the rpath shrinking in fixupPhase, which would drop these unused-at-link entries.
-    postFixup = ''
+    postFixup = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
       patchelf --add-rpath ${pkgs.lib.makeLibraryPath eguiDeps} $out/bin/rtmapp
     '';
     meta = with pkgs.lib; {
       description = "Rusty Todo.txt Manager — desktop app";
       license     = licenses.mit;
-      platforms   = platforms.linux;
+      platforms   = platforms.linux ++ platforms.darwin;
       mainProgram = "rtmapp";
     };
   };
