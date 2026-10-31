@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use eframe::egui::{
     self, Align, Color32, Frame, Layout, Margin, RichText, Stroke, Ui,
@@ -12,6 +13,10 @@ use crate::list::{self, RowAction};
 use crate::sync::{self, Done, Found, Worker};
 use crate::theme::{self, Palette};
 
+/// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
+/// push, 60 s each at most, and a little more.
+const SAVE_TIMEOUT: Duration = Duration::from_secs(125);
+
 pub struct App {
     config: AppConfig,
     config_path: PathBuf,
@@ -24,6 +29,9 @@ pub struct App {
     editing: Option<EditForm>,
     /// Sync of the open file (RTM-64), when it syncs.
     worker: Option<Worker>,
+    /// Changes applied to `library` but not yet written: the file is written only while the worker
+    /// is idle (RTM-20), and these are redone on the file a pull brings.
+    pending: Vec<Change>,
     /// The sync line in the header: a failed pull or push, or why sync is off.
     sync_status: Option<String>,
     /// The VCSs to choose from when the file's directory belongs to several.
@@ -35,8 +43,6 @@ pub struct App {
     /// A pull changed the edit dialog's item, or what deleting it would remove; Save and Delete
     /// are refused.
     stale: bool,
-    /// Whether the window had the focus at the last frame; gaining it pulls.
-    focused: bool,
     ctx: egui::Context,
 }
 
@@ -64,19 +70,19 @@ impl App {
             new_item: String::new(),
             editing: None,
             worker: None,
+            pending: Vec::new(),
             sync_status: None,
             choose_vcs: None,
             edited: None,
             deleting: None,
             stale: false,
-            focused: true,
             ctx: cc.egui_ctx.clone(),
         };
         app.connect();
         app
     }
 
-    /// Starts sync for the loaded file, if it syncs, and pulls. Stops it for a previous file.
+    /// Starts sync for the loaded file, if it syncs, and syncs once. Stops it for a previous file.
     fn connect(&mut self) {
         self.worker = None;
         self.sync_status = None;
@@ -88,7 +94,7 @@ impl App {
             Found::NoSync => {}
             Found::Repo(repo) => {
                 let mut worker = Worker::start(repo, self.ctx.clone());
-                worker.pull();
+                worker.sync();
                 self.worker = Some(worker);
             }
             Found::Ambiguous(found) => self.choose_vcs = Some(found),
@@ -97,61 +103,123 @@ impl App {
         }
     }
 
-    /// Closes the file: its repository has conflicts, which a reload would read as items.
+    /// Closes the file: its repository has conflicts, which a reload would read as items. Pending
+    /// changes cannot be written into it.
     fn conflicted(&mut self) {
         let file = self.library.take().map(|library| library.file_name);
         self.worker = None;
         self.editing = None;
+        let lost = std::mem::take(&mut self.pending).len();
+        let lost = match lost {
+            0 => String::new(),
+            1 => " One change made during the sync was not saved.".to_owned(),
+            n => format!(" {n} changes made during the sync were not saved."),
+        };
         self.error = Some(format!(
             "The repository holding {} has conflicts or a stopped rebase or merge; resolve them by \
-             hand, then load the file again.",
+             hand, then load the file again.{lost}",
             file.unwrap_or_default()
         ));
-    }
-
-    /// Queues a commit of the saved file, then a sync, when the file syncs.
-    fn commit_and_sync(&mut self, message: String) {
-        if let Some(worker) = &mut self.worker {
-            worker.commit_and_sync(message);
-        }
-    }
-
-    /// Queues a pull, when the file syncs.
-    fn pull(&mut self) {
-        if let Some(worker) = &mut self.worker {
-            worker.pull();
-        }
     }
 
     fn busy(&self) -> bool {
         self.worker.as_ref().is_some_and(Worker::busy)
     }
 
-    /// Applies the worker's finished jobs: status, a reload after a pull that changed the file,
-    /// and closing the file on a conflict.
+    /// Applies `change` to the list at once and writes it when the worker is idle.
+    fn apply(&mut self, change: Change) {
+        let Some(library) = &mut self.library else {
+            return;
+        };
+        if change.redo(library) {
+            self.error = None;
+            self.pending.push(change);
+            self.flush();
+        }
+    }
+
+    /// Writes the pending changes and queues their commit, unless a job is outstanding: it may be
+    /// a pull about to change the file, and the changes are redone on what it brings.
+    fn flush(&mut self) {
+        if self.pending.is_empty() || self.busy() {
+            return;
+        }
+        let Some(library) = &mut self.library else {
+            return;
+        };
+        let changes = std::mem::take(&mut self.pending);
+        // The Tauri app read the file again after a completion; kept.
+        let reread = changes.iter().any(Change::completes);
+        let saved = library
+            .save()
+            .and_then(|()| if reread { library.load() } else { Ok(()) });
+        if let Err(e) = saved {
+            self.error = Some(format!("{}: {e}", library.file_name));
+            return;
+        }
+        if let Some(worker) = &mut self.worker {
+            worker.commit(commit_message(&changes));
+        }
+    }
+
+    /// Applies the worker's finished jobs, then writes the changes that waited for them.
     fn sync_results(&mut self) {
         let Some(worker) = &mut self.worker else {
             return;
         };
         for done in worker.poll() {
-            match done {
-                Done::Synced { changed } => {
-                    self.sync_status = None;
-                    if changed {
-                        self.reload();
-                    }
-                }
-                Done::NotSynced(e) => self.sync_status = Some(format!("Not synced: {e}")),
-                Done::NotCommitted(e) => self.error = Some(format!("Not committed: {e}")),
-                Done::Conflict => {
-                    self.conflicted();
-                    return;
+            self.handle(done);
+        }
+        self.flush();
+    }
+
+    /// One job's result: status, a reload after a pull that changed the file, closing the file on
+    /// a conflict.
+    fn handle(&mut self, done: Done) {
+        match done {
+            Done::Committed => {}
+            Done::Synced { changed } => {
+                self.sync_status = None;
+                if changed {
+                    self.reload();
                 }
             }
+            Done::NotSynced { error, changed } => {
+                self.sync_status = Some(format!("Not synced: {error}"));
+                // A pull that got through before the push failed.
+                if changed {
+                    self.reload();
+                }
+            }
+            Done::NotCommitted(e) => self.error = Some(format!("Not committed: {e}")),
+            Done::Conflict if self.library.is_some() => self.conflicted(),
+            Done::Conflict => {}
         }
     }
 
-    /// Reads the file again after a pull changed it, and finds the edit dialog's item in it.
+    /// Handles the outstanding jobs' results until none is left or `deadline` passes, writing the
+    /// changes that waited for them. A job that changes are still waiting behind gets as long as a
+    /// sync's network timeout, and so does a commit: those changes are not in the file yet.
+    fn finish_jobs(&mut self, deadline: Instant) {
+        while let Some(worker) = &mut self.worker
+            && worker.busy()
+        {
+            let saving = !self.pending.is_empty() || !worker.syncing();
+            let until = if saving {
+                deadline.max(Instant::now() + SAVE_TIMEOUT)
+            } else {
+                deadline
+            };
+            let Some(done) = worker.next(until.saturating_duration_since(Instant::now())) else {
+                return;
+            };
+            self.handle(done);
+            self.flush();
+        }
+    }
+
+    /// Reads the file again after a pull changed it, redoes the pending changes on it, and finds
+    /// the edit dialog's item in the result.
     fn reload(&mut self) {
         let Some(library) = &mut self.library else {
             return;
@@ -159,6 +227,21 @@ impl App {
         if let Err(e) = library.load() {
             self.error = Some(format!("{}: {e}", library.file_name));
             return;
+        }
+        let mut dropped = Vec::new();
+        self.pending.retain(|change| {
+            let redone = change.redo(library);
+            if !redone {
+                dropped.push(change.describe());
+            }
+            redone
+        });
+        if !dropped.is_empty() {
+            self.error = Some(format!(
+                "A sync changed or removed the item of a change made meanwhile, which was not \
+                 applied: {}",
+                dropped.join("; ")
+            ));
         }
         let (Some(form), Some(original)) = (&mut self.editing, &self.edited) else {
             return;
@@ -176,7 +259,7 @@ impl App {
         }
     }
 
-    /// Opens the edit dialog on the item at `index`, and pulls so the dialog works on fresh data.
+    /// Opens the edit dialog on the item at `index`.
     fn open_editor(&mut self, index: usize) {
         let Some(item) = self.library.as_ref().and_then(|l| l.items.get(index)) else {
             return;
@@ -185,7 +268,6 @@ impl App {
         self.edited = Some(item.clone());
         self.deleting = None;
         self.stale = false;
-        self.pull();
     }
 
     /// Refuses Save or Delete when a pull changed the dialog's item; true when refused.
@@ -343,69 +425,31 @@ impl App {
         });
     }
 
-    /// Completes or uncompletes the item at file index `index` and saves at once, as the Tauri app
-    /// did, including its re-read of the file after a successful completion.
+    /// Completes or uncompletes the item at file index `index`, as the Tauri app did.
     fn toggle(&mut self, index: usize) {
-        // A sync may be writing the file; the widgets are disabled too, but this is the guarantee.
-        if self.busy() {
-            return;
-        }
-        let Some(library) = &mut self.library else {
-            return;
-        };
-        let Some(item) = library.items.get(index) else {
-            return;
-        };
-        let message = format!(
-            "rtm: {} {item}",
-            if item.done { "uncomplete" } else { "complete" }
-        );
-        let result = if item.done {
-            library.uncomplete_item(index);
-            library.save()
-        } else {
-            // Appends the next occurrence of a recurring item.
-            library.complete_item(index);
-            library.save().and_then(|()| library.load())
-        };
-        self.error = result.err().map(|e| format!("{}: {e}", library.file_name));
-        if self.error.is_none() {
-            self.commit_and_sync(message);
+        let item = self.library.as_ref().and_then(|l| l.items.get(index));
+        if let Some(item) = item.cloned() {
+            self.apply(Change::Toggle(item));
         }
     }
 
-    /// Parses the quick-add text, appends the item and saves at once, as the Tauri app did. The
-    /// input is cleared only when the item was saved; blank input does nothing.
+    /// Parses the quick-add text and appends the item, as the Tauri app did. The input is cleared
+    /// only when the item was added; blank input does nothing.
     fn add_item(&mut self) {
-        // A sync may be writing the file; the widgets are disabled too, but this is the guarantee.
-        if self.busy() {
-            return;
-        }
         let text = self.new_item.trim();
         if text.is_empty() {
             return;
         }
-        let Some(library) = &mut self.library else {
+        if self.library.is_none() {
             self.error = Some("Please load a file first".to_owned());
             return;
-        };
-        let message = format!("rtm: add {text}");
-        let item = match text.parse::<TodoItem>() {
-            Ok(item) => item,
-            Err(e) => {
-                self.error = Some(format!("Could not parse the item: {e}"));
-                return;
-            }
-        };
-        // Sets the creation date.
-        library.add_item(item);
-        match library.save() {
-            Ok(()) => {
-                self.error = None;
+        }
+        match text.parse::<TodoItem>() {
+            Ok(item) => {
+                self.apply(Change::Add(item));
                 self.new_item.clear();
-                self.commit_and_sync(message);
             }
-            Err(e) => self.error = Some(format!("{}: {e}", library.file_name)),
+            Err(e) => self.error = Some(format!("Could not parse the item: {e}")),
         }
     }
 
@@ -438,47 +482,33 @@ impl App {
         }
     }
 
-    /// Applies the edit dialog to its item and saves at once, as the Tauri app's `update_item` did.
-    /// An invalid field keeps the dialog open with the reason; nothing is written.
+    /// Applies the edit dialog to its item, as the Tauri app's `update_item` did. An invalid field
+    /// keeps the dialog open with the reason; nothing changes.
     fn save_edit(&mut self) {
-        // A sync may be writing the file; the widgets are disabled too, but this is the guarantee.
-        if self.busy() {
-            return;
-        }
         if self.refuse_stale() {
             return;
         }
-        let (Some(form), Some(library)) = (&mut self.editing, &mut self.library) else {
+        let (Some(form), Some(library)) = (&mut self.editing, &self.library) else {
             self.editing = None;
             return;
         };
-        let Some(item) = library.items.get_mut(form.index) else {
+        let Some(original) = library.items.get(form.index).cloned() else {
             self.editing = None;
             return;
         };
-        if let Err(e) = form.apply(item) {
+        let mut edited = original.clone();
+        if let Err(e) = form.apply(&mut edited) {
             form.error = Some(e);
             return;
         }
-        self.error = library
-            .save()
-            .err()
-            .map(|e| format!("{}: {e}", library.file_name));
         self.editing = None;
-        if self.error.is_none()
-            && let Some(original) = self.edited.take()
-        {
-            self.commit_and_sync(format!("rtm: edit {original}"));
-        }
+        self.edited = None;
+        self.apply(Change::Edit { original, edited });
     }
 
     /// Shows the delete confirmation with the number of sub-items the delete would take, counted by
     /// removing from a copy so it is exactly what `delete_item` will remove.
     fn ask_delete(&mut self) {
-        // A sync may be writing the file; the widgets are disabled too, but this is the guarantee.
-        if self.busy() {
-            return;
-        }
         let (Some(form), Some(library)) = (&mut self.editing, &self.library) else {
             self.editing = None;
             return;
@@ -487,37 +517,26 @@ impl App {
             Some(removed) => {
                 form.confirm_delete = Some(removed.len() - 1);
                 self.deleting = Some(removed);
-                self.pull();
             }
             None => self.editing = None,
         }
     }
 
-    /// Deletes the edited item and its sub-items and saves at once, like the other mutations.
+    /// Deletes the edited item and its sub-items, like the other mutations.
     fn delete_item(&mut self) {
-        // A sync may be writing the file; the widgets are disabled too, but this is the guarantee.
-        if self.busy() {
-            return;
-        }
         if self.refuse_stale() {
             return;
         }
-        let (Some(form), Some(library)) = (&self.editing, &mut self.library) else {
-            self.editing = None;
+        let (Some(form), Some(library)) = (self.editing.take(), &self.library) else {
             return;
         };
-        if library.remove_item(form.index).is_some() {
-            self.error = library
-                .save()
-                .err()
-                .map(|e| format!("{}: {e}", library.file_name));
-            if self.error.is_none()
-                && let Some(original) = self.edited.take()
-            {
-                self.commit_and_sync(format!("rtm: delete {original}"));
-            }
+        self.edited = None;
+        let Some(original) = library.items.get(form.index).cloned() else {
+            return;
+        };
+        if let Some(removing) = library.clone().remove_item(form.index) {
+            self.apply(Change::Delete { original, removing });
         }
-        self.editing = None;
     }
 
     /// The error line, the add row and the list. Returns what was clicked in the list.
@@ -526,59 +545,55 @@ impl App {
             ui.label(RichText::new(error).color(p.due));
             ui.add_space(8.0);
         }
-        // No change may start while a sync runs: it could write the file under git.
-        let busy = self.busy();
-        ui.add_enabled_ui(!busy, |ui| self.add_row(ui, p));
-        ui.add_enabled_ui(!busy, |ui| {
-            Frame::new()
-                .fill(p.panel)
-                .stroke(Stroke::new(1.0, p.border))
-                .corner_radius(6.0)
-                .show(ui, |ui| {
-                    // The list box fills the content area, as in the web app.
-                    ui.set_min_size(ui.available_size());
-                    let Some(library) = &self.library else {
-                        empty_state(
-                            ui,
-                            p,
-                            "No file loaded. Use 'Load File' to select a todo.txt file.",
-                        );
-                        return None;
-                    };
-                    let today = chrono::Local::now().date_naive();
-                    let visible = list::visible(&library.items, &self.config, today);
-                    if visible.is_empty() {
-                        // Also when every item is filtered out, as in the Tauri app.
-                        empty_state(ui, p, "No items found.");
-                        None
-                    } else {
-                        list::show(ui, p, &library.items, &visible)
-                    }
-                })
-                .inner
-        })
-        .inner
+        self.add_row(ui, p);
+        Frame::new()
+            .fill(p.panel)
+            .stroke(Stroke::new(1.0, p.border))
+            .corner_radius(6.0)
+            .show(ui, |ui| {
+                // The list box fills the content area, as in the web app.
+                ui.set_min_size(ui.available_size());
+                let Some(library) = &self.library else {
+                    empty_state(
+                        ui,
+                        p,
+                        "No file loaded. Use 'Load File' to select a todo.txt file.",
+                    );
+                    return None;
+                };
+                let today = chrono::Local::now().date_naive();
+                let visible = list::visible(&library.items, &self.config, today);
+                if visible.is_empty() {
+                    // Also when every item is filtered out, as in the Tauri app.
+                    empty_state(ui, p, "No items found.");
+                    None
+                } else {
+                    list::show(ui, p, &library.items, &visible)
+                }
+            })
+            .inner
     }
 }
 
 impl eframe::App for App {
-    /// A change saved just before closing is still committed: queued jobs get a few seconds.
+    /// Writes and commits the pending changes and syncs once more, within a few seconds.
     fn on_exit(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        self.finish_jobs(deadline);
         if let Some(worker) = &mut self.worker {
-            worker.finish(std::time::Duration::from_secs(5));
+            worker.sync();
         }
+        self.finish_jobs(deadline);
+    }
+
+    /// Runs before each `ui`, and also while the window is hidden (when a repaint was requested).
+    fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.sync_results();
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let p = theme::palette(ui);
-        self.sync_results();
-        // Coming back to the window pulls, so changes start from fresh data.
-        let focused = ui.ctx().input(|i| i.viewport().focused.unwrap_or(true));
-        if focused && !self.focused {
-            self.pull();
-        }
-        self.focused = focused;
-        let status = if self.busy() {
+        let status = if self.worker.as_ref().is_some_and(Worker::syncing) {
             Some("Syncing…".to_owned())
         } else {
             self.sync_status.clone()
@@ -611,15 +626,96 @@ impl eframe::App for App {
             None => {}
         }
         self.vcs_question(&ui.ctx().clone(), p);
-        let busy = self.busy();
         if let Some(form) = &mut self.editing {
-            match edit::show(ui.ctx(), p, form, busy) {
+            match edit::show(ui.ctx(), p, form) {
                 Some(Outcome::Save) => self.save_edit(),
                 Some(Outcome::Cancel) => self.editing = None,
                 Some(Outcome::AskDelete) => self.ask_delete(),
                 Some(Outcome::Delete) => self.delete_item(),
                 None => {}
             }
+        }
+    }
+}
+
+/// A change to the list, kept until it is written, so it can be redone on the file a pull brought.
+/// Items are found by equality, so a change whose item the pull changed or removed is not redone.
+#[derive(Clone)]
+enum Change {
+    Add(TodoItem),
+    /// Completes the item, or uncompletes it when it is done.
+    Toggle(TodoItem),
+    Edit {
+        original: TodoItem,
+        edited: TodoItem,
+    },
+    /// `removing`: the item and its sub-items, as the confirmation counted them.
+    Delete {
+        original: TodoItem,
+        removing: Vec<TodoItem>,
+    },
+}
+
+impl Change {
+    /// Applies the change to `library`; false when its item is not there as it was.
+    fn redo(&self, library: &mut TodoLibrary) -> bool {
+        let find = |library: &TodoLibrary, item| library.items.iter().position(|i| i == item);
+        match self {
+            // Sets the creation date when the item has none.
+            Change::Add(item) => library.add_item(item.clone()),
+            Change::Toggle(item) => {
+                let Some(index) = find(library, item) else {
+                    return false;
+                };
+                if item.done {
+                    library.uncomplete_item(index);
+                } else {
+                    // Appends the next occurrence of a recurring item.
+                    library.complete_item(index);
+                }
+            }
+            Change::Edit { original, edited } => {
+                let Some(index) = find(library, original) else {
+                    return false;
+                };
+                library.items[index] = edited.clone();
+            }
+            Change::Delete { original, removing } => {
+                let Some(index) = find(library, original) else {
+                    return false;
+                };
+                if library.clone().remove_item(index).as_ref() != Some(removing) {
+                    return false;
+                }
+                library.remove_item(index);
+            }
+        }
+        true
+    }
+
+    fn completes(&self) -> bool {
+        matches!(self, Change::Toggle(item) if !item.done)
+    }
+
+    /// The commit message, as rtmcli words it.
+    fn describe(&self) -> String {
+        match self {
+            Change::Add(item) => format!("rtm: add {item}"),
+            Change::Toggle(item) if item.done => format!("rtm: uncomplete {item}"),
+            Change::Toggle(item) => format!("rtm: complete {item}"),
+            Change::Edit { original, .. } => format!("rtm: edit {original}"),
+            Change::Delete { original, .. } => format!("rtm: delete {original}"),
+        }
+    }
+}
+
+/// One change's own message, or a count with one line per change.
+fn commit_message(changes: &[Change]) -> String {
+    match changes {
+        [change] => change.describe(),
+        changes => {
+            let lines: Vec<_> = changes.iter().map(Change::describe).collect();
+            format!("rtm: {} changes\n\n{}", changes.len(), lines.join("\n"))
         }
     }
 }
@@ -735,12 +831,12 @@ mod tests {
             new_item: String::new(),
             editing: None,
             worker: None,
+            pending: Vec::new(),
             sync_status: None,
             choose_vcs: None,
             edited: None,
             deleting: None,
             stale: false,
-            focused: true,
             ctx: egui::Context::default(),
         }
     }
@@ -946,7 +1042,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    // Sync (RTM-64): scratch git remotes and clones on local paths, no network.
+    // Sync (RTM-64, RTM-20): scratch git remotes and clones on local paths, no network.
 
     fn git(dir: &Path, args: &[&str]) -> String {
         let output = std::process::Command::new("git")
@@ -1019,6 +1115,15 @@ mod tests {
         app
     }
 
+    /// Queues a sync, as the timer or Sync now does.
+    fn sync(app: &mut App) {
+        app.worker.as_mut().unwrap().sync();
+    }
+
+    fn subjects(repo: &Path, count: usize) -> String {
+        git(repo, &["log", &format!("-{count}"), "--format=%s"])
+    }
+
     fn descriptions(app: &App) -> Vec<String> {
         let library = app.library.as_ref().unwrap();
         library
@@ -1029,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_pulls_and_a_change_is_committed_and_pushed() {
+    fn opening_syncs_and_a_change_is_committed_at_once_and_pushed_by_the_next_sync() {
         let dir = remote_and_clones("sync push", "Alpha\n");
         push_from_b(&dir, "Alpha\nFrom b\n");
         let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
@@ -1037,11 +1142,126 @@ mod tests {
 
         app.new_item = "Call mom".to_owned();
         app.add_item();
-        wait(&mut app);
-        assert_eq!(
-            git(&dir.join("remote"), &["log", "-1", "--format=%s"]),
-            "rtm: add Call mom"
+        // Saved in the same frame, committed by the worker, not pushed.
+        assert!(
+            file_lines(&dir.join("a"))
+                .iter()
+                .any(|l| l.ends_with("Call mom"))
         );
+        wait(&mut app);
+        assert_eq!(subjects(&dir.join("a"), 1), "rtm: add Call mom");
+        assert_eq!(subjects(&dir.join("remote"), 1), "from b");
+
+        sync(&mut app);
+        wait(&mut app);
+        assert_eq!(subjects(&dir.join("remote"), 1), "rtm: add Call mom");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_change_made_while_a_job_runs_shows_at_once_and_is_written_after_it() {
+        let dir = remote_and_clones("sync busy", "Alpha\n");
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        sync(&mut app);
+        // Outstanding until its result is picked up, however fast the job itself is.
+        app.toggle(0);
+        app.new_item = "Call mom".to_owned();
+        app.add_item();
+        assert_eq!(descriptions(&app), ["Alpha", "Call mom"]);
+        assert!(app.library.as_ref().unwrap().items[0].done);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a/todo.txt")).unwrap(),
+            "Alpha\n"
+        );
+        wait(&mut app);
+        let lines = file_lines(&dir.join("a"));
+        assert!(
+            lines[0].starts_with("x ") && lines[1].ends_with("Call mom"),
+            "{lines:?}"
+        );
+        assert_eq!(
+            git(&dir.join("a"), &["log", "-1", "--format=%B"]),
+            "rtm: 2 changes\n\nrtm: complete Alpha\nrtm: add Call mom"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_pending_change_is_redone_on_what_the_pull_brought() {
+        let dir = remote_and_clones("sync replay", "Alpha\nBravo\n");
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        push_from_b(&dir, "First\nAlpha\nBravo\n");
+        sync(&mut app);
+        app.toggle(1);
+        wait(&mut app);
+        assert_eq!(descriptions(&app), ["First", "Alpha", "Bravo"]);
+        let lines = file_lines(&dir.join("a"));
+        assert!(
+            lines[2].starts_with("x ") && lines[2].ends_with("Bravo"),
+            "{lines:?}"
+        );
+        assert_eq!(subjects(&dir.join("a"), 1), "rtm: complete Bravo");
+        assert_eq!(app.error, None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_pending_change_whose_item_the_pull_changed_is_dropped_with_a_note() {
+        let dir = remote_and_clones("sync dropped", "Alpha\nBravo\n");
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        push_from_b(&dir, "Alpha\nBravo, renamed\n");
+        sync(&mut app);
+        app.toggle(1);
+        wait(&mut app);
+        assert_eq!(descriptions(&app), ["Alpha", "Bravo, renamed"]);
+        assert!(!app.library.as_ref().unwrap().items[1].done);
+        assert!(
+            app.error
+                .as_deref()
+                .unwrap()
+                .contains("rtm: complete Bravo")
+        );
+        assert_eq!(subjects(&dir.join("a"), 1), "from b");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_pull_whose_push_fails_is_still_taken_in() {
+        let dir = remote_and_clones("sync push fails", "Alpha\nBravo\nCharlie\n");
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        let missing = dir.join("missing");
+        git(
+            &dir.join("a"),
+            &[
+                "remote",
+                "set-url",
+                "--push",
+                "origin",
+                missing.to_str().unwrap(),
+            ],
+        );
+        push_from_b(&dir, "From b\nAlpha\nBravo\nCharlie\n");
+        app.new_item = "Call mom".to_owned();
+        app.add_item();
+        wait(&mut app);
+        sync(&mut app);
+        wait(&mut app);
+        assert!(
+            app.sync_status
+                .as_deref()
+                .is_some_and(|s| s.starts_with("Not synced")),
+            "{:?}",
+            app.sync_status
+        );
+        assert_eq!(
+            descriptions(&app),
+            ["From b", "Alpha", "Bravo", "Charlie", "Call mom"]
+        );
+
+        app.new_item = "Again".to_owned();
+        app.add_item();
+        wait(&mut app);
+        assert_eq!(file_lines(&dir.join("a"))[0], "From b");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1050,20 +1270,16 @@ mod tests {
         let dir = remote_and_clones("sync stale", "Alpha\nBravo\n");
         let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
         open_editor(&mut app, 1).description = "Bravo, edited here".to_owned();
-        wait(&mut app);
 
         push_from_b(&dir, "Alpha\nBravo, edited there\n");
-        app.pull();
+        sync(&mut app);
         wait(&mut app);
         app.save_edit();
 
         let form = app.editing.as_ref().expect("the dialog stays open");
         assert!(form.error.as_deref().unwrap().contains("changed"));
         assert_eq!(descriptions(&app), ["Alpha", "Bravo, edited there"]);
-        assert_eq!(
-            git(&dir.join("remote"), &["log", "-1", "--format=%s"]),
-            "from b"
-        );
+        assert_eq!(subjects(&dir.join("a"), 1), "from b");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1072,40 +1288,48 @@ mod tests {
         let dir = remote_and_clones("sync renumber", "Alpha\nBravo\n");
         let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
         open_editor(&mut app, 1).description = "Bravo, edited".to_owned();
-        wait(&mut app);
 
         push_from_b(&dir, "First\nAlpha\nBravo\n");
-        app.pull();
+        sync(&mut app);
         wait(&mut app);
         app.save_edit();
         wait(&mut app);
 
         assert!(app.editing.is_none());
         assert_eq!(descriptions(&app), ["First", "Alpha", "Bravo, edited"]);
-        assert_eq!(
-            git(&dir.join("remote"), &["log", "-1", "--format=%s"]),
-            "rtm: edit Bravo"
-        );
+        assert_eq!(subjects(&dir.join("a"), 1), "rtm: edit Bravo");
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn no_change_is_written_while_a_sync_runs() {
-        let dir = remote_and_clones("sync busy", "Alpha\n");
+    fn exit_commits_and_pushes() {
+        let dir = remote_and_clones("sync exit", "Alpha\n");
         let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
-        app.pull();
-        // Busy until the result is picked up, however fast the job itself is.
-        app.toggle(0);
         app.new_item = "Call mom".to_owned();
         app.add_item();
+        eframe::App::on_exit(&mut app);
+        assert!(!app.busy());
+        assert_eq!(subjects(&dir.join("remote"), 1), "rtm: add Call mom");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn exit_during_a_pull_redoes_pending_changes_on_it() {
+        let dir = remote_and_clones("sync exit pull", "Alpha\n");
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        push_from_b(&dir, "Alpha\nFrom b\n");
+        sync(&mut app);
+        app.new_item = "Call mom".to_owned();
+        app.add_item();
+        eframe::App::on_exit(&mut app);
+        assert!(!app.busy());
+        let lines = file_lines(&dir.join("a"));
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert_eq!(lines[1], "From b");
         assert_eq!(
-            std::fs::read_to_string(dir.join("a/todo.txt")).unwrap(),
-            "Alpha\n"
+            subjects(&dir.join("remote"), 2),
+            "rtm: add Call mom\nfrom b"
         );
-        wait(&mut app);
-        app.toggle(0);
-        wait(&mut app);
-        assert!(descriptions(&app) == ["Alpha"] && app.library.as_ref().unwrap().items[0].done);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1115,19 +1339,18 @@ mod tests {
         let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
         // b changes the line before the app has pulled; the app then changes it too.
         push_from_b(&dir, "Alpha from b\n");
-        let library = app.library.as_mut().unwrap();
-        library.items[0].description = "Alpha from a".to_owned();
-        library.save().unwrap();
-        app.commit_and_sync("rtm: edit Alpha".to_owned());
+        open_editor(&mut app, 0).description = "Alpha from a".to_owned();
+        app.save_edit();
+        wait(&mut app);
+        sync(&mut app);
+        app.new_item = "Lost".to_owned();
+        app.add_item();
         wait(&mut app);
 
         assert!(app.library.is_none());
-        assert!(
-            app.error
-                .as_deref()
-                .unwrap()
-                .contains("resolve them by hand")
-        );
+        let error = app.error.as_deref().unwrap();
+        assert!(error.contains("resolve them by hand"), "{error}");
+        assert!(error.contains("One change"), "{error}");
         assert!(app.worker.is_none());
         let _ = std::fs::remove_dir_all(dir);
     }

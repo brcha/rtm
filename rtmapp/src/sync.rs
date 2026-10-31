@@ -1,12 +1,12 @@
 //! Sync of the open todo.txt through its Git or Pijul repository (RTM-64), with the same rules as
 //! rtmcli: only a tracked file syncs, a conflicted repository is not opened, a repository without a
-//! remote is committed to without pulling or pushing. Every git or pijul call runs on one worker
-//! thread, so calls never overlap each other; the app disables changes while the worker is busy,
-//! so they never overlap a save either.
+//! remote is committed to without pulling or pushing. Every git or pijul call after opening runs on
+//! one worker thread, so calls never overlap each other; the app writes the file only while the
+//! worker is idle (RTM-20), so they never overlap a save either.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use eframe::egui;
 use rtmsync::Vcs;
@@ -75,16 +75,23 @@ pub fn find(file: &Path, config: &AppConfig) -> Found {
 }
 
 enum Job {
-    Pull,
-    CommitAndSync(String),
+    Commit(String),
+    Sync,
 }
 
 /// The result of one job.
 pub enum Done {
-    /// Synced (or committed without a remote). `changed`: the file differs from before the job.
-    Synced { changed: bool },
-    /// The pull or push failed (offline, timeout, rejected push); the change is committed.
-    NotSynced(String),
+    Committed,
+    /// Synced (nothing to do without a remote). `changed`: the file differs from before the job.
+    Synced {
+        changed: bool,
+    },
+    /// The pull or push failed (offline, timeout, rejected push); local commits wait for the next.
+    /// `changed`: the pull got through and changed the file before the push failed.
+    NotSynced {
+        error: String,
+        changed: bool,
+    },
     /// The repository now has conflicts to resolve by hand.
     Conflict,
     /// The commit failed; the file is saved.
@@ -95,10 +102,11 @@ pub enum Done {
 pub struct Worker {
     jobs: Sender<Job>,
     results: Receiver<(bool, Done)>,
-    /// Jobs sent and not yet reported back.
+    /// Jobs sent and not yet reported back through `poll` or `next`: a finished job whose result
+    /// was not handled still counts, so the app never writes the file over an unhandled pull.
     pending: usize,
-    pulls_pending: usize,
-    /// Whether the repository has a remote; without one there is nothing to pull.
+    syncs_pending: usize,
+    /// Whether the repository has a remote; without one there is nothing to sync.
     remote: bool,
 }
 
@@ -111,22 +119,15 @@ impl Worker {
         let remote = repo.remote;
         std::thread::spawn(move || {
             for job in job_rx {
-                let before = std::fs::read(&repo.file).ok();
-                let pull = matches!(job, Job::Pull);
+                let sync = matches!(job, Job::Sync);
                 let done = match job {
-                    Job::Pull => repo.sync(),
-                    Job::CommitAndSync(message) => match repo.vcs.commit(&repo.file, &message) {
-                        Ok(()) => repo.sync(),
+                    Job::Commit(message) => match repo.vcs.commit(&repo.file, &message) {
+                        Ok(()) => Done::Committed,
                         Err(e) => Done::NotCommitted(e.to_string()),
                     },
+                    Job::Sync => repo.sync(),
                 };
-                let done = match done {
-                    Done::Synced { .. } => Done::Synced {
-                        changed: std::fs::read(&repo.file).ok() != before,
-                    },
-                    other => other,
-                };
-                if result_tx.send((pull, done)).is_err() {
+                if result_tx.send((sync, done)).is_err() {
                     break;
                 }
                 ctx.request_repaint();
@@ -136,23 +137,23 @@ impl Worker {
             jobs,
             results,
             pending: 0,
-            pulls_pending: 0,
+            syncs_pending: 0,
             remote,
         }
     }
 
-    /// Queues a pull, unless one is already waiting or there is no remote.
-    pub fn pull(&mut self) {
-        if self.remote && self.pulls_pending == 0 && self.jobs.send(Job::Pull).is_ok() {
+    /// Queues a commit of the saved file with `message`. Local only: the next sync pushes it.
+    pub fn commit(&mut self, message: String) {
+        if self.jobs.send(Job::Commit(message)).is_ok() {
             self.pending += 1;
-            self.pulls_pending += 1;
         }
     }
 
-    /// Queues a commit of the saved file with `message`, then a sync.
-    pub fn commit_and_sync(&mut self, message: String) {
-        if self.jobs.send(Job::CommitAndSync(message)).is_ok() {
+    /// Queues a pull and push, unless one is already waiting or there is no remote.
+    pub fn sync(&mut self) {
+        if self.remote && self.syncs_pending == 0 && self.jobs.send(Job::Sync).is_ok() {
             self.pending += 1;
+            self.syncs_pending += 1;
         }
     }
 
@@ -160,35 +161,31 @@ impl Worker {
         self.pending > 0
     }
 
+    pub fn syncing(&self) -> bool {
+        self.syncs_pending > 0
+    }
+
     /// The results of the jobs finished since the last call.
     pub fn poll(&mut self) -> Vec<Done> {
         let mut done = Vec::new();
-        while let Ok((pull, result)) = self.results.try_recv() {
-            self.pending -= 1;
-            if pull {
-                self.pulls_pending -= 1;
-            }
-            done.push(result);
+        while let Ok(result) = self.results.try_recv() {
+            done.push(self.received(result));
         }
         done
     }
 
-    /// Waits, at most `within`, for the queued jobs to finish, so a change saved just before the
-    /// window closes is still committed.
-    pub fn finish(&mut self, within: Duration) {
-        let deadline = Instant::now() + within;
-        while self.busy() {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.results.recv_timeout(left) {
-                Ok((pull, _)) => {
-                    self.pending -= 1;
-                    if pull {
-                        self.pulls_pending -= 1;
-                    }
-                }
-                Err(_) => break,
-            }
+    /// The next result, waiting at most `within` for it.
+    pub fn next(&mut self, within: Duration) -> Option<Done> {
+        let result = self.results.recv_timeout(within).ok()?;
+        Some(self.received(result))
+    }
+
+    fn received(&mut self, (sync, done): (bool, Done)) -> Done {
+        self.pending -= 1;
+        if sync {
+            self.syncs_pending -= 1;
         }
+        done
     }
 }
 
@@ -198,10 +195,16 @@ impl Repo {
         if !self.remote {
             return Done::Synced { changed: false };
         }
-        match self.vcs.sync(&self.file) {
-            Ok(()) => Done::Synced { changed: false },
+        let before = std::fs::read(&self.file).ok();
+        let result = self.vcs.sync(&self.file);
+        let changed = std::fs::read(&self.file).ok() != before;
+        match result {
+            Ok(()) => Done::Synced { changed },
             Err(rtmsync::Error::Conflict) => Done::Conflict,
-            Err(e) => Done::NotSynced(e.to_string()),
+            Err(e) => Done::NotSynced {
+                error: e.to_string(),
+                changed,
+            },
         }
     }
 }
