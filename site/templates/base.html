@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ config.title }}{% endblock %}</title>
-  <meta name="description" content="{{ config.description }}">
+  <meta name="description" content="{% block description %}{{ config.description }}{% endblock %}">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="{{ get_url(path='rtmapp-small.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ get_url(path='style.css') }}">
@@ -16,7 +16,8 @@
       <span>rtm</span>
     </a>
     <nav>
-      <a href="#download">Download</a>
+      <a href="{{ get_url(path='@/install.md') }}">Install</a>
+      <a href="{{ get_url(path='/') }}#download">Download</a>
       <a href="https://github.com/brcha/rtm">GitHub</a>
     </nav>
   </header>

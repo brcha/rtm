@@ -14,10 +14,13 @@ with [Zola](https://www.getzola.org). No server-side features. Design and decisi
 ```
 site/
 ├── config.toml           ← base URL, title, description
-├── content/_index.md     ← the page's text: tagline (front matter), intro and features (Markdown)
+├── content/
+│   ├── _index.md         ← the landing page's text: tagline (front matter), intro and features
+│   └── install.md        ← the install guide, a copy of README.md's "Installing" section
 ├── templates/
-│   ├── base.html         ← skeleton: head, header, footer
-│   └── index.html        ← the landing page: hero, screenshots, features, downloads
+│   ├── base.html         ← skeleton: head, header (Install, Download, GitHub), footer
+│   ├── index.html        ← the landing page: hero, screenshots, features, downloads
+│   └── page.html         ← plain pages (the install guide)
 └── static/style.css      ← the only stylesheet; light and dark through prefers-color-scheme
 ```
 
@@ -56,10 +59,16 @@ required check (RTM-89, see [CI](../doc/ci.md)).
 - Text in `content/_index.md`, layout in the templates; no third-party theme.
 - Advertise only features that exist in the code (subtasks, for example, exist only in the data
   model and are not listed).
-- The install guide is copied from `README.md` ("Installing") into the site, not only linked;
-  keep the two in step when either changes. Release changes appear in each release's post
-  (`content/news/X.Y.Z.md`, its `CHANGELOG.md` section); the landing page links to the GitHub
-  releases.
+- The install guide is copied from `README.md` ("Installing") into `content/install.md`, not only
+  linked (RTM-93); keep the two in step when either changes. The copy is the section's body with
+  its `###` headings raised to `##`; to compare, from the repository root (no output means equal):
+
+  ```sh
+  diff <(sed -n '/^## Installing/,/^## Syncing/p' README.md | sed '1,4d;$d' | sed '$d' | sed 's/^###/##/') \
+       <(sed '1,/^<!--/d' site/content/install.md | sed '1d')
+  ```
+- Release changes appear in each release's post (`content/news/X.Y.Z.md`, its `CHANGELOG.md`
+  section); the landing page links to the GitHub releases.
 - No JavaScript. The download links are updated by hand in each release's website PR, a step of
   the release process ("Website post" in [Release Process](../doc/release-process.md), RTM-91).
   Until the first CalVer release they point at the releases page.

@@ -52,7 +52,7 @@ code {
 
 img { max-width: 100%; height: auto; }
 
-main > section {
+main > section, main > article {
   max-width: 1040px;
   margin: 0 auto;
   padding: 3rem 1rem;
@@ -139,6 +139,28 @@ main > section {
 .features { max-width: 760px; }
 .features ul { padding-left: 1.25rem; }
 .features li { margin-bottom: 0.6rem; }
+
+/* Pages (the install guide) */
+
+.page { max-width: 760px; }
+.page h1 { font-size: clamp(1.8rem, 5vw, 2.4rem); line-height: 1.2; margin: 0 0 1.5rem; }
+.page h2 { margin: 2.5rem 0 0.75rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
+.page li { margin-bottom: 0.4rem; }
+.page pre {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+}
+.page pre code { background: none; padding: 0; }
+.page blockquote {
+  margin: 1rem 0;
+  padding: 0.5rem 1rem;
+  border-left: 4px solid var(--accent);
+  background: var(--bg-alt);
+  color: var(--muted);
+}
 
 /* Download */
 
