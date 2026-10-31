@@ -316,9 +316,10 @@ The binary links no native libraries beyond glibc; it loads Wayland, xkbcommon, 
 fontconfig with `dlopen`. The dev shell puts them on `LD_LIBRARY_PATH`, and the Nix package on the
 binary's rpath (`eguiDeps` in `default.nix`, see the root `AGENTS.md`).
 
-What it needs at run time (RTM-38); the deb's `depends` and `suggests` in `Cargo.toml` follow this. The
-Wayland entries were found by starting it on Wayland with reduced `LD_LIBRARY_PATH` sets and checking
-that it draws; the X11 list is what a full run under XWayland loaded, not reduced further:
+What it needs at run time (RTM-38); the deb's `depends` and `suggests` and the RPM's `requires` and
+`suggests` (by soname, RTM-9) in `Cargo.toml` follow this. The Wayland entries were found by starting
+it on Wayland with reduced `LD_LIBRARY_PATH` sets and checking that it draws; the X11 list is what a
+full run under XWayland loaded, not reduced further:
 
 - **Wayland (required):** `libwayland-client.so.0` (without it winit fails with `NoWaylandLib`) and
   `libxkbcommon.so.0` (winit panics with `XKBNotFound`).
@@ -352,6 +353,8 @@ the binary, `Info.plist`, the icon and both licences.
 
 - **deb:** `[package.metadata.deb]` in `Cargo.toml` (cargo-deb). `depends` and `suggests` follow the
   run-time list under Build & Run.
+- **RPM:** `[package.metadata.generate-rpm]` in `Cargo.toml` (cargo-generate-rpm); `requires` and
+  `suggests` follow the same list, by soname (see "Linux (RTM-8)" in the root `AGENTS.md`).
 - **AppImage:** `scripts/build-appimage.sh <binary> <version> <output>` (also runs locally; set
   `APPIMAGE_TOOLS_DIR` to keep its downloads).
 - **dmg:** `scripts/build-macos.sh <binary> <version> <output.dmg>`, on a Mac only. Bundle

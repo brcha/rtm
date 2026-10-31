@@ -73,7 +73,8 @@ one that had them.
   and, on Linux, on the dev shell's `LD_LIBRARY_PATH`); not into an apt step: `rust.yml` builds and
   tests without ever starting the GUI, and the Release workflow's smoke launches get them from the
   installed deb's `depends`, installing only its `suggests` and the Mesa drivers themselves. A new run-time library also goes into the `rtmapp` deb's `depends` (or `suggests`, if the
-  app runs fully without it) in `[package.metadata.deb]` of `rtmapp/Cargo.toml`; see the run-time
+  app runs fully without it) in `[package.metadata.deb]` of `rtmapp/Cargo.toml`, and by soname into
+  the `rtmapp` RPM's `requires` (or `suggests`) in `[package.metadata.generate-rpm]`; see the run-time
   notes in `rtmapp/AGENTS.md` for how the current list was found.
 
   This rule governs **additions**. It does not invert: apt's `-dev` packages pull each other in
@@ -90,8 +91,8 @@ one that had them.
   mirrorlist that tries `azure.archive.ubuntu.com` before falling back to `archive.ubuntu.com`.
   When the Azure-local mirror degrades — dropping connections rather than refusing them — apt
   retries it per index file across roughly twenty files, which can stall a job for hours with no
-  bound. Any job that installs apt packages (`release.yml`'s Linux job, and `rust.yml`'s Linux job
-  for pijul's libraries since RTM-18) overwrites `/etc/apt/apt-mirrors.txt` with the canonical
+  bound. Any job that installs apt packages (`release.yml`'s `linux-deb` job, and `rust.yml`'s Linux
+  job for pijul's libraries since RTM-18) overwrites `/etc/apt/apt-mirrors.txt` with the canonical
   archive before updating, and passes explicit `Acquire::Retries`/timeout options to both
   `apt-get update` and `apt-get install` as defence in depth. **Do not revert this for a marginally
   faster "good day" run** — it trades a small, predictable slowdown for an unbounded hang becoming
@@ -218,9 +219,10 @@ one that had them.
   excluded (its `changes` job, see "Which changes start which build"). Windows and Linux are x64
   only — no ARM64, no 32-bit; macOS is one universal (arm64 + x86_64) build (RTM-11).
 - **Assets:** `rtmapp_<v>_x64_en-US.msi`, `rtmcli-<v>-x64.exe`, `rtmapp_<v>_amd64.deb`,
-  `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`, `rtmapp_<v>_universal.dmg`,
-  `rtmcli-<v>-macos-universal.tar.gz`. Since RTM-38 they are built without Tauri: cargo-wix, cargo-deb,
-  appimagetool, and (RTM-11) `scripts/build-macos.sh`.
+  `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`, `rtmapp-<v>-1.x86_64.rpm`,
+  `rtmcli-<v>-1.x86_64.rpm`, `rtmapp_<v>_universal.dmg`, `rtmcli-<v>-macos-universal.tar.gz`. Since
+  RTM-38 they are built without Tauri: cargo-wix, cargo-deb, cargo-generate-rpm (RTM-9), appimagetool,
+  and (RTM-11) `scripts/build-macos.sh`.
 - **Previous release (RTM-49):** the `version` job also outputs `previous`, the newest published
   (non-draft, prereleases included) release below the version being built, for the upgrade tests.
   A manual run can name another one with the `previous` input (`gh workflow run Release --ref <branch>
@@ -228,12 +230,14 @@ one that had them.
 - **Job structure:** `version` (resolves and verifies the release version once, on `ubuntu-latest`;
   outputs the run's `mode`, `release`, `dry-run` or `check`, which `publish` acts on, `latest`, and
   `notes`, the draft's body)
-  → `windows`, `linux` and `macos` (build and test in parallel, each `needs: version`, each uploading
-  its own `dist/` as a plain build artifact — `dist-windows` / `dist-linux` / `dist-macos`) → `publish`
-  (`needs: [version, windows, linux, macos]`, skipped on pull requests, downloads all artifact sets and
-  performs the dry-run upload or draft-release publish exactly once). The platform jobs deliberately do
-  **not** call `softprops/action-gh-release` themselves — independent jobs calling it concurrently
-  would race to create/update the same tagged release.
+  → `windows`, `linux` and `macos` (build in parallel, each `needs: version`, each uploading its own
+  `dist/` as a plain build artifact — `dist-windows` / `dist-linux` / `dist-macos`; Windows and macOS
+  also test there) → `linux-deb` and `linux-rpm` (test the Linux packages from `dist-linux`, see
+  "Linux (RTM-8)") → `publish` (`needs: [version, windows, linux, linux-deb, linux-rpm, macos]`,
+  skipped on pull requests, downloads all artifact sets and performs the dry-run upload or
+  draft-release publish exactly once). The `release` gate needs the same jobs. The platform jobs
+  deliberately do **not** call `softprops/action-gh-release` themselves — independent jobs calling it
+  concurrently would race to create/update the same tagged release.
 - **Versioning:** `major.minor.patch`, all numeric (MSI `ProductVersion` allows nothing else). The
   0.x alpha ends with the next release, which is the first CalVer one (`YY.minor.patch`); 0.1.4,
   the version in the crates today, is never released. `minor` counts the releases within a year
@@ -270,8 +274,8 @@ one that had them.
 - **Signing:** the Windows and Linux packages are unsigned; the macOS ones are signed ad hoc only (arm64
   code must carry a signature to run), so Gatekeeper asks on first launch. Developer ID signing and
   notarization: RTM-54.
-- **Other channels:** Homebrew (RTM-52), Developer ID signing and notarization (RTM-54) and RPM
-  (RTM-9) are not required to end the alpha; each is done when wanted. The Nix flake is not a
+- **Other channels:** Homebrew (RTM-52) and Developer ID signing and notarization (RTM-54) are not
+  required to end the alpha; each is done when wanted. The Nix flake is not a
   release channel: users pin a tag (`github:brcha/rtm/vX.Y.Z`).
 
 ### Windows
@@ -299,42 +303,65 @@ one that had them.
 
 ### Linux (RTM-8)
 
-- **Runner floor: `ubuntu-22.04`, not `ubuntu-latest`.** Packages built against `noble`'s (24.04)
-  glibc would not install on Debian bookworm or older Ubuntu LTS releases. Building on the older jammy
-  floor maximizes where the artifacts actually work.
+- **Build floor: an `almalinux:9` job container (glibc 2.34), RTM-9.** The `linux` job builds both
+  binaries once there and packages all five Linux assets from them, so every package needs glibc 2.34
+  at most: RHEL 9 and its clones (2.34), Ubuntu 22.04 (2.35), Debian bookworm (2.36) and newer. Built
+  on jammy, `rtmapp` needed libm's `hypot@GLIBC_2.35`, which RHEL 9 lacks; built on noble (24.04),
+  the debs would not install on bookworm or older Ubuntu LTS releases. The packages are tested in
+  `linux-deb` (on `ubuntu-22.04`, the oldest Ubuntu they target) and `linux-rpm`.
 - **debs:** both come from cargo-deb, described in `[package.metadata.deb]` of `rtmapp/Cargo.toml`
-  and `rtmcli/Cargo.toml` (package name, maintainer, assets, dependencies). `rtmapp`'s `depends` lists
-  the libraries it loads with `dlopen` by hand (`$auto` sees only glibc); see `rtmapp/AGENTS.md`.
+  and `rtmcli/Cargo.toml` (package name, maintainer, assets, dependencies). `depends` is written by
+  hand: cargo-deb's `$auto` needs `dpkg-shlibdeps`, which AlmaLinux lacks, so both list
+  `libc6 (>= 2.34), libgcc-s1` — the build image's glibc, so the floor changes with that image
+  (`linux-deb` fails if a binary needs a newer glibc than its deb requires). `rtmapp`'s also lists the
+  libraries it loads with `dlopen`; see `rtmapp/AGENTS.md`.
+- **RPMs (RTM-9):** both come from cargo-generate-rpm 0.21.1, described in
+  `[package.metadata.generate-rpm]` of the same files (release `1`; the licences go to
+  `/usr/share/licenses/<name>/`). `rtmapp`'s `requires` names its `dlopen` libraries by soname
+  (`libwayland-client.so.0()(64bit)`, ...) and the portal packages by the names the distributions
+  share, so one package installs on Fedora, RHEL 9 and 10 (and clones) and openSUSE, whose package
+  names differ; the deb's alternatives are rich dependencies (`(a or b)`). glibc comes from auto-req
+  (`--auto-req builtin`, based on `ldd`), versioned by symbol, so a too-old glibc fails at install
+  instead of at start. The deb's `suggests` are RPM `Suggests`. Unsigned: zypper needs
+  `--allow-unsigned-rpm`.
 - **AppImage:** `scripts/build-appimage.sh` lays out an AppDir by hand (binary, desktop entry, hicolor
   icons, licences; no bundled libraries) and packs it with appimagetool 1.9.1 and the type2 runtime
   20251108, downloaded from fixed release URLs and checked against their SHA-256 (upstream also
   publishes moving "continuous" builds). appimagetool runs with `--appimage-extract-and-run`, so no
   FUSE is needed. The downloads are a network dependency in the release path, so the step has its own
   `timeout-minutes`.
-- **Tests in the job:** `apt-get install` of both debs (every `Depends` must resolve on jammy), checks
-  that `$auto` added `libc6`, that the desktop entry and all icon sizes are installed and that a portal
-  backend with a file chooser came with `rtmapp`; then two smoke launches of the installed `rtmapp`
-  with a sample `todo.txt` (via `XDG_CONFIG_HOME`), each expected running after 5 s and stopped by its
-  PID, logging with `RUST_LOG=info`: on X11 under `xvfb-run` with Mesa software rendering (lavapipe,
-  llvmpipe; blocking, and its window must be mapped), and on Wayland under a headless Weston
-  (non-blocking, a warning on failure). Then both debs are purged, the previous release's debs
-  installed and the new ones over them (`dpkg-query` must report the new version; skipped with a
-  notice when the release lacks a deb). v0.1.3 is not skipped here: it is the Tauri deb, also named
-  `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked.
-- **Apt hardening is reused, not reinvented.** The job pins the `archive.ubuntu.com` mirror and passes
-  `Acquire::Retries`/timeout options (see "Linux CI apt hardening (RTM-28)" under Important Notes). It
-  installs no build dependencies, but the install test resolves the debs' dependencies from the index.
-- **No raw Linux binaries are published.** Only the `.deb` packages and the `.AppImage`. RPM (RTM-9)
-  and non-Debian distros more generally have no release artifact for `rtmcli` as a result — accepted
-  for now, revisit if RTM-9 is scheduled.
-- **Prebuilt-binary install actions are a trap on this runner (RTM-29).** `cargo-deb` was originally
+- **Tests (`linux-deb`, `ubuntu-22.04`):** `apt-get install` of both debs from `dist-linux` (every
+  `Depends` must resolve on jammy), checks that each binary's newest glibc symbol is within its deb's
+  `libc6` floor, that the desktop entry and all icon sizes are installed and that a portal backend
+  with a file chooser came with `rtmapp`; then two smoke launches of the installed `rtmapp` (the binary
+  in every Linux package) with a sample `todo.txt` (via `XDG_CONFIG_HOME`), each expected running
+  after 5 s and stopped by its PID, logging with `RUST_LOG=info`: on X11 under `xvfb-run` with Mesa
+  software rendering (lavapipe, llvmpipe; blocking, and its window must be mapped), and on Wayland
+  under a headless Weston (non-blocking, a warning on failure). Then both debs are purged, the
+  previous release's debs installed and the new ones over them (`dpkg-query` must report the new
+  version; skipped with a notice when the release lacks a deb). v0.1.3 is not skipped here: it is the
+  Tauri deb, also named `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked.
+- **Tests (`linux-rpm`):** a matrix of job containers (Fedora 43 and 44, AlmaLinux 9 and 10, openSUSE
+  Leap 16.0 and Tumbleweed; `fail-fast: false`; Fedora and AlmaLinux from the oldest supported
+  release, so bump the tags as releases end) installs both RPMs with `dnf` or `zypper`, resolving
+  every `Requires` from the default repositories, with the same file checks and a check for the
+  versioned glibc requirement. On Fedora 43 the previous release's RPMs are installed and the new ones
+  over them (skipped with a notice when the release has none, true until the second release with
+  RPMs).
+- **Apt hardening is reused, not reinvented.** `linux-deb` pins the `archive.ubuntu.com` mirror and
+  passes `Acquire::Retries`/timeout options (see "Linux CI apt hardening (RTM-28)" under Important
+  Notes). It builds nothing, but the install test resolves the debs' dependencies from the index.
+- **No raw Linux binaries are published.** Only the `.deb` and `.rpm` packages and the `.AppImage`.
+  Distributions that take neither debs nor RPMs have no release artifact for `rtmcli` as a result.
+- **Prebuilt-binary install actions are a trap on this job (RTM-29).** `cargo-deb` was originally
   installed via `taiki-e/install-action`, which fetched upstream's only published asset — built by
   upstream CI on `ubuntu-latest`, which has meant **noble** (24.04, glibc 2.39) since GitHub's runner
-  migration. This runner is jammy (22.04, glibc 2.35) by the deliberate choice above, so the binary
-  failed immediately: `` GLIBC_2.39' not found ``. Fixed by compiling with `cargo install cargo-deb
-  --locked --version 3.7.0` instead, which links against the runner's own glibc by construction.
-  **This generalizes:** prefer `cargo install --locked` for Rust tooling on this job unless a tool's
-  release process is confirmed to target the jammy floor specifically.
+  migration. The job then ran on jammy (22.04, glibc 2.35), so the binary failed immediately:
+  `` GLIBC_2.39' not found ``. Fixed by compiling with `cargo install cargo-deb --locked --version
+  3.7.0` instead, which links against the build host's own glibc by construction. The AlmaLinux 9
+  container (glibc 2.34) has the same mismatch. **This generalizes:** prefer `cargo install --locked`
+  for Rust tooling on this job (cargo-generate-rpm too) unless a tool's release process is confirmed
+  to target this floor specifically.
 
 ### macOS (RTM-11)
 
