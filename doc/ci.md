@@ -33,9 +33,18 @@
     website (RTM-87): `site/**`, `scripts/site/**`, `.github/workflows/site.yml` (`paths-ignore`; no
     checks are required there). Release also runs on `v*` tags and by manual dispatch, always
     building.
-  - All four workflows run on every pull request against `main` or `releases/**`. The required
-    checks are not enforced when a branch is created (`do_not_enforce_on_create`), so a release
-    branch can be cut by pushing a `main` commit, which has no PR checks. Besides the checks, the
+  - The four workflows behind the required checks run on every pull request against `main` or
+    `releases/**`. The required checks are not enforced when a branch is created
+    (`do_not_enforce_on_create`), so a release branch can be cut by pushing a `main` commit,
+    which has no PR checks. Besides the checks, the
     ruleset forbids deleting and force-pushing those branches and allows only squash-merged PRs.
 
   A new required check needs the same shape: a gate job that always runs, not a path filter.
+- **Website (RTM-89):** `site.yml` builds the site and checks its links with
+  `scripts/site/check.sh`: Zola's check and build, then lychee over the built pages offline, with
+  the absolute `base_url` mapped to the built files, so broken templates, links, anchors and asset
+  references fail. It is not a required check, so its trigger filters by `paths` (the site, its
+  scripts, the workflow, `flake.lock`, and the screenshots and icons it copies); pull requests
+  without site changes never see it. External links are checked only weekly and on manual
+  dispatch (`check.sh --external`, with `GITHUB_TOKEN`), so a remote outage never blocks a merge.
+  Zola and lychee come from the pinned nixpkgs through `nix shell`, not the full dev shell.
