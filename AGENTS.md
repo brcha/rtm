@@ -49,7 +49,8 @@ one that had them.
 - **Date format:** `%Y-%m-%d` everywhere (chrono `NaiveDate`).
 - **Priority encoding:** stored as `u8` (0 = A, 1 = B, …).
 - All `save()` calls happen immediately after mutations (no deferred/batched writes).
-- **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`.
+- **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`, or from
+  `releases/vYY.M` for a PR against a release branch (see Release Process).
 
 ---
 
@@ -110,7 +111,9 @@ one that had them.
   a plain binary under `bin/`, not an app bundle (the dmg comes from `scripts/build-macos.sh`).
   `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons (PNGs from 16 to 512 px and the scalable SVG, see `rtmapp/AGENTS.md`) and
   `Inter-LICENSE.txt` (under `share/licenses/rtmapp`). Its version is read from
-  `rtmapp/Cargo.toml`; `rtmcli` still has a hard-coded `version` in `commonArgs`.
+  `rtmapp/Cargo.toml`; `rtmcli` still has a hard-coded `version` in `commonArgs`. Nothing about the
+  packages is to be hard-coded in `flake.nix` or `default.nix`: RTM-75 reads every value the crates'
+  `Cargo.toml` holds (name, version, description, licence, homepage) from there.
 - **Tests in the build (RTM-71):** the check phase runs the sync tests, so `gitMinimal`, `pijul` and
   `openssh` (the Pijul test signs through a scratch `ssh-agent`) are `nativeCheckInputs`; `rtmcli`
   also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul test cannot skip itself. At
@@ -133,6 +136,40 @@ one that had them.
 
 ## Release Process
 
+- **Making a release (RTM-72):** releases are made on demand, when a user-visible change is worth
+  shipping, from release branches `releases/vYY.M` cut from `main`. Each release has a YouTrack
+  issue "Release X.Y.Z" (Component Packaging) whose key its PRs carry. After the cut, changes
+  reach a release branch only through squash-merged PRs against it. `main` always carries the next
+  release's version.
+  - **Minor release `YY.M.0`:**
+    1. Cut `releases/vYY.M` from `main` (already at `YY.M.0`) and push it.
+    2. On `main`, a PR `build: set version to <next> -- RTM-NN` (`scripts/set-version.sh`, then
+       `cargo update --workspace` to refresh `Cargo.lock`): the next minor, `YY.(M+1).0`, or the
+       next year's first version (`27.1.0`) when no further minor release is wanted this year.
+    3. On the branch, a PR `docs: changelog for YY.M.0 -- RTM-NN` that writes the release's
+       section of `CHANGELOG.md` with git-cliff.
+    4. Run the Release workflow on `releases/vYY.M`.
+  - **Patch release `YY.M.P`:**
+    1. Fixes land on `main` like all development and are cherry-picked to `releases/vYY.M` by PRs
+       titled like the original PR (not the squash commit's subject, which ends in `(#NN)`).
+       Several fixes can go in before a release.
+    2. On the branch, a PR `build: set version to YY.M.P -- RTM-NN`: `set-version`,
+       `cargo update --workspace` and the release's `CHANGELOG.md` section.
+    3. Run the Release workflow on `releases/vYY.M`.
+  - **The release run:** a `workflow_dispatch` of Release on a release branch builds and tests the
+    packages and publishes a draft release tagged `vX.Y.Z` on that commit, with the version's
+    `CHANGELOG.md` section as its body. Download and try it, then publish it by hand. Releases are
+    not marked as prereleases. Keep the `build: set version` and `docs: changelog` subjects exact
+    when squash-merging: the changelog leaves those commits out.
+  - **`CHANGELOG.md`** lives on the release branches only, never on `main`. A minor release's
+    section covers the commits since the previous release branch was cut.
+  - **The first CalVer release:** `main` is at 0.1.4, which is never released. Its release issue
+    first sets `main` to `YY.1.0` by PR, then follows the minor-release steps.
+
+  Not in the workflow yet: releasing by dispatch on a release branch and the title check and
+  package build for PRs against `releases/**` (RTM-73; until then, push the `vX.Y.Z` tag by hand on
+  the release branch), and `CHANGELOG.md` with git-cliff as the release body (RTM-74; until then,
+  skip the changelog PRs and the draft carries GitHub's generated notes).
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
   (publishes a draft GitHub Release), manual `workflow_dispatch` (dry run: builds and uploads to the
   Actions run, publishes nothing, no tag required), and pull requests against `main` that touch the
@@ -155,17 +192,22 @@ one that had them.
   performs the dry-run upload or draft-release publish exactly once). The platform jobs deliberately do
   **not** call `softprops/action-gh-release` themselves — independent jobs calling it concurrently
   would race to create/update the same tagged release.
-- **Versioning:** `major.minor.patch`, all numeric (MSI `ProductVersion` allows nothing else). Releases
-  stay on 0.x while the project is in alpha; the switch to CalVer (`YY.minor.patch`) comes later. The
+- **Versioning:** `major.minor.patch`, all numeric (MSI `ProductVersion` allows nothing else). The
+  0.x alpha ends with the next release, which is the first CalVer one (`YY.minor.patch`); 0.1.4,
+  the version in the crates today, is never released. `minor` counts the releases within a year
+  and starts at 1 (the first release of 2027 is `27.1.0`, the next `27.2.0`); `patch` fixes a
+  release (`27.1.1`). Every `YY.*` is above `0.1.x`, so the MSI and apt upgrades keep working. The
   `[package]` version of `rtmapp/Cargo.toml` is the single source of truth — the release workflow reads
   it (only that table: other tables have their own `version` keys) and never writes to it. On a tag
   push, the tag is required to match it exactly; a mismatch fails the build loudly instead of shipping
   packages whose internal version disagrees with their file names.
 - **`scripts/set-version.ps1`** (PowerShell) and **`scripts/set-version.sh`** (bash) are two ports of
-  one manual pre-release tool, not something CI invokes; keep them in step. Run either locally to bump
-  the version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml`, `rtmsync/Cargo.toml` and
-  `todotxt/Cargo.toml` in lockstep, review the diff, commit it, and only then tag. It scopes its match
-  to the `[package]` table specifically — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table
+  one manual pre-release tool, not something CI invokes; keep them in step. Run either on `main`
+  after a cut, or on a release branch for a patch release (see "Making a release"), to bump the
+  version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml`, `rtmsync/Cargo.toml` and
+  `todotxt/Cargo.toml` in lockstep. The Nix packages read their versions from those files, so a
+  bump needs no Nix change (`rtmcli`'s is hard-coded until RTM-75). It scopes its match to the
+  `[package]` table specifically — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table
   with its own `version` key. A new release must have a higher version than the last one, or neither
   the MSI nor apt replaces the installed copy.
 - **Identity:** the binary is `rtmapp` everywhere (`flake.nix`/`default.nix` `mainProgram`, the desktop
@@ -174,9 +216,10 @@ one that had them.
   executable is `rtmapp`); the reverse-DNS identifier (Tauri's `identifier`) is `com.brcha.rtm`. It is
   the macOS `CFBundleIdentifier` (RTM-11) and the Windows AppUserModelID, set by the app at startup and
   on both MSI shortcuts (RTM-48).
-- **Merges are squashes.** One PR becomes exactly one commit on `main`, so PR titles are the
-  changelog — the release workflow's `generate_release_notes: true` consumes them directly, and
-  `.github/workflows/pr-title.yml` already forces them to be conventional and RTM-tagged.
+- **Merges are squashes.** One PR becomes exactly one commit on its target branch, so PR titles are
+  the changelog, and `.github/workflows/pr-title.yml` forces them to be conventional and RTM-tagged.
+  git-cliff turns them into `CHANGELOG.md` on the release branches (RTM-74); until then the release
+  workflow's `generate_release_notes: true` lists them.
 - **No raw platform binaries are published redundantly with their installer.** `rtmapp.exe` is not
   staged on Windows — the MSI installs the identical binary. `rtmcli.exe` **is** staged, because
   neither the MSI nor (on Linux) the `rtmapp` deb packages the CLI; it is the only channel for
@@ -185,6 +228,9 @@ one that had them.
 - **Signing:** the Windows and Linux packages are unsigned; the macOS ones are signed ad hoc only (arm64
   code must carry a signature to run), so Gatekeeper asks on first launch. Developer ID signing and
   notarization: RTM-54.
+- **Other channels:** Homebrew (RTM-52), Developer ID signing and notarization (RTM-54) and RPM
+  (RTM-9) are not required to end the alpha; each is done when wanted. The Nix flake is not a
+  release channel: users pin a tag (`github:brcha/rtm/vX.Y.Z`).
 
 ### Windows
 
