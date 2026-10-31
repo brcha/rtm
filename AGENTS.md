@@ -59,6 +59,32 @@ one that had them.
 - All `save()` calls happen immediately after mutations (no deferred/batched writes).
 - **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`, or from
   `releases/vYY.M` for a PR against a release branch (see [Release Process](doc/release-process.md)).
+- **Tests** (RTM-83):
+  - Unit tests, which reach a module's private items, live in `<crate>/src/tests/`, one file per
+    source file and topic, named `<source file stem>_<topic>_tests.rs`
+    (`todo_item_parsing_tests.rs`, `config_file_tests.rs`); the topic is always present. The source
+    file declares each at its end:
+    ```rust
+    #[cfg(test)]
+    #[path = "tests/todo_item_parsing_tests.rs"]
+    mod parsing_tests;
+    ```
+    `#[path]` resolves relative to the declaring file's directory, and the module stays a child of
+    the source module, so `use super::*;` reaches private items. No inline `mod tests` blocks, no
+    `mod.rs` and no plain `tests.rs`.
+  - Helpers shared by several topic files of one source file go into
+    `<source file stem>_support_tests.rs`, declared as `mod support_tests;`, with the helpers
+    `pub(super)`; the topic files import them with `use super::support_tests::*;`.
+  - A source file in a subdirectory (none yet) mirrors it under `src/tests/`: `src/foo/bar.rs`
+    declares `#[path = "../tests/foo/bar_<topic>_tests.rs"]`.
+  - Integration tests, which use only the public interface, live in each crate's top-level
+    `tests/`, one test binary per file, named `<area>_<topic>_tests.rs` (`library_file_tests.rs`,
+    `cli_sync_tests.rs`). New `rtmcli` tests run the binary through `CARGO_BIN_EXE_rtmcli`
+    (`cli_commands_tests.rs` still goes through `cargo run`). `rtmapp` is a binary crate and has
+    none; UI tests for it are RTM-86.
+  - Every test works in scratch directories under the system temp directory and never reads or
+    writes the user's real `rtm/config.toml` or todo.txt. A new test that runs a program removes
+    the environment variables that would change its result (`TODOTXT`, `RTM_NO_SYNC`, `RTM_VCS`).
 
 ---
 

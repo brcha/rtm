@@ -40,7 +40,8 @@ rtmapp/
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
     ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`)
     ├── sync.rs             ← Sync through the file's repository: `find`, the worker thread
-    └── theme.rs            ← Palettes, fonts, egui styling
+    ├── theme.rs            ← Palettes, fonts, egui styling
+    └── tests/              ← Unit tests, one file per source file and topic
 ```
 
 ---
@@ -181,12 +182,14 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     in `logic`, pending changes are written and committed, and a last sync runs, within 5 s. When
     changes are waiting behind a running job, that job gets up to `SAVE_TIMEOUT` (125 s, a pull and
     a push timeout), so they are not lost.
-- Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
-  build `App { .. }` directly with a temp `config_path` (see `app_with` and `bare_app`), never
-  `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.
-  They do not start sync; the sync tests call `connect` on scratch git remotes and clones (local
-  paths, local config keeping the user's identity, signing, hooks and rerere out) and `wait` for the
-  worker, which a headless `egui::Context` serves.
+- Tests are unit tests in `src/tests/`, one file per source file and topic (see Tests in the root
+  `AGENTS.md`); rtmapp is a binary crate, so it has no integration tests (UI tests with
+  `egui_kittest` are RTM-86). They use temp files and never open a window. `App` tests build
+  `App { .. }` directly with a temp `config_path` (see `app_with` and `bare_app` in
+  `app_support_tests.rs`), never `config::config_path()`: a load or filter save would overwrite the
+  user's real `rtm/config.toml`. They do not start sync; the sync tests call `connect` on scratch
+  git remotes and clones (local paths, local config keeping the user's identity, signing, hooks and
+  rerere out) and `wait` for the worker, which a headless `egui::Context` serves.
 
 ---
 

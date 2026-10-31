@@ -13,7 +13,11 @@ repository (RTM-21).
 ```
 rtmcli/src/
 └── main.rs     ← Single file: CLI definition + all command handlers
-rtmcli/tests/   ← Integration tests (sync_test.rs: sync through git)
+rtmcli/tests/   ← Integration tests, running the binary on scratch files
+├── cli_commands_tests.rs  ← add, list, complete, delete
+├── cli_filter_tests.rs    ← The due-date filters of list and complete
+├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
+└── cli_sync_tests.rs      ← Sync through git
 ```
 
 ---
@@ -71,9 +75,9 @@ rtmcli/tests/   ← Integration tests (sync_test.rs: sync through git)
   still saved and committed. `Conflict` exits 1 with "resolve them by hand" — also after a saved
   and committed change, when the push afterwards meets a conflict. `rtmcli sync` exits 1 whenever it
   cannot sync.
-- Tests: `tests/sync_test.rs`, against scratch bare git remotes and clones (local paths, no network)
-  with local config that keeps the user's identity, signing, hooks and rerere out. Pijul is covered
-  in `rtmsync`; the CLI logic does not depend on the VCS.
+- Tests: `tests/cli_sync_tests.rs`, against scratch bare git remotes and clones (local paths, no
+  network) with local config that keeps the user's identity, signing, hooks and rerere out. Pijul is
+  covered in `rtmsync`; the CLI logic does not depend on the VCS.
 
 ---
 

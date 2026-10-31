@@ -19,8 +19,9 @@
   `repository`) from each crate's `[package]`; only what Cargo has no field for (platforms,
   `mainProgram`, build flags) is written in Nix. The Cargo `description` is also the deb summary.
 - **Tests in the build (RTM-71):** the check phase runs the sync tests, so `gitMinimal`, `pijul` and
-  `openssh` (the Pijul test signs through a scratch `ssh-agent`) are `nativeCheckInputs`; `rtmcli`
-  also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul test cannot skip itself. At
+  `openssh` (the Pijul sync test signs through a scratch `ssh-agent`) are `nativeCheckInputs`;
+  `rtmcli` also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul tests cannot skip
+  themselves. At
   run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
 - **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
   macOS for pushes to `main` that change more than Markdown and pull requests against `main` or
