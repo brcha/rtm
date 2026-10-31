@@ -9,6 +9,7 @@ on:
       - 'site/**'
       - 'scripts/site/**'
       - '.github/workflows/site.yml'
+      - 'vercel.json'
       - 'flake.lock'
       # Copied into the site by scripts/site/prepare.sh.
       - 'screenshot_*.png'

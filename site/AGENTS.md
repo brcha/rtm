@@ -54,6 +54,27 @@ required check (RTM-89, see [CI](../doc/ci.md)).
 
 ---
 
+## Publishing (Vercel)
+
+Vercel's Git integration builds and deploys the site (RTM-90): production from `main` at
+`https://rtm.brcha.com`, a preview for other branches and pull requests. The project stays at the
+repository root (a Root Directory would cut off the screenshots and icons); everything it runs is
+in `vercel.json`:
+
+- **Install:** `scripts/site/install-zola.sh <version> <sha256>` downloads Zola's musl binary and
+  checks it (Vercel's own Zola preset fails on current Zola).
+- **Build:** `scripts/site/vercel-build.sh`: `prepare.sh`, then `zola build`; previews get their
+  own `*.vercel.app` address as the base URL (`VERCEL_ENV`, `VERCEL_URL`), so they load their own
+  stylesheet and images.
+- **Ignore:** `scripts/site/vercel-ignore.sh` skips a deployment when no website input changed
+  since the branch's last successful deployment (`VERCEL_GIT_PREVIOUS_SHA`), and builds when in
+  doubt. Its list of inputs is `site.yml`'s `paths` without the workflow file itself; change both
+  together.
+- **Zola version:** `vercel.json` pins the same Zola as `flake.lock`. After a nixpkgs bump, run
+  `scripts/site/sync-zola-version.sh`, which rewrites the version and checksum in `vercel.json`.
+
+---
+
 ## Conventions
 
 - Text in `content/_index.md`, layout in the templates; no third-party theme.
@@ -80,5 +101,5 @@ required check (RTM-89, see [CI](../doc/ci.md)).
 
 ## Future Plans
 
-- Publishing for perseus (RTM-90, PER-1).
+- Serving the site from perseus as a container image (epic RTM-94; cluster side PER-52).
 - The news section and the real download links, with the first CalVer release's website post.

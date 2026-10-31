@@ -33,7 +33,9 @@
   needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
   `nixos-26.11` when it is released (RTM-45). Called directly (`nix-build`), `default.nix` uses
   the caller's `<nixpkgs>`, which must also have rustc ≥ 1.95. `shell.nix` called without `pkgs`
-  uses the revision locked in `flake.lock` instead (RTM-88).
+  uses the revision locked in `flake.lock` instead (RTM-88). After a bump, run
+  `scripts/site/sync-zola-version.sh`: Vercel installs its own Zola for the website (pinned in
+  `vercel.json`, RTM-90), and the script moves it to the version the new pin has.
 - **Dev shell:** `nix develop`, `nix-shell` and direnv's `use_nix` all use `shell.nix` with the
   nixpkgs pinned in `flake.lock`: the flake passes its `pkgs`, and called without one `shell.nix`
   reads the lock file itself (finding the node through `nodes.root.inputs.nixpkgs`), so every entry
