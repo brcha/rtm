@@ -1,6 +1,5 @@
 # git-cliff configuration for CHANGELOG.md, which lives on the release branches (releases/vYY.M)
-# only. Run through scripts/changelog.sh, which picks the commit range; see the root AGENTS.md
-# (Release Process).
+# only. Run through scripts/changelog.sh, which picks the commit range; see doc/release-process.md.
 
 [changelog]
 header = """

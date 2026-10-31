@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Writes a release's section of CHANGELOG.md with git-cliff (cliff.toml). Run it on the release
-# branch (releases/vYY.M) in the release's PR, then commit CHANGELOG.md; see the root AGENTS.md
-# (Release Process). git-cliff is in the Nix dev shell.
+# branch (releases/vYY.M) in the release's PR, then commit CHANGELOG.md; see
+# doc/release-process.md. git-cliff is in the Nix dev shell.
 #
 # Usage: scripts/changelog.sh <version>
 #

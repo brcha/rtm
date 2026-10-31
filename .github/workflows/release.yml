@@ -549,7 +549,7 @@ jobs:
       # Compiled from source, not installed via a prebuilt-binary action (RTM-29). cargo-deb's
       # only published asset is a single amd64 .deb, built by upstream CI on ubuntu-latest --
       # which has been noble (24.04, glibc 2.39) since GitHub's runner migration. This job builds
-      # on AlmaLinux 9 (glibc 2.34) by deliberate choice (see "Linux (RTM-8)" in root AGENTS.md),
+      # on AlmaLinux 9 (glibc 2.34) by deliberate choice (see "Linux (RTM-8)" in doc/release-process.md),
       # so that prebuilt binary cannot run here (RTM-29 hit `GLIBC_2.39' not found` on jammy). No
       # older cargo-deb release fixes this either -- upstream has built on ubuntu-latest since well
       # before the runner migration, so every recent release has the same mismatch. Compiling
