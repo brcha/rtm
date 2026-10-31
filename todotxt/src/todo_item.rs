@@ -77,25 +77,23 @@ impl FromStr for TodoItem {
         let mut creation_date = None;
 
         if done {
-            if let Some(date_str) = parts.get(index) {
-                if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                    completion_date = Some(date);
-                    index += 1;
-                }
+            if let Some(date_str) = parts.get(index)
+                && let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            {
+                completion_date = Some(date);
+                index += 1;
             }
-            if let Some(date_str) = parts.get(index) {
-                if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                    creation_date = Some(date);
-                    index += 1;
-                }
+            if let Some(date_str) = parts.get(index)
+                && let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            {
+                creation_date = Some(date);
+                index += 1;
             }
-        } else {
-            if let Some(date_str) = parts.get(index) {
-                if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                    creation_date = Some(date);
-                    index += 1;
-                }
-            }
+        } else if let Some(date_str) = parts.get(index)
+            && let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+        {
+            creation_date = Some(date);
+            index += 1;
         }
 
         // The rest is description with embedded elements

@@ -75,10 +75,12 @@ fn empty_fields_clear() {
     assert!(target.projects.is_empty() && target.contexts.is_empty());
 }
 
+type InvalidCase = (fn(&mut EditForm), &'static str);
+
 /// Each invalid field is refused with its own message and leaves the item untouched.
 #[test]
 fn invalid_input_is_refused() {
-    let cases: [(fn(&mut EditForm), &str); 9] = [
+    let cases: [InvalidCase; 9] = [
         (|f| f.description = "  ".into(), "Description is required"),
         (
             |f| f.due = "2026-13-01".into(),

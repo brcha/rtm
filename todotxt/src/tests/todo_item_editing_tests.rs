@@ -95,8 +95,8 @@ fn test_set_done() {
         sub: None,
     };
     let new_item = item.set_done(true);
-    assert_eq!(new_item.done, true);
-    assert_eq!(item.done, false); // original unchanged
+    assert!(new_item.done);
+    assert!(!item.done); // original unchanged
 }
 
 #[test]
