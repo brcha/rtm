@@ -17,7 +17,10 @@ todotxt/src/
 ├── todo_context.rs      ← @context tag
 ├── todo_project.rs      ← +project tag
 ├── todo_priority.rs     ← (A)-(Z) priority
-└── todo_recurrence.rs   ← rec: tag (daily/weekly/monthly/yearly/business-day)
+├── todo_recurrence.rs   ← rec: tag (daily/weekly/monthly/yearly/business-day)
+└── tests/               ← Unit tests, one file per source file and topic
+todotxt/tests/
+└── library_file_tests.rs ← Load, edit and save todo.txt files through TodoLibrary
 ```
 
 ---
@@ -75,4 +78,6 @@ todotxt/src/
 
 - `uuid` and `sub` fields exist in the data model for future subtask support but are not yet
   surfaced in any UI.
-- Tests live inline in each module's `#[cfg(test)]` block. Run with `cargo test -p todotxt`.
+- Unit tests are in `src/tests/`, one file per source file and topic (see Tests in the root
+  `AGENTS.md`); `tests/library_file_tests.rs` loads, edits and saves todo.txt files through
+  `TodoLibrary`. Run with `cargo test -p todotxt`.

@@ -18,11 +18,14 @@ per-change sync (RTM-20), the GUI's check on open (RTM-70).
 
 ```
 rtmsync/
-├── src/lib.rs        ← Vcs enum, detect(), Vcs::{commit, sync, state, is_tracked,
-│                       is_conflicted, has_remote}, State, Error, unit tests
+├── src/
+│   ├── lib.rs                ← Vcs enum, detect(), Vcs::{commit, sync, state, is_tracked,
+│   │                           is_conflicted, has_remote}, State, Error
+│   └── tests/                ← Unit tests: markers (lib_detect), timed calls (lib_process)
 └── tests/
-    ├── sync_git_tests.rs    ← Vcs::commit, Vcs::state and Vcs::sync with Git
-    └── sync_pijul_tests.rs  ← Vcs::commit, Vcs::state and Vcs::sync with Pijul (a single test, see below)
+    ├── sync_detect_tests.rs  ← detect() in repositories made by git init and pijul init
+    ├── sync_git_tests.rs     ← Vcs::commit, Vcs::state and Vcs::sync with Git
+    └── sync_pijul_tests.rs   ← The same with Pijul (a single test, see below)
 ```
 
 ---
@@ -114,21 +117,27 @@ rtmsync/
 
 ## Important Notes
 
-- Detection and process-runner tests are inline, commit and sync tests in `tests/`; all use scratch
-  directories under the system temp directory. Run with `cargo test -p rtmsync`.
-- `tests/sync_git_tests.rs` gives each scratch repository, the bare remote of the sync tests included, a local
-  identity, `commit.gpgsign=false`, an empty `core.hooksPath` and `rerere.enabled=false`, so the
-  user's global config does not interfere. The sync tests use a bare remote and two clones on local
-  paths: no network.
-- `tests/sync_pijul_tests.rs` holds exactly one test, because it sets process-wide environment variables
-  (`unsafe` in Rust 2024): `HOME`, `XDG_CONFIG_HOME` and `PIJUL_CONFIG_DIR` (on Windows pijul's
-  default comes from the system, not `APPDATA`) point at scratch directories. On Unix it starts its
-  own `ssh-agent` with a generated key and gives every ssh tool that socket explicitly, so it never
-  reaches the user's agent; the socket path is relative, as the absolute one can exceed the Unix
-  limit. On Windows it writes a throwaway on-disk identity for pijul 1.0.0-beta.11 (which cannot
-  create one without a terminal on a fresh config). It skips when `pijul` is not in `PATH`, unless
-  `RTM_REQUIRE_PIJUL` is set. Its sync part clones the scratch repository twice; each clone keeps
-  its todo.txt at the same depth (`a/sub`, `b/sub`), so the relative socket path still resolves.
+- Detection and process-runner unit tests are in `src/tests/`; detection in real repositories,
+  commit and sync tests in `tests/`. All use scratch directories under the system temp directory.
+  Run with `cargo test -p rtmsync`.
+- `tests/sync_git_tests.rs` gives each scratch repository, the bare remote of the sync tests
+  included, a local identity, `commit.gpgsign=false`, an empty `core.hooksPath` and
+  `rerere.enabled=false`, so the user's global config does not interfere. The sync tests use a bare
+  remote and two clones on local paths: no network.
+- `tests/sync_detect_tests.rs` runs only `git init` and `pijul init`. `pijul init` needs no
+  identity (checked with 1.0.0-beta.18), and the test sets pijul's config variables on each
+  command, not the process, so the file can hold several tests. Its Pijul tests skip like
+  `tests/sync_pijul_tests.rs` (below).
+- `tests/sync_pijul_tests.rs` holds exactly one test, because it sets process-wide environment
+  variables (`unsafe` in Rust 2024): `HOME`, `XDG_CONFIG_HOME` and `PIJUL_CONFIG_DIR` (on Windows
+  pijul's default comes from the system, not `APPDATA`) point at scratch directories. On Unix it
+  starts its own `ssh-agent` with a generated key and gives every ssh tool that socket explicitly,
+  so it never reaches the user's agent; the socket path is relative, as the absolute one can exceed
+  the Unix limit. On Windows it writes a throwaway on-disk identity for pijul 1.0.0-beta.11 (which
+  cannot create one without a terminal on a fresh config). It skips when `pijul` is not in `PATH`,
+  unless `RTM_REQUIRE_PIJUL` is set. Its sync part clones the scratch repository twice; each clone
+  keeps its todo.txt at the same depth (`a/sub`, `b/sub`), so the relative socket path still
+  resolves.
 - CI (`rust.yml`) builds pijul 1.0.0-beta.24 on Linux and macOS, cached per OS and version, and
   sets `RTM_REQUIRE_PIJUL=1`. Windows downloads the community build of 1.0.0-beta.11 linked from
   pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
