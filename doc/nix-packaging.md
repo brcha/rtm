@@ -31,11 +31,16 @@
   definitions from `default.nix` with its pin.
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
   needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
-  `nixos-26.11` when it is released (RTM-45). Called directly (`nix-build`, `nix-shell`),
-  `default.nix` and `shell.nix` use the caller's `<nixpkgs>`, which must also have rustc ≥ 1.95.
-- **Dev shell:** `nix develop` (flake, pinned nixpkgs) or `nix-shell` (caller's `<nixpkgs>`), both
-  from `shell.nix`. `.envrc` uses `use_nix`; change to `use flake` if using nix-direnv ≥ 2.30. It
-  has `rustfmt`, `clippy`, `rust-analyzer` and `git-cliff`, sets `LD_LIBRARY_PATH` to `eguiDeps` on
+  `nixos-26.11` when it is released (RTM-45). Called directly (`nix-build`), `default.nix` uses
+  the caller's `<nixpkgs>`, which must also have rustc ≥ 1.95. `shell.nix` called without `pkgs`
+  uses the revision locked in `flake.lock` instead (RTM-88).
+- **Dev shell:** `nix develop`, `nix-shell` and direnv's `use_nix` all use `shell.nix` with the
+  nixpkgs pinned in `flake.lock`: the flake passes its `pkgs`, and called without one `shell.nix`
+  reads the lock file itself (finding the node through `nodes.root.inputs.nixpkgs`), so every entry
+  point gets the same nixpkgs as `nix develop` and the Nix builds in CI (`rust.yml` uses the
+  runner's rustup toolchain instead). `.envrc` uses `use_nix`; change to `use flake` if
+  using nix-direnv ≥ 2.30 for a cached shell. It has `rustfmt`, `clippy`, `rust-analyzer`,
+  `git-cliff` and `zola` (the project website, `site/`), sets `LD_LIBRARY_PATH` to `eguiDeps` on
   Linux only (the libraries do not exist on macOS), and sets `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and
   `RUSTC_WRAPPER` to empty: a calling session that exports `-L/usr/lib` otherwise links against the
   system glibc instead of the shell's (the binary then fails with `GLIBC_2.xx not found`), and a
