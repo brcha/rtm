@@ -114,6 +114,9 @@ one that had them.
   `openssh` (the Pijul test signs through a scratch `ssh-agent`) are `nativeCheckInputs`; `rtmcli`
   also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul test cannot skip itself. At
   run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
+- **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
+  macOS for pushes to and pull requests against `main`. `default.nix` is not built in CI (it takes
+  the caller's `<nixpkgs>`).
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
   needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
   `nixos-26.11` when it is released (RTM-45). `default.nix` and `shell.nix` use the caller's
