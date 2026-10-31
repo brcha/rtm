@@ -232,12 +232,12 @@ one that had them.
   `notes`, the draft's body)
   → `windows`, `linux` and `macos` (build in parallel, each `needs: version`, each uploading its own
   `dist/` as a plain build artifact — `dist-windows` / `dist-linux` / `dist-macos`; Windows and macOS
-  also test there) → `linux-deb` and `linux-rpm` (test the Linux packages from `dist-linux`, see
-  "Linux (RTM-8)") → `publish` (`needs: [version, windows, linux, linux-deb, linux-rpm, macos]`,
-  skipped on pull requests, downloads all artifact sets and performs the dry-run upload or
-  draft-release publish exactly once). The `release` gate needs the same jobs. The platform jobs
-  deliberately do **not** call `softprops/action-gh-release` themselves — independent jobs calling it
-  concurrently would race to create/update the same tagged release.
+  also test there) → `linux-deb`, `linux-deb-install` and `linux-rpm` (test the Linux packages from
+  `dist-linux`, see "Linux (RTM-8)") → `publish` (`needs: [version, windows, linux, linux-deb,
+  linux-deb-install, linux-rpm, macos]`, skipped on pull requests, downloads all artifact sets and
+  performs the dry-run upload or draft-release publish exactly once). The `release` gate needs the
+  same jobs. The platform jobs deliberately do **not** call `softprops/action-gh-release` themselves —
+  independent jobs calling it concurrently would race to create/update the same tagged release.
 - **Versioning:** `major.minor.patch`, all numeric (MSI `ProductVersion` allows nothing else). The
   0.x alpha ends with the next release, which is the first CalVer one (`YY.minor.patch`); 0.1.4,
   the version in the crates today, is never released. `minor` counts the releases within a year
@@ -308,7 +308,8 @@ one that had them.
   at most: RHEL 9 and its clones (2.34), Ubuntu 22.04 (2.35), Debian bookworm (2.36) and newer. Built
   on jammy, `rtmapp` needed libm's `hypot@GLIBC_2.35`, which RHEL 9 lacks; built on noble (24.04),
   the debs would not install on bookworm or older Ubuntu LTS releases. The packages are tested in
-  `linux-deb` (on `ubuntu-22.04`, the oldest Ubuntu they target) and `linux-rpm`.
+  `linux-deb` (on `ubuntu-22.04`, the oldest Ubuntu they target), `linux-deb-install` and
+  `linux-rpm`.
 - **debs:** both come from cargo-deb, described in `[package.metadata.deb]` of `rtmapp/Cargo.toml`
   and `rtmcli/Cargo.toml` (package name, maintainer, assets, dependencies). `depends` is written by
   hand: cargo-deb's `$auto` needs `dpkg-shlibdeps`, which AlmaLinux lacks, so both list
@@ -341,13 +342,21 @@ one that had them.
   previous release's debs installed and the new ones over them (`dpkg-query` must report the new
   version; skipped with a notice when the release lacks a deb). v0.1.3 is not skipped here: it is the
   Tauri deb, also named `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked.
-- **Tests (`linux-rpm`):** a matrix of job containers (Fedora 43 and 44, AlmaLinux 9 and 10, openSUSE
-  Leap 16.0 and Tumbleweed; `fail-fast: false`; Fedora and AlmaLinux from the oldest supported
-  release, so bump the tags as releases end) installs both RPMs with `dnf` or `zypper`, resolving
-  every `Requires` from the default repositories, with the same file checks and a check for the
-  versioned glibc requirement. On Fedora 43 the previous release's RPMs are installed and the new ones
-  over them (skipped with a notice when the release has none, true until the second release with
-  RPMs).
+- **Which systems are tested:** the two ends of each package family, since an install test catches a
+  package missing on the oldest release or renamed or dropped on the newest, and the releases in
+  between follow from the ends. debs: Ubuntu 22.04 (`linux-deb`'s runner, the oldest) and the
+  `ubuntu:latest` image, the newest LTS (Ubuntu shares Debian's package names and an LTS is cut from
+  Debian testing, so it is ahead of Debian stable and stands for both). RPMs: `almalinux:9`
+  (the oldest; bump it when RHEL 9 ends), `fedora:latest`, and openSUSE Leap 16.0 for openSUSE's own
+  repositories and zypper. The moving tags need no bumps. Fedora 43 and 44, AlmaLinux 10,
+  Tumbleweed, Debian 12, 13 and testing and Ubuntu 24.04 and 26.10 also passed once (RTM-9).
+- **Tests (`linux-deb-install`):** an `ubuntu:latest` job container installs both debs with
+  `apt-get`, resolving every `Depends` from the default repositories, with the same file checks.
+- **Tests (`linux-rpm`):** a matrix of job containers (the three RPM images above;
+  `fail-fast: false`) installs both RPMs with `dnf` or `zypper`, resolving every `Requires` from the
+  default repositories, with the same file checks and a check for the versioned glibc requirement.
+  On `fedora:latest` the previous release's RPMs are installed and the new ones over them (skipped
+  with a notice when the release has none, true until the second release with RPMs).
 - **Apt hardening is reused, not reinvented.** `linux-deb` pins the `archive.ubuntu.com` mirror and
   passes `Acquire::Retries`/timeout options (see "Linux CI apt hardening (RTM-28)" under Important
   Notes). It builds nothing, but the install test resolves the debs' dependencies from the index.

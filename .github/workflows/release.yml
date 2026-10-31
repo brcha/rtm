@@ -866,11 +866,76 @@ jobs:
             fi
           done
 
-  # The RPMs on each distribution they target, one job container per image, from the binaries
-  # built in the linux job. They name their libraries by soname (and the portal packages by names
-  # the distributions share), so one package serves Fedora, RHEL and openSUSE. Fedora and
-  # AlmaLinux: the oldest supported release up to the newest; bump the tags as releases end.
-  # Tumbleweed is rolling: a failure there can come from Tumbleweed rather than this change.
+  # The debs on the newest Ubuntu LTS, from the packages built in the linux job; linux-deb covers
+  # the oldest target (Ubuntu 22.04). The two ends catch what an install test can: a package
+  # missing on the oldest release, or renamed or dropped on the newest. Ubuntu shares Debian's
+  # package names and an LTS is cut from Debian testing, so it is ahead of Debian stable and stands
+  # for both. The ubuntu:latest image (not the runner label) moves with Ubuntu's LTS releases.
+  linux-deb-install:
+    needs: [version, linux]
+    runs-on: ubuntu-latest
+    container: ubuntu:latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-linux
+          path: dist
+
+      - name: Verify debs install
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          debs=("$PWD/dist/rtmapp_${VERSION}_amd64.deb" "$PWD/dist/rtmcli_${VERSION}_amd64.deb")
+          apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          # Retried, as the build tools in the linux job.
+          for attempt in 1 2 3; do
+            if apt-get update "${apt_opts[@]}" && apt-get install -y "${apt_opts[@]}" "${debs[@]}"; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::Installing the debs failed three times."
+              exit 1
+            fi
+            echo "::warning::Installing the debs failed (attempt $attempt), retrying."
+            sleep 10
+          done
+          for pkg in rtmapp rtmcli; do
+            installed=$(dpkg-query -W -f='${Version}' "$pkg")
+            if [ "$installed" != "$VERSION" ]; then
+              echo "::error::$pkg is at $installed, expected $VERSION."
+              exit 1
+            fi
+          done
+          rtmcli --help > /dev/null
+          if [ ! -x /usr/bin/rtmapp ]; then
+            echo "::error::/usr/bin/rtmapp missing or not executable after install."
+            exit 1
+          fi
+          if ! grep -q '^Exec=rtmapp' /usr/share/applications/rtmapp.desktop; then
+            echo "::error::/usr/share/applications/rtmapp.desktop missing or without Exec=rtmapp."
+            exit 1
+          fi
+          for size in 16x16 24x24 32x32 128x128 256x256 512x512; do
+            if [ ! -f "/usr/share/icons/hicolor/$size/apps/rtmapp.png" ]; then
+              echo "::error::Icon missing after install: hicolor/$size/apps/rtmapp.png"
+              exit 1
+            fi
+          done
+          if ! grep -l org.freedesktop.impl.portal.FileChooser /usr/share/xdg-desktop-portal/portals/*.portal; then
+            echo "::error::No installed XDG portal backend implements the file chooser."
+            exit 1
+          fi
+
+  # The RPMs in one job container per image, from the packages built in the linux job. They name
+  # their libraries by soname (and the portal packages by names the distributions share), so one
+  # package serves Fedora, RHEL and openSUSE. As for the debs, the two ends of the Fedora/RHEL
+  # family: AlmaLinux 9, the oldest target (bump it when RHEL 9 ends), and fedora:latest, which
+  # moves with Fedora's releases. Leap 16.0 stands for openSUSE's own repositories and zypper.
   linux-rpm:
     needs: [version, linux]
     runs-on: ubuntu-latest
@@ -880,12 +945,9 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - fedora:43
-          - fedora:44
           - almalinux:9
-          - almalinux:10
+          - fedora:latest
           - registry.opensuse.org/opensuse/leap:16.0
-          - registry.opensuse.org/opensuse/tumbleweed
 
     steps:
       - uses: actions/download-artifact@v8
@@ -953,11 +1015,11 @@ jobs:
             exit 1
           fi
 
-      # The same skip logic as the deb upgrade in linux-deb, on the oldest Fedora only. Installing
+      # The same skip logic as the deb upgrade in linux-deb, on Fedora only (gh is packaged there). Installing
       # the newer RPM over the older one with dnf upgrades it in place. No release before RTM-9 has
       # RPMs, so this skips until the second release that has them.
       - name: Verify RPM upgrade from the previous release
-        if: matrix.image == 'fedora:43'
+        if: matrix.image == 'fedora:latest'
         timeout-minutes: 15
         shell: bash
         env:
@@ -1162,7 +1224,7 @@ jobs:
   # create or update the same tagged GitHub Release. Pull requests stop after the platform jobs.
   publish:
     if: github.event_name != 'pull_request'
-    needs: [version, windows, linux, linux-deb, linux-rpm, macos]
+    needs: [version, windows, linux, linux-deb, linux-deb-install, linux-rpm, macos]
     runs-on: ubuntu-latest
 
     steps:
@@ -1206,7 +1268,7 @@ jobs:
   # of them failed or was cancelled.
   release:
     if: always()
-    needs: [changes, version, windows, linux, linux-deb, linux-rpm, macos]
+    needs: [changes, version, windows, linux, linux-deb, linux-deb-install, linux-rpm, macos]
     runs-on: ubuntu-latest
 
     steps:

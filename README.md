@@ -17,8 +17,8 @@ Download the files from the latest [GitHub Release](https://github.com/brcha/rtm
 
 ### GNU/Linux (x64)
 
-The debs install on Ubuntu 22.04 and newer Debian-based systems. The RPMs install on Fedora, RHEL 9
-and 10 and their clones (AlmaLinux, Rocky Linux), and openSUSE Leap 16.0 and Tumbleweed.
+The debs install on Ubuntu 22.04 and newer and Debian 12 and newer. The RPMs install on Fedora,
+RHEL 9 and 10 and their clones (AlmaLinux, Rocky Linux), and openSUSE Leap 16.0 and Tumbleweed.
 
 Desktop app, deb:
 
