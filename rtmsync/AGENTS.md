@@ -134,5 +134,5 @@ rtmsync/
   pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
   from source there (libsodium-sys's build script panics under MSVC, and pijul's own Windows code
   did not compile at beta.12), and newer releases could not record anyway (RTM-58).
-- `rtmcli` (RTM-21) and `rtmapp` (RTM-64) depend on the crate, so the Release workflow's `paths`
-  filter includes `rtmsync/**`.
+- `rtmcli` (RTM-21) and `rtmapp` (RTM-64) depend on the crate, so the package inputs that the
+  Release workflow's `changes` job checks include `rtmsync/`.
