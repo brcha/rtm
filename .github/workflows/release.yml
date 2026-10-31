@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  # On a release branch (releases/vYY.M) a manual run is a release: it publishes a draft tagged
+  # with the committed version. On any other branch it is a dry run.
   workflow_dispatch:
     inputs:
       previous:
@@ -13,7 +15,7 @@ on:
   # Builds and tests the packages (publishes nothing) when a pull request touches anything that
   # goes into them, so packaging breaks are caught before a tag rather than at release time.
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "releases/**" ]
     paths:
       - 'rtmapp/**'
       - 'rtmcli/**'
@@ -33,13 +35,17 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Extracted into its own job so all platform jobs depend on the same tag-vs-manifest check
-  # via `needs:` instead of duplicating it. Runs on ubuntu-latest purely as a cheap host for
-  # pwsh; it builds nothing.
+  # Extracted into its own job so all platform jobs depend on the same version checks via
+  # `needs:` instead of duplicating them. Runs on ubuntu-latest purely as a cheap host for pwsh;
+  # it builds nothing.
   version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      # release (tag push, or a manual run on releases/**), dry-run (any other manual run) or check
+      # (pull request); publish acts on it.
+      mode: ${{ steps.version.outputs.mode }}
+      latest: ${{ steps.release.outputs.latest }}
       previous: ${{ steps.previous.outputs.previous }}
 
     steps:
@@ -51,12 +57,14 @@ jobs:
       # crates in lockstep). Only the [package] table is searched: other tables can have their
       # own `version` keys. On a tag push the tag must match exactly, so a forgotten version bump
       # fails the build loudly instead of shipping packages whose version disagrees with their
-      # own file names.
+      # own file names. On a release branch the branch must match it: releases/v26.1 releases
+      # only 26.1.*.
       - name: Determine and verify release version
         id: version
         shell: pwsh
         env:
           EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           $manifest = 'rtmapp/Cargo.toml'
@@ -73,6 +81,7 @@ jobs:
           Write-Host "Committed version (from ${manifest}): $version"
 
           if ($env:EVENT_NAME -eq 'push') {
+            $mode = 'release'
             $tagVersion = $env:TAG_NAME -replace '^[vV]', ''
             if ($tagVersion -ne $version) {
               throw "Tag '$env:TAG_NAME' (version '$tagVersion') does not match the version " +
@@ -80,11 +89,62 @@ jobs:
                     "scripts/set-version.ps1 or scripts/set-version.sh, commit it, and only then tag the release."
             }
             Write-Host "Tag matches committed version."
+          } elseif ($env:EVENT_NAME -eq 'workflow_dispatch' -and $env:REF.StartsWith('refs/heads/releases/')) {
+            $mode = 'release'
+            $branch = $env:REF -replace '^refs/heads/', ''
+            if ($branch -notmatch '^releases/v(\d+\.\d+)$') {
+              throw "Release branch '$branch' is not named releases/vYY.M."
+            }
+            if (-not $version.StartsWith("$($Matches[1]).")) {
+              throw "Release branch '$branch' releases only $($Matches[1]).*, but $manifest has '$version'. " +
+                    "Bump the version with scripts/set-version.ps1 or scripts/set-version.sh in a PR against the branch."
+            }
+            Write-Host "Release branch '$branch' matches committed version."
           } else {
+            $mode = if ($env:EVENT_NAME -eq 'workflow_dispatch') { 'dry-run' } else { 'check' }
             Write-Host "$env:EVENT_NAME run: building committed version as-is, no tag to verify against."
           }
+          Write-Host "Mode: $mode"
 
           Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "mode=$mode"
+
+      # A release from a release branch must not exist yet, as a tag or as a release (drafts
+      # included: a draft has no tag until it is published). Draft releases are only visible with
+      # write access, which the workflow-level `contents: write` gives; narrowing it breaks this
+      # check. Also decides whether the release becomes Latest: a patch on an older line (26.1.2
+      # after 26.2.0) must not.
+      # shortcut: two manual runs of one version at once can both pass and make two drafts; delete
+      # one by hand, or add a concurrency group if that ever happens.
+      - name: Check the release
+        id: release
+        if: steps.version.outputs.mode == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $tag = "v$env:VERSION"
+          $releases = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --json tagName,isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "gh release list failed ($LASTEXITCODE)." }
+
+          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
+            $existing = $releases | Where-Object { $_.tagName -eq $tag }
+            if ($existing) {
+              throw "A $(if ($existing[0].isDraft) { 'draft ' })release for $tag already exists."
+            }
+            $remoteTag = git ls-remote --tags origin "refs/tags/$tag"
+            if ($LASTEXITCODE -ne 0) { throw "git ls-remote failed ($LASTEXITCODE)." }
+            if ($remoteTag) { throw "Tag $tag already exists." }
+            Write-Host "No release or tag for $tag yet."
+          }
+
+          $newer = $releases |
+            Where-Object { -not $_.isDraft -and $_.tagName -match '^v(\d+\.\d+\.\d+)$' -and [version]$Matches[1] -gt [version]$env:VERSION }
+          $latest = if ($newer) { 'false' } else { 'true' }
+          Write-Host "Latest: $latest"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "latest=$latest"
 
       # The release the upgrade tests start from: the newest published (non-draft) release below the
       # version being built. Prereleases count -- every release so far is one. Empty if there is
@@ -871,23 +931,28 @@ jobs:
       - name: List staged artifacts
         run: ls -la dist
 
-      # workflow_dispatch: dry run. Upload for inspection, do not touch Releases, do not burn a
-      # version tag.
+      # Manual run outside a release branch: dry run. Upload for inspection, do not touch
+      # Releases, do not burn a version tag.
       - name: Upload dry-run artifacts
-        if: github.event_name == 'workflow_dispatch'
+        if: needs.version.outputs.mode == 'dry-run'
         uses: actions/upload-artifact@v7
         with:
           name: rtm-${{ needs.version.outputs.version }}
           path: dist/*
           if-no-files-found: error
 
-      # Tag push: publish as a draft. The maintainer reviews and promotes it manually, so a broken
-      # release can never become permanent. Release notes are generated from squashed PR titles,
-      # which pr-title.yml already forces to be conventional and RTM-tagged.
+      # Release (tag push, or a manual run on a release branch): publish as a draft. The maintainer
+      # reviews and publishes it manually, so a broken release can never become permanent. For a
+      # manual run the tag does not exist yet: GitHub creates it on the built commit when the draft
+      # is published. Release notes are generated from squashed PR titles, which pr-title.yml
+      # already forces to be conventional and RTM-tagged.
       - name: Publish draft release
-        if: github.event_name == 'push'
+        if: needs.version.outputs.mode == 'release'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: ${{ needs.version.outputs.latest }}
           draft: true
           generate_release_notes: true
           files: dist/*

@@ -158,21 +158,25 @@ one that had them.
     3. Run the Release workflow on `releases/vYY.M`.
   - **The release run:** a `workflow_dispatch` of Release on a release branch builds and tests the
     packages and publishes a draft release tagged `vX.Y.Z` on that commit, with the version's
-    `CHANGELOG.md` section as its body. Download and try it, then publish it by hand. Releases are
-    not marked as prereleases. Keep the `build: set version` and `docs: changelog` subjects exact
-    when squash-merging: the changelog leaves those commits out.
+    `CHANGELOG.md` section as its body. It first checks that the branch matches the version
+    (`releases/v26.1` releases only `26.1.*`) and that no release, draft included, or tag exists
+    for it (RTM-73). A patch on an older line (26.1.2 after 26.2.0) is created with
+    `make_latest: false`; when publishing it, make sure "Set as the latest release" is unticked.
+    Download and try the draft, then publish it by hand. Releases are not marked as prereleases.
+    Keep the `build: set version` and `docs: changelog` subjects exact when squash-merging: the
+    changelog leaves those commits out.
   - **`CHANGELOG.md`** lives on the release branches only, never on `main`. A minor release's
     section covers the commits since the previous release branch was cut.
   - **The first CalVer release:** `main` is at 0.1.4, which is never released. Its release issue
     first sets `main` to `YY.1.0` by PR, then follows the minor-release steps.
 
-  Not in the workflow yet: releasing by dispatch on a release branch and the title check and
-  package build for PRs against `releases/**` (RTM-73; until then, push the `vX.Y.Z` tag by hand on
-  the release branch), and `CHANGELOG.md` with git-cliff as the release body (RTM-74; until then,
+  Not in the workflow yet: `CHANGELOG.md` with git-cliff as the release body (RTM-74; until then,
   skip the changelog PRs and the draft carries GitHub's generated notes).
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
-  (publishes a draft GitHub Release), manual `workflow_dispatch` (dry run: builds and uploads to the
-  Actions run, publishes nothing, no tag required), and pull requests against `main` that touch the
+  (publishes a draft GitHub Release), manual `workflow_dispatch` (on a `releases/**` branch a
+  release, see "Making a release"; on any other branch a dry run: builds and uploads to the Actions
+  run, publishes nothing, no tag required), and pull requests against `main` or `releases/**`
+  (`pr-title.yml` checks those too) that touch the
   crates (`rtmsync` included since RTM-21), `Cargo.toml`/`Cargo.lock`, `LICENSE`,
   `scripts/build-appimage.sh`, `scripts/build-macos.sh` or the workflow (builds and tests the
   packages, publishes nothing). Windows and Linux are x64 only — no
@@ -185,7 +189,8 @@ one that had them.
   (non-draft, prereleases included) release below the version being built, for the upgrade tests.
   A manual run can name another one with the `previous` input (`gh workflow run Release --ref <branch>
   -f previous=v0.1.3`), which also lifts the Windows v0.1.3 skip.
-- **Job structure:** `version` (resolves and verifies the release version once, on `ubuntu-latest`)
+- **Job structure:** `version` (resolves and verifies the release version once, on `ubuntu-latest`;
+  outputs the run's `mode`, `release`, `dry-run` or `check`, which `publish` acts on, and `latest`)
   → `windows`, `linux` and `macos` (build and test in parallel, each `needs: version`, each uploading
   its own `dist/` as a plain build artifact — `dist-windows` / `dist-linux` / `dist-macos`) → `publish`
   (`needs: [version, windows, linux, macos]`, skipped on pull requests, downloads all artifact sets and
@@ -199,8 +204,9 @@ one that had them.
   release (`27.1.1`). Every `YY.*` is above `0.1.x`, so the MSI and apt upgrades keep working. The
   `[package]` version of `rtmapp/Cargo.toml` is the single source of truth — the release workflow reads
   it (only that table: other tables have their own `version` keys) and never writes to it. On a tag
-  push, the tag is required to match it exactly; a mismatch fails the build loudly instead of shipping
-  packages whose internal version disagrees with their file names.
+  push, the tag is required to match it exactly, and on a release branch the branch name (see "Making a
+  release"); a mismatch fails the build loudly instead of shipping packages whose internal version
+  disagrees with their file names.
 - **`scripts/set-version.ps1`** (PowerShell) and **`scripts/set-version.sh`** (bash) are two ports of
   one manual pre-release tool, not something CI invokes; keep them in step. Run either on `main`
   after a cut, or on a release branch for a patch release (see "Making a release"), to bump the
@@ -208,8 +214,8 @@ one that had them.
   `todotxt/Cargo.toml` in lockstep. The Nix packages read their versions from those files, so a
   bump needs no Nix change (`rtmcli`'s is hard-coded until RTM-75). It scopes its match to the
   `[package]` table specifically — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table
-  with its own `version` key. A new release must have a higher version than the last one, or neither
-  the MSI nor apt replaces the installed copy.
+  with its own `version` key. A new release must have a higher version than the last one on its line
+  (`releases/vYY.M`), or neither the MSI nor apt replaces the installed copy.
 - **Identity:** the binary is `rtmapp` everywhere (`flake.nix`/`default.nix` `mainProgram`, the desktop
   entry's `Exec=rtmapp`, `Icon=rtmapp` and `StartupWMClass=rtmapp`, the deb package name); the display
   name is "Rusty Todo.txt Manager", also the macOS bundle's name (`Rusty Todo.txt Manager.app`, whose
