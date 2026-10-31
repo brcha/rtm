@@ -14,7 +14,8 @@ complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date pic
 package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); the MSI, deb and
 AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11); sync
 through Git or Pijul (RTM-64), in the background since RTM-20, with the check for a dirty or
-untracked todo.txt on open (RTM-70); "New File" (RTM-55).
+untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do not block the UI
+(RTM-65).
 
 ---
 
@@ -55,6 +56,7 @@ rtmapp/
 | serde, toml 0.8     | Config file                                        |
 | dirs 5              | OS config directory                                |
 | chrono              | Dates (same as the core library)                   |
+| pollster 0.4        | Waits for `rfd`'s async file dialog on its thread  |
 | env_logger 0.11     | Logs to stderr (`rfd`'s file dialog errors)        |
 | sys-locale 0.3      | The OS locale, for the calendar's week start       |
 | icu_calendar 2.4    | CLDR first day of the week for a locale            |
@@ -65,7 +67,9 @@ rtmapp/
 
 ## Conventions
 
-- **Rust edition:** 2024. No async.
+- **Rust edition:** 2024. No async, with one exception (RTM-65): the file dialogs are
+  `rfd::AsyncFileDialog` futures, each awaited with `pollster::block_on` on a thread of its own (see
+  File dialog). No runtime, no `async fn`; anything else stays synchronous.
 - **Identity:** crate, binary, Nix package and eframe app name are `rtmapp`. The app name is also the
   Wayland app id and the X11 `WM_CLASS`, so it must match the desktop entry's file name and its
   `StartupWMClass`; `Exec=rtmapp` and `Icon=rtmapp` match the binary and the installed icons, and
@@ -160,7 +164,8 @@ rtmapp/
     while the worker is idle (`Worker::busy`: jobs sent whose result was not handled yet, so a pull
     whose reload has not happened still counts); changes made during a job wait in memory and make
     one commit (`rtm: N changes`, one line each). Messages name the item's description only (`rtm:
-    complete Pay bill`). Load File is disabled during any job, Sync now during a sync; nothing else.
+    complete Pay bill`). New File and Load File are disabled during any job and while a file dialog is open, Sync
+    now during a sync; nothing else.
   - **A pull that changed the file** (also one whose push then failed: `NotSynced { changed }`)
     reloads it and redoes `pending` on it, finding each item by equality (with two identical lines,
     the first); a change whose item the pull changed or removed is dropped and named in the error
@@ -269,6 +274,20 @@ more. Windows release builds have no console (see Conventions), so there the log
 debug build.
 
 A load error (unreadable file, missing path) is shown above the list.
+
+**The dialogs do not block the UI (RTM-65).** A synchronous `rfd::FileDialog` inside `ui` stopped the
+window from repainting until it closed, so it looked hung. Now `pick_file` and `new_file` create an
+`rfd::AsyncFileDialog` future on the UI thread, parented to the window (`set_parent` with
+`eframe::Frame`), and `show_dialog` awaits it with `pollster::block_on` on a new thread, which sends
+the path (or `None`) over a channel and calls `request_repaint`. The future must be created on the UI
+thread: on macOS rfd runs the AppKit panel there, which the sync dialog on a worker thread cannot do.
+`dialog_result`, called from `logic`, applies the result with `open_file` or `create_file`, but only
+while no job runs and no item is being edited: on Linux the window still takes input behind the
+portal dialog, so a sync may start or the edit dialog open meanwhile. Until then the result waits in
+the channel; when the worker is idle its pending changes have been written to the old file. A
+cancel, a failure (logged by rfd, as before) or a dialog thread that died clears the dialog and
+changes nothing. New File and Load File are disabled while a dialog is open. Closing the app with a
+dialog open leaves the thread to end with the process; it writes nothing.
 
 "New File" (RTM-55) shows a save dialog (`.txt` filter, default name `todo.txt`), creates the file
 empty (`File::create`) and opens it through the same path as "Load File" (`open_file`: config, check
