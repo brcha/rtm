@@ -3195,7 +3195,7 @@ dependencies = [
  "env_logger",
  "icu_calendar",
  "icu_locale_core",
- "pollster 0.4.0",
+ "pollster 1.0.1",
  "rfd",
  "rtmsync",
  "serde",
