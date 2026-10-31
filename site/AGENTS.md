@@ -56,8 +56,13 @@ required check (RTM-89, see [CI](../doc/ci.md)).
 - Text in `content/_index.md`, layout in the templates; no third-party theme.
 - Advertise only features that exist in the code (subtasks, for example, exist only in the data
   model and are not listed).
-- Do not copy the install guide or the changelog: link to `README.md#installing` and to the GitHub
-  releases, whose bodies are the changelog (RTM-74).
+- The install guide is copied from `README.md` ("Installing") into the site, not only linked;
+  keep the two in step when either changes. Release changes appear in each release's post
+  (`content/news/X.Y.Z.md`, its `CHANGELOG.md` section); the landing page links to the GitHub
+  releases.
+- No JavaScript. The download links are updated by hand in each release's website PR, a step of
+  the release process ("Website post" in [Release Process](../doc/release-process.md), RTM-91).
+  Until the first CalVer release they point at the releases page.
 - Screenshots and the icon stay where they are; update them there, not in `site/static/`.
 - Website-only changes start no Rust or Nix build (`paths-ignore` on push, RTM-87; see
   [CI](../doc/ci.md)).
@@ -66,4 +71,5 @@ required check (RTM-89, see [CI](../doc/ci.md)).
 
 ## Future Plans
 
-- Publishing for perseus (RTM-90, PER-1), download links that follow the newest release (RTM-91).
+- Publishing for perseus (RTM-90, PER-1).
+- The news section and the real download links, with the first CalVer release's website post.
