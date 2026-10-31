@@ -185,7 +185,7 @@ interval, or to 0 to sync only on open, on close and on demand.
 ## General plan
 
 - [x] Implement basic functionality of the Todo.txt manager with CLI and desktop GUI (for GNU/Linux, Mac OS X and Windows, since I use all of those).
-- [ ] Create cloud synchronisation for the Todo.txt files (ideas welcome, my plan is to setup a private git repo, which is what I currently use anyway). In progress: `rtmsync` (Git or Pijul).
+- [x] Create cloud synchronisation for the Todo.txt files (ideas welcome, my plan is to setup a private git repo, which is what I currently use anyway). Done through Git or Pijul, see [Syncing through Git or Pijul](#syncing-through-git-or-pijul).
 - [ ] Make a mobile GUI for the library (Android centric, but hopefully cross platform).
 - [ ] Add subtasks as a concept (already provided uuid and sub tags for todo.txt items, needs implementation in cli/ui)
 - [ ] Add comments for items (using uuid and some comment storage, probably specific subdir of the todotxt git-managed directory)
