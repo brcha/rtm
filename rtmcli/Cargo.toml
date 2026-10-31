@@ -2,7 +2,7 @@
 name = "rtmcli"
 version = "0.1.4"
 edition = "2024"
-description = "Command-line Todo.txt manager"
+description = "Rusty Todo.txt Manager — CLI"
 license = "MIT"
 repository = "https://github.com/brcha/rtm"
 

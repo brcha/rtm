@@ -235,7 +235,7 @@ variant (no text lines, a larger tick) for 16 and 24 px, where the master's line
 by hand and keep them plain (no Inkscape metadata); every other file in `assets/icons/` is generated
 from them and keeps its name, because the Nix packages and the installers refer to those names.
 
-Regenerate after changing an SVG (from `rtmapp/assets/icons/`; `inkscape` is not in the dev shells):
+Regenerate after changing an SVG (from `rtmapp/assets/icons/`; `inkscape` is not in the dev shell):
 
 ```sh
 t=$(mktemp -d)
@@ -313,8 +313,8 @@ nix build .#rtmapp      # or: nix-build -A rtmapp
 ```
 
 The binary links no native libraries beyond glibc; it loads Wayland, xkbcommon, X11, GL, Vulkan and
-fontconfig with `dlopen`. The dev shells put them on `LD_LIBRARY_PATH`, and the Nix package on the
-binary's rpath (`eguiDeps` in `flake.nix` and `default.nix`, see the root `AGENTS.md`).
+fontconfig with `dlopen`. The dev shell puts them on `LD_LIBRARY_PATH`, and the Nix package on the
+binary's rpath (`eguiDeps` in `default.nix`, see the root `AGENTS.md`).
 
 What it needs at run time (RTM-38); the deb's `depends` and `suggests` in `Cargo.toml` follow this. The
 Wayland entries were found by starting it on Wayland with reduced `LD_LIBRARY_PATH` sets and checking

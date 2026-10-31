@@ -59,19 +59,18 @@ one that had them.
 - **Nix shell:** `shell.nix` (or `nix develop`) provides the toolchain and the libraries `rtmapp` loads
   at run time. Use it before running `cargo build` on NixOS.
 - **Native dependency sync:** When adding a new system/native library dependency to any crate in
-  the workspace, register it in **all three** of the following locations to keep CI, Nix flake
-  builds, and legacy nix-build in sync:
+  the workspace, register it in **both** of the following locations to keep CI and the Nix builds
+  in sync:
   1. `.github/workflows/rust.yml` — an `apt-get install` step (no crate links a native library
      today; the existing apt step installs pijul's libraries for the `rtmsync` tests, see below;
      use the hardened pattern from `release.yml`, see RTM-28 below)
-  2. `flake.nix` — the matching list (`eguiDeps` today), and `devShells.default` if needed
-  3. `default.nix` — the matching list
+  2. `default.nix` — the matching list (`eguiDeps` today; `flake.nix` and `shell.nix` import it),
+     plus `shell.nix`'s inputs if `cargo build` in the dev shell needs the library
 
   **Run-time-only libraries are the exception to item 1.** `rtmapp` links no native libraries beyond
   glibc: egui, winit, wgpu and the font provider load Wayland, xkbcommon, X11, GL, Vulkan and
-  fontconfig with `dlopen`. Those go only into the Nix `eguiDeps` lists (put on the binary's rpath,
-  and on the flake dev shell's `LD_LIBRARY_PATH`) and into the `shellHook` library list in
-  `shell.nix`, which has no `eguiDeps` list of its own; not into an apt step: `rust.yml` builds and
+  fontconfig with `dlopen`. Those go only into the Nix `eguiDeps` list (put on the binary's rpath,
+  and, on Linux, on the dev shell's `LD_LIBRARY_PATH`); not into an apt step: `rust.yml` builds and
   tests without ever starting the GUI, and the Release workflow's smoke launches get them from the
   installed deb's `depends`, installing only its `suggests` and the Mesa drivers themselves. A new run-time library also goes into the `rtmapp` deb's `depends` (or `suggests`, if the
   app runs fully without it) in `[package.metadata.deb]` of `rtmapp/Cargo.toml`; see the run-time
@@ -119,35 +118,43 @@ one that had them.
 
 ## Nix Packaging
 
-- **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmapp`.
-- **`default.nix`** — legacy entry point. `nix-build -A rtmcli`, `nix-build -A rtmapp`.
+- **`default.nix`** — the packages, defined once: `nix-build -A rtmcli`, `nix-build -A rtmapp`.
+- **`flake.nix`** — the flake entry point: `nix build .#rtmcli`, `nix build .#rtmapp`. It imports
+  the packages from `default.nix` and the dev shell from `shell.nix`, both with its pinned nixpkgs,
+  and defines only the apps itself.
+- **`shell.nix`** — the dev shell, defined once (see Dev shell); it takes `eguiDeps` from
+  `default.nix` (`rtmapp.eguiDeps`, a `passthru`).
 - **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
 - **`rtmapp` package (Linux and macOS):** no native build inputs; on Linux `eguiDeps` are added to
   the binary's rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which
   would drop them); on macOS the system frameworks come from stdenv's Apple SDK, and the result is
   a plain binary under `bin/`, not an app bundle (the dmg comes from `scripts/build-macos.sh`).
   `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons (PNGs from 16 to 512 px and the scalable SVG, see `rtmapp/AGENTS.md`) and
-  `Inter-LICENSE.txt` (under `share/licenses/rtmapp`). Its version is read from
-  `rtmapp/Cargo.toml`; `rtmcli` still has a hard-coded `version` in `commonArgs`. Nothing about the
-  packages is to be hard-coded in `flake.nix` or `default.nix`: RTM-75 reads every value the crates'
-  `Cargo.toml` holds (name, version, description, licence, homepage) from there.
+  `Inter-LICENSE.txt` (under `share/licenses/rtmapp`).
+- **Metadata from `Cargo.toml` (RTM-75):** nothing about the packages is hard-coded in the Nix
+  files. `fromCargo` in `default.nix` takes `pname`, `version`, `meta.description`,
+  `meta.license` (an SPDX ID; an unknown one fails evaluation) and `meta.homepage` (from
+  `repository`) from each crate's `[package]`; only what Cargo has no field for (platforms,
+  `mainProgram`, build flags) is written in Nix. The Cargo `description` is also the deb summary.
 - **Tests in the build (RTM-71):** the check phase runs the sync tests, so `gitMinimal`, `pijul` and
   `openssh` (the Pijul test signs through a scratch `ssh-agent`) are `nativeCheckInputs`; `rtmcli`
   also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul test cannot skip itself. At
   run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
 - **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
   macOS for pushes to and pull requests against `main` that change more than Markdown (RTM-76).
-  `default.nix` is not built in CI (it takes the caller's `<nixpkgs>`).
+  `nix-build` is not run in CI (it takes the caller's `<nixpkgs>`), but the flake builds the same
+  definitions from `default.nix` with its pin.
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
   needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
-  `nixos-26.11` when it is released (RTM-45). `default.nix` and `shell.nix` use the caller's
-  `<nixpkgs>`, which must also have rustc ≥ 1.95.
-- **Dev shell:** `nix develop` (flake) or `nix-shell` (legacy). `.envrc` uses `use_nix`; change
-  to `use flake` if using nix-direnv ≥ 2.30. Both shells have `rustfmt`, `clippy` and
-  `git-cliff`, and both start `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and set
+  `nixos-26.11` when it is released (RTM-45). Called directly (`nix-build`, `nix-shell`),
+  `default.nix` and `shell.nix` use the caller's `<nixpkgs>`, which must also have rustc ≥ 1.95.
+- **Dev shell:** `nix develop` (flake, pinned nixpkgs) or `nix-shell` (caller's `<nixpkgs>`), both
+  from `shell.nix`. `.envrc` uses `use_nix`; change to `use flake` if using nix-direnv ≥ 2.30. It
+  has `rustfmt`, `clippy`, `rust-analyzer` and `git-cliff`, sets `LD_LIBRARY_PATH` to `eguiDeps` on
+  Linux only (the libraries do not exist on macOS), and sets `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and
   `RUSTC_WRAPPER` to empty: a calling session that exports `-L/usr/lib` otherwise links against the
   system glibc instead of the shell's (the binary then fails with `GLIBC_2.xx not found`), and a
-  user-configured sccache fails inside the shell. Keep these in both shells.
+  user-configured sccache fails inside the shell.
 
 ---
 
@@ -185,7 +192,7 @@ one that had them.
     Keep the `build: set version` and `docs: changelog` subjects exact when squash-merging: the
     changelog leaves those commits out.
   - **`CHANGELOG.md`** lives on the release branches only, never on `main`, and is written by
-    `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in both Nix dev shells; bash only).
+    `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in the Nix dev shell; bash only).
     A patch release's section covers the commits since the line's previous tag, prepended; a minor
     release's the commits since the previous release branch was cut (the first CalVer release:
     since `v0.1.3`), in a new file. If the release branch moves while the changelog or version PR
@@ -234,11 +241,11 @@ one that had them.
   after a cut, or on a release branch for a patch release (see "Making a release"), to bump the
   version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml`, `rtmsync/Cargo.toml` and
   `todotxt/Cargo.toml` in lockstep. The Nix packages read their versions from those files, so a
-  bump needs no Nix change (`rtmcli`'s is hard-coded until RTM-75). It scopes its match to the
+  bump needs no Nix change (RTM-75). It scopes its match to the
   `[package]` table specifically — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table
   with its own `version` key. A new release must have a higher version than the last one on its line
   (`releases/vYY.M`), or neither the MSI nor apt replaces the installed copy.
-- **Identity:** the binary is `rtmapp` everywhere (`flake.nix`/`default.nix` `mainProgram`, the desktop
+- **Identity:** the binary is `rtmapp` everywhere (`default.nix` `mainProgram`, the desktop
   entry's `Exec=rtmapp`, `Icon=rtmapp` and `StartupWMClass=rtmapp`, the deb package name); the display
   name is "Rusty Todo.txt Manager", also the macOS bundle's name (`Rusty Todo.txt Manager.app`, whose
   executable is `rtmapp`); the reverse-DNS identifier (Tauri's `identifier`) is `com.brcha.rtm`. It is
