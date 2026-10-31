@@ -262,7 +262,6 @@ one that had them.
 
 ## Future Plans
 
-- Cloud sync via private git repo for todo.txt files
 - Mobile GUI (Android-centric, cross-platform)
 - Subtasks (uuid + sub tags already in the data model, needs UI)
 - Comments per item (uuid-keyed, stored in a subdir of the todo.txt directory)

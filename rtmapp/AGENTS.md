@@ -13,8 +13,8 @@ the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorti
 complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
 package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); the MSI, deb and
 AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11); sync
-through Git or Pijul (RTM-64), in the background since RTM-20. Still to come: the check for a dirty
-or untracked todo.txt on open (RTM-70).
+through Git or Pijul (RTM-64), in the background since RTM-20, with the check for a dirty or
+untracked todo.txt on open (RTM-70).
 
 ---
 
@@ -135,16 +135,24 @@ rtmapp/
   Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
   uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
 - **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::find`): `sync = false`,
-  no repository or an untracked file → no sync and no commits; both Git and Pijul → the Git-or-Pijul
+  no repository or an ignored file → no sync and no commits; both Git and Pijul → the Git-or-Pijul
   dialog (or "Don't sync", which asks again next time); a conflicted repository (`is_conflicted`) →
   the file is not opened and the error line says to resolve it by hand; a failed check (e.g. `git`
   missing) → "Not syncing: …" in the header; no remote → commit only.
+  - **The check on open (RTM-70)**, the RTM-57 table in `rtmsync/AGENTS.md`: `find` reads
+    `Vcs::state` and returns `Found::Ask(repo, question)` for a modified or untracked file; no worker
+    starts until `App::answer`. A modal (`sync_question`) asks. Modified: "Commit them" commits `rtm:
+    commit outside changes` and syncs, "Don't open" closes the file with a "commit or revert by hand"
+    error. Untracked: "Add it" commits `rtm: track <name>` (which adds it) and syncs, "Not now" opens
+    it without sync, asked again next time. An untracked file in a conflicted repository opens
+    without sync and without asking. A missing file keeps the old rule (tracked files sync), as in
+    rtmcli: its state cannot be told reliably.
   - **One worker thread** (`sync::Worker`) runs every git or pijul call: `Commit` (local) and
     `Sync` (pull, then push) jobs, a result per job (`Done`), and `ctx.request_repaint()` after each,
     so results arrive without input. At most one `Sync` waits in the queue.
-  - **When it syncs:** after the file is opened, every `sync_interval_minutes` since the last sync
-    was asked for, on the header's **Sync now** button (shown when there is a remote, disabled while
-    a sync runs) and on exit. The timer and the results run in `App::logic`, which eframe also calls
+  - **When it syncs:** after the file is opened (after the answer, when the check on open asks),
+    every `sync_interval_minutes` since the last sync was asked for, on the header's **Sync now**
+    button (shown when there is a remote, disabled while a sync runs) and on exit. The timer and the results run in `App::logic`, which eframe also calls
     while the window is minimized or hidden; `request_repaint_after` wakes it when a sync is due.
   - **Editing never waits.** Each mutation is a `Change` (add, toggle, edit, delete) applied to the
     list at once and kept in `pending` until written. `flush` writes and queues one `Commit` only

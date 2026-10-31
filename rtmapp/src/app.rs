@@ -10,7 +10,7 @@ use todotxt::{TodoItem, TodoLibrary};
 use crate::config::{self, AppConfig};
 use crate::edit::{self, EditForm, Outcome};
 use crate::list::{self, RowAction};
-use crate::sync::{self, Done, Found, Worker};
+use crate::sync::{self, Done, Found, Question, Repo, Worker};
 use crate::theme::{self, Palette};
 
 /// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
@@ -38,6 +38,8 @@ pub struct App {
     last_sync: Instant,
     /// The VCSs to choose from when the file's directory belongs to several.
     choose_vcs: Option<Vec<rtmsync::Vcs>>,
+    /// The question about the file's outside changes or untracked state, asked before it syncs.
+    asking: Option<(Repo, Question)>,
     /// The edit dialog's item as it was when the dialog opened, and what deleting it would remove,
     /// so a pull that changed either is noticed.
     edited: Option<TodoItem>,
@@ -76,6 +78,7 @@ impl App {
             sync_status: None,
             last_sync: Instant::now(),
             choose_vcs: None,
+            asking: None,
             edited: None,
             deleting: None,
             stale: false,
@@ -90,6 +93,7 @@ impl App {
         self.worker = None;
         self.sync_status = None;
         self.choose_vcs = None;
+        self.asking = None;
         let Some(library) = &self.library else {
             return;
         };
@@ -99,6 +103,7 @@ impl App {
                 self.worker = Some(Worker::start(repo, self.ctx.clone()));
                 self.sync_now(Instant::now());
             }
+            Found::Ask(repo, question) => self.asking = Some((repo, question)),
             Found::Ambiguous(found) => self.choose_vcs = Some(found),
             Found::Conflicted => self.conflicted(),
             Found::Unavailable(e) => self.sync_status = Some(format!("Not syncing: {e}")),
@@ -122,6 +127,29 @@ impl App {
              hand, then load the file again.{lost}",
             file.unwrap_or_default()
         ));
+    }
+
+    /// The answer to `asking`: yes commits the outside changes or adds the file, then syncs; no
+    /// closes a modified file, and opens an untracked one without sync (asked again next time).
+    fn answer(&mut self, yes: bool) {
+        let Some((repo, question)) = self.asking.take() else {
+            return;
+        };
+        if yes {
+            let message = repo.commit_message(question);
+            let mut worker = Worker::start(repo, self.ctx.clone());
+            worker.commit(message);
+            self.worker = Some(worker);
+            self.sync_now(Instant::now());
+        } else if question == Question::Modified {
+            let file = self.library.take().map(|library| library.file_name);
+            self.editing = None;
+            self.error = Some(format!(
+                "{} has changes rtm did not commit; commit or revert them by hand, then load the \
+                 file again.",
+                file.unwrap_or_default()
+            ));
+        }
     }
 
     fn busy(&self) -> bool {
@@ -346,6 +374,49 @@ impl App {
                 self.save_config();
                 self.connect();
             }
+        }
+    }
+
+    fn sync_question(&mut self, ctx: &egui::Context, p: &Palette) {
+        let Some((repo, question)) = &self.asking else {
+            return;
+        };
+        let name = self
+            .library
+            .as_ref()
+            .and_then(|library| Path::new(&library.file_name).file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let vcs = match repo.vcs() {
+            rtmsync::Vcs::Git => "Git",
+            rtmsync::Vcs::Pijul => "Pijul",
+        };
+        let (text, yes, no) = match question {
+            Question::Modified => (
+                format!("{name} has changes that rtm did not commit."),
+                "Commit them",
+                "Don't open",
+            ),
+            Question::Untracked => (
+                format!("{name} is not in the {vcs} repository yet."),
+                "Add it",
+                "Not now",
+            ),
+        };
+        let mut answer = None;
+        egui::Modal::new(egui::Id::unique("sync-question")).show(ctx, |ui| {
+            ui.label(RichText::new(text).color(p.text));
+            ui.horizontal(|ui| {
+                if theme::primary_button(ui, yes).clicked() {
+                    answer = Some(true);
+                }
+                if theme::secondary_button(ui, no).clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+        if let Some(yes) = answer {
+            self.answer(yes);
         }
     }
 
@@ -666,6 +737,7 @@ impl eframe::App for App {
             None => {}
         }
         self.vcs_question(&ui.ctx().clone(), p);
+        self.sync_question(&ui.ctx().clone(), p);
         if let Some(form) = &mut self.editing {
             match edit::show(ui.ctx(), p, form) {
                 Some(Outcome::Save) => self.save_edit(),
@@ -893,6 +965,7 @@ mod tests {
             sync_status: None,
             last_sync: Instant::now(),
             choose_vcs: None,
+            asking: None,
             edited: None,
             deleting: None,
             stale: false,
@@ -1448,12 +1521,123 @@ mod tests {
     }
 
     #[test]
-    fn an_untracked_file_does_not_sync() {
-        let dir = remote_and_clones("sync untracked", "Alpha\n");
+    fn outside_changes_are_committed_and_pushed_when_the_user_says_yes() {
+        let dir = remote_and_clones("ask modified yes", "Alpha\n");
+        std::fs::write(dir.join("a/todo.txt"), "Alpha\nBy hand\n").unwrap();
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        assert!(app.worker.is_none());
+        assert!(matches!(app.asking, Some((_, Question::Modified))));
+
+        app.answer(true);
+        wait(&mut app);
+        assert!(app.asking.is_none());
+        assert_eq!(subjects(&dir.join("a"), 1), "rtm: commit outside changes");
+        assert_eq!(
+            subjects(&dir.join("remote"), 1),
+            "rtm: commit outside changes"
+        );
+        assert_eq!(descriptions(&app), ["Alpha", "By hand"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn outside_changes_close_the_file_when_the_user_says_no() {
+        let dir = remote_and_clones("ask modified no", "Alpha\n");
+        std::fs::write(dir.join("a/todo.txt"), "Alpha\nBy hand\n").unwrap();
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        app.answer(false);
+        assert!(app.library.is_none() && app.worker.is_none());
+        assert!(
+            app.error
+                .as_deref()
+                .is_some_and(|e| e.contains("commit or revert them by hand"))
+        );
+        assert_eq!(subjects(&dir.join("a"), 1), "start");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a/todo.txt")).unwrap(),
+            "Alpha\nBy hand\n"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_untracked_file_is_added_and_pushed_when_the_user_says_yes() {
+        let dir = remote_and_clones("ask untracked yes", "Alpha\n");
+        std::fs::write(dir.join("a/other.txt"), "Other\n").unwrap();
+        let mut app = synced_app(&dir, &dir.join("a/other.txt"));
+        assert!(matches!(app.asking, Some((_, Question::Untracked))));
+
+        app.answer(true);
+        wait(&mut app);
+        assert_eq!(subjects(&dir.join("a"), 1), "rtm: track other.txt");
+        assert_eq!(subjects(&dir.join("remote"), 1), "rtm: track other.txt");
+        assert!(app.worker.is_some());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_untracked_file_opens_without_sync_when_the_user_says_no() {
+        let dir = remote_and_clones("ask untracked no", "Alpha\n");
+        std::fs::write(dir.join("a/other.txt"), "Other\n").unwrap();
+        let mut app = synced_app(&dir, &dir.join("a/other.txt"));
+        app.answer(false);
+        assert!(app.library.is_some() && app.worker.is_none() && app.asking.is_none());
+        app.new_item = "Call mom".to_owned();
+        app.add_item();
+        assert_eq!(subjects(&dir.join("a"), 1), "start");
+
+        // Asked again the next time the file opens.
+        app.connect();
+        assert!(matches!(app.asking, Some((_, Question::Untracked))));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_ignored_file_opens_without_sync_or_a_question() {
+        let dir = remote_and_clones("ask ignored", "Alpha\n");
+        std::fs::write(dir.join("a/.gitignore"), "other.txt\n").unwrap();
         std::fs::write(dir.join("a/other.txt"), "Other\n").unwrap();
         let app = synced_app(&dir, &dir.join("a/other.txt"));
-        assert!(app.worker.is_none());
-        assert!(app.library.is_some());
+        assert!(app.library.is_some() && app.worker.is_none() && app.asking.is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_untracked_file_in_a_conflicted_repository_opens_without_sync_or_a_question() {
+        let dir = remote_and_clones("ask untracked conflict", "Alpha\n");
+        push_from_b(&dir, "Alpha from b\n");
+        std::fs::write(dir.join("a/todo.txt"), "Alpha from a\n").unwrap();
+        git(&dir.join("a"), &["commit", "--quiet", "-am", "from a"]);
+        let pull = std::process::Command::new("git")
+            .current_dir(dir.join("a"))
+            .args(["pull", "--quiet", "--rebase"])
+            .output()
+            .unwrap();
+        assert!(!pull.status.success());
+        std::fs::write(dir.join("a/other.txt"), "Other\n").unwrap();
+
+        let app = synced_app(&dir, &dir.join("a/other.txt"));
+        assert!(app.library.is_some() && app.worker.is_none() && app.asking.is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_missing_tracked_file_is_never_asked_about() {
+        let dir = remote_and_clones("ask missing", "Alpha\n");
+        std::fs::remove_file(dir.join("a/todo.txt")).unwrap();
+        let found = sync::find(&dir.join("a/todo.txt"), &AppConfig::default());
+        assert!(matches!(found, Found::Repo(_)));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn sync_off_asks_nothing_about_outside_changes() {
+        let dir = remote_and_clones("ask sync off", "Alpha\n");
+        std::fs::write(dir.join("a/todo.txt"), "Alpha\nBy hand\n").unwrap();
+        let mut app = bare_app(&dir, Some(load_library(&dir.join("a/todo.txt")).unwrap()));
+        app.config.sync = false;
+        app.connect();
+        assert!(app.asking.is_none() && app.worker.is_none());
         let _ = std::fs::remove_dir_all(dir);
     }
 

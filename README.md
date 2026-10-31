@@ -161,12 +161,14 @@ it. Editing never waits for a sync. Set `sync_interval_minutes` in `rtm/config.t
 interval, or to 0 to sync only on open, on close and on demand.
 
 - Commit the todo.txt to the repository once (`git add todo.txt` and commit, or `pijul add` and
-  `pijul record`), or let rtmcli do it with `--commit-changes`; rtm never adds an untracked file
-  on its own. rtmcli reminds you of an untracked todo.txt on every run; ignore the file in the
-  repository (`.gitignore`, or `.ignore` for Pijul) to silence it; rtm then never syncs it.
+  `pijul record`), or let rtm do it: rtmcli with `--commit-changes`, the desktop app when it asks
+  on open. rtm never adds an untracked file on its own. rtmcli reminds you of an untracked todo.txt
+  on every run, and the desktop app asks every time it opens it; ignore the file in the repository
+  (`.gitignore`, or `.ignore` for Pijul) to silence them; rtm then never syncs it.
 - If the todo.txt has changes rtm did not commit (edited by hand, or with `--no-sync`), rtmcli
   stops before syncing: commit or revert them, or run it with `--commit-changes` to commit them
-  first. (The desktop app does not check this yet.)
+  first. The desktop app asks when it opens the file: commit them, or leave the file closed to
+  commit or revert them yourself.
 - Without a remote (no upstream branch for Git), changes are committed but not pushed.
 - `rtmcli sync` only pulls and pushes. `--no-sync` (or `RTM_NO_SYNC=1`) works on the file without
   committing, pulling or pushing; in the desktop app, put `sync = false` in `rtm/config.toml` in
@@ -183,7 +185,7 @@ interval, or to 0 to sync only on open, on close and on demand.
 ## General plan
 
 - [x] Implement basic functionality of the Todo.txt manager with CLI and desktop GUI (for GNU/Linux, Mac OS X and Windows, since I use all of those).
-- [ ] Create cloud synchronisation for the Todo.txt files (ideas welcome, my plan is to setup a private git repo, which is what I currently use anyway). In progress: `rtmsync` (Git or Pijul).
+- [x] Create cloud synchronisation for the Todo.txt files (ideas welcome, my plan is to setup a private git repo, which is what I currently use anyway). Done through Git or Pijul, see [Syncing through Git or Pijul](#syncing-through-git-or-pijul).
 - [ ] Make a mobile GUI for the library (Android centric, but hopefully cross platform).
 - [ ] Add subtasks as a concept (already provided uuid and sub tags for todo.txt items, needs implementation in cli/ui)
 - [ ] Add comments for items (using uuid and some comment storage, probably specific subdir of the todotxt git-managed directory)
