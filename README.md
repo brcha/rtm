@@ -193,3 +193,5 @@ interval, or to 0 to sync only on open, on close and on demand.
 ## License
 
 [MIT](https://brcha.mit-license.org/@2023)
+
+<!-- RTM-82 test, not to be merged -->
