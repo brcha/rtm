@@ -95,7 +95,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   `FOCUSABLE`: hit areas inside a popup use `Sense::CLICK`, so Tab does not walk into them.
 - **Look:** reproduces the Tauri app's `styles.css`; see "Look" below.
 - **Filtering and sorting** (`list::visible`) follow the Tauri app's `get_items`, and a test checks the
-  filters against its predicate, copied verbatim, for every flag combination. Sorting puts items
+  filters against its predicate (rewritten for clippy, equivalent), for every flag combination. Sorting puts items
   without a due date first, then dated items, with priority as the tie-break (none last). **One
   deliberate difference:** dates run earliest first and `reverse_sort` gives latest first; the Tauri
   app had it the other way round, so the saved `reverse_sort` setting now gives the opposite order.

@@ -315,9 +315,7 @@ fn main() {
                     item.done == completed
                         && match date_filter {
                             None => true,
-                            Some((start, end)) => {
-                                item.due.map_or(false, |d| d >= start && d <= end)
-                            }
+                            Some((start, end)) => item.due.is_some_and(|d| d >= start && d <= end),
                         }
                 })
                 .collect();
@@ -376,8 +374,8 @@ fn main() {
                     .enumerate()
                     .filter(|(_, item)| {
                         !item.done
-                            && date_filter.map_or(true, |(start, end)| {
-                                item.due.map_or(false, |d| d >= start && d <= end)
+                            && date_filter.is_none_or(|(start, end)| {
+                                item.due.is_some_and(|d| d >= start && d <= end)
                             })
                     })
                     .map(|(i, _)| i)
@@ -425,8 +423,8 @@ fn main() {
                     }
                 } else if let Ok(uuid) = arg1_ref.parse::<uuid::Uuid>() {
                     let mut found = false;
-                    for i in 0..items.len() {
-                        if items[i].uuid == Some(uuid) && !items[i].done {
+                    for (i, item) in items.iter().enumerate() {
+                        if item.uuid == Some(uuid) && !item.done {
                             indices_to_complete.push(i);
                             found = true;
                             break;

@@ -104,51 +104,46 @@ impl TodoLibrary {
         self.items[index].done = true;
         // Check for recurrence and create new item
         let has_recurrence = self.items[index].recurrence.is_some();
-        if has_recurrence {
-            if let Some(ref recurrence) = self.items[index].recurrence {
-                if let Some(current_due) = self.items[index].due {
-                    let base_date = if recurrence.strict {
-                        current_due
-                    } else {
-                        Local::now().date_naive()
-                    };
-                    let new_due = match recurrence.unit {
-                        TodoRecurrenceUnit::Daily => {
-                            base_date + Duration::days(recurrence.count as i64)
-                        }
-                        TodoRecurrenceUnit::BusinessDay => {
-                            // Skip weekends or something, but for simplicity, treat as daily
-                            base_date + Duration::days(recurrence.count as i64)
-                        }
-                        TodoRecurrenceUnit::Weekly => {
-                            base_date + Duration::weeks(recurrence.count as i64)
-                        }
-                        TodoRecurrenceUnit::Monthly => {
-                            // Approximate months as 30 days
-                            base_date + Duration::days(recurrence.count as i64 * 30)
-                        }
-                        TodoRecurrenceUnit::Yearly => {
-                            // Approximate years as 365 days
-                            base_date + Duration::days(recurrence.count as i64 * 365)
-                        }
-                    };
-                    let new_item = TodoItem {
-                        done: false,
-                        priority: self.items[index].priority.clone(),
-                        completion_date: None,
-                        creation_date: Some(Local::now().date_naive()),
-                        description: self.items[index].description.clone(),
-                        projects: self.items[index].projects.clone(),
-                        contexts: self.items[index].contexts.clone(),
-                        due: Some(new_due),
-                        recurrence: Some(recurrence.clone()),
-                        threshold: self.items[index].threshold,
-                        uuid: None,
-                        sub: None,
-                    };
-                    self.items.push(new_item);
+        if has_recurrence
+            && let Some(ref recurrence) = self.items[index].recurrence
+            && let Some(current_due) = self.items[index].due
+        {
+            let base_date = if recurrence.strict {
+                current_due
+            } else {
+                Local::now().date_naive()
+            };
+            let new_due = match recurrence.unit {
+                TodoRecurrenceUnit::Daily => base_date + Duration::days(recurrence.count as i64),
+                TodoRecurrenceUnit::BusinessDay => {
+                    // Skip weekends or something, but for simplicity, treat as daily
+                    base_date + Duration::days(recurrence.count as i64)
                 }
-            }
+                TodoRecurrenceUnit::Weekly => base_date + Duration::weeks(recurrence.count as i64),
+                TodoRecurrenceUnit::Monthly => {
+                    // Approximate months as 30 days
+                    base_date + Duration::days(recurrence.count as i64 * 30)
+                }
+                TodoRecurrenceUnit::Yearly => {
+                    // Approximate years as 365 days
+                    base_date + Duration::days(recurrence.count as i64 * 365)
+                }
+            };
+            let new_item = TodoItem {
+                done: false,
+                priority: self.items[index].priority.clone(),
+                completion_date: None,
+                creation_date: Some(Local::now().date_naive()),
+                description: self.items[index].description.clone(),
+                projects: self.items[index].projects.clone(),
+                contexts: self.items[index].contexts.clone(),
+                due: Some(new_due),
+                recurrence: Some(recurrence.clone()),
+                threshold: self.items[index].threshold,
+                uuid: None,
+                sub: None,
+            };
+            self.items.push(new_item);
         }
         Some(has_recurrence)
     }

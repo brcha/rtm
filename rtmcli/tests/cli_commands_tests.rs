@@ -20,7 +20,7 @@ fn test_cli_add_single_task() {
 
     // Run add command
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Buy milk",
         ])
         .output()
@@ -46,7 +46,7 @@ fn test_cli_add_multiple_tasks() {
 
     // Add first task
     Command::new("cargo")
-        .args(&[
+        .args([
             "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Buy milk",
         ])
         .output()
@@ -54,7 +54,7 @@ fn test_cli_add_multiple_tasks() {
 
     // Add second task
     Command::new("cargo")
-        .args(&[
+        .args([
             "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Call mom",
         ])
         .output()
@@ -81,13 +81,13 @@ fn test_cli_list_tasks() {
 
     // Add tasks
     Command::new("cargo")
-        .args(&[
+        .args([
             "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Task 1",
         ])
         .output()
         .unwrap();
     Command::new("cargo")
-        .args(&[
+        .args([
             "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Task 2",
         ])
         .output()
@@ -95,7 +95,7 @@ fn test_cli_list_tasks() {
 
     // List tasks
     let output = Command::new("cargo")
-        .args(&["run", "--bin", "rtmcli", "--", "-f", file_path, "list"])
+        .args(["run", "--bin", "rtmcli", "--", "-f", file_path, "list"])
         .output()
         .expect("Failed to run list");
 
@@ -118,7 +118,7 @@ fn test_cli_complete_task_by_index() {
 
     // Add task
     Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--bin",
             "rtmcli",
@@ -133,7 +133,7 @@ fn test_cli_complete_task_by_index() {
 
     // Complete task by index
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run", "--bin", "rtmcli", "--", "-f", file_path, "complete", "1",
         ])
         .output()
@@ -160,7 +160,7 @@ fn test_cli_list_completed_tasks() {
 
     // Add and complete task
     Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--bin",
             "rtmcli",
@@ -173,7 +173,7 @@ fn test_cli_list_completed_tasks() {
         .output()
         .unwrap();
     Command::new("cargo")
-        .args(&[
+        .args([
             "run", "--bin", "rtmcli", "--", "-f", file_path, "complete", "1",
         ])
         .output()
@@ -181,7 +181,7 @@ fn test_cli_list_completed_tasks() {
 
     // Add another uncompleted
     Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--bin",
             "rtmcli",
@@ -196,7 +196,7 @@ fn test_cli_list_completed_tasks() {
 
     // List completed
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--bin",
             "rtmcli",

@@ -35,11 +35,11 @@ fn config(bits: u8) -> AppConfig {
 
 const ALL: u8 = 1 | 2;
 
-/// The Tauri app's filter, copied verbatim from `get_items` in `rtmapp/src-tauri/src/lib.rs` at
+/// The Tauri app's filter, equivalent to `get_items` in `rtmapp/src-tauri/src/lib.rs` at
 /// 5076649 (removed in RTM-39).
 fn tauri_app_shows(item: &TodoItem, config: &AppConfig, today: NaiveDate) -> bool {
-    !(item.due.map_or(false, |d| d > today) && !config.show_future_items)
-        && !(item.done && !config.show_completed_items)
+    (config.show_future_items || item.due.is_none_or(|d| d <= today))
+        && (config.show_completed_items || !item.done)
         && !(config.hide_no_date && item.due.is_none())
 }
 
