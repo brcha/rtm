@@ -432,7 +432,35 @@ impl App {
         else {
             return;
         };
-        match load_library(&path) {
+        self.open_file(&path);
+    }
+
+    /// Asks where to create a todo.txt, creates it empty and opens it. The dialog has asked before
+    /// returning an existing file, so that file is replaced. Blocks the UI thread like `pick_file`.
+    fn new_file(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Text Files", &["txt"])
+            .set_file_name("todo.txt")
+            .save_file()
+        else {
+            return;
+        };
+        self.create_file(&path);
+    }
+
+    fn create_file(&mut self, path: &Path) {
+        match std::fs::File::create(path) {
+            Ok(_) => self.open_file(path),
+            Err(e) => self.error = Some(format!("{}: {e}", path.display())),
+        }
+    }
+
+    /// Makes `path` the active file, saves it in the config and starts its sync.
+    fn open_file(&mut self, path: &Path) {
+        match load_library(path) {
             Ok(library) => {
                 // The saved Git-or-Pijul choice belonged to the previous file.
                 if self.config.file_name.as_deref() != Some(library.file_name.as_str()) {
@@ -491,11 +519,19 @@ impl App {
     fn sidebar(&mut self, ui: &mut Ui, p: &Palette) {
         ui.spacing_mut().item_spacing.y = 16.0;
         let busy = self.busy();
-        if ui
-            .add_enabled_ui(!busy, |ui| theme::primary_button(ui, "Load File"))
-            .inner
-            .clicked()
-        {
+        let (new, load) = ui
+            .add_enabled_ui(!busy, |ui| {
+                ui.horizontal(|ui| {
+                    let new = theme::secondary_button(ui, "New File").clicked();
+                    (new, theme::primary_button(ui, "Load File").clicked())
+                })
+                .inner
+            })
+            .inner;
+        if new {
+            self.new_file();
+        }
+        if load {
             self.pick_file();
         }
         Frame::new()
@@ -656,7 +692,8 @@ impl App {
                     empty_state(
                         ui,
                         p,
-                        "No file loaded. Use 'Load File' to select a todo.txt file.",
+                        "No file loaded. Use 'New File' to create a todo.txt file, or 'Load File' \
+                         to select one.",
                     );
                     return None;
                 };
@@ -1024,6 +1061,58 @@ mod tests {
 
         assert_eq!(app.error, None);
         assert_eq!(file_lines(&dir), ["Only item"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_new_file_is_created_empty_opened_and_kept_in_the_config() {
+        let dir = temp_dir("new file");
+        let mut app = bare_app(&dir, None);
+
+        app.create_file(&dir.join("sub/todo.txt"));
+
+        assert_eq!(app.error, None);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("sub/todo.txt")).unwrap(),
+            ""
+        );
+        assert_eq!(app.library.as_ref().unwrap().item_count(), 0);
+        app.new_item = "Buy milk".to_owned();
+        app.add_item();
+        assert_eq!(app.error, None);
+        // What the next start reads.
+        let name = AppConfig::load(&dir.join("config.toml")).file_name.unwrap();
+        let canonical = dir.join("sub/todo.txt").canonicalize().unwrap();
+        assert_eq!(Path::new(&name), canonical);
+        let library = load_library(Path::new(&name)).unwrap();
+        assert_eq!(library.items[0].description, "Buy milk");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_new_file_replaces_an_existing_one() {
+        let dir = temp_dir("new file replaces");
+        std::fs::write(dir.join("todo.txt"), "Old item\n").unwrap();
+        let mut app = bare_app(&dir, None);
+
+        app.create_file(&dir.join("todo.txt"));
+
+        assert_eq!(app.error, None);
+        assert_eq!(std::fs::read_to_string(dir.join("todo.txt")).unwrap(), "");
+        assert_eq!(app.library.as_ref().unwrap().item_count(), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_new_file_in_a_missing_folder_is_an_error() {
+        let dir = temp_dir("new file missing");
+        let mut app = bare_app(&dir, None);
+
+        app.create_file(&dir.join("missing/todo.txt"));
+
+        assert!(app.error.as_deref().unwrap().contains("missing"));
+        assert!(app.library.is_none());
+        assert!(!dir.join("config.toml").exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1618,6 +1707,22 @@ mod tests {
 
         let app = synced_app(&dir, &dir.join("a/other.txt"));
         assert!(app.library.is_some() && app.worker.is_none() && app.asking.is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_new_file_in_a_repository_is_asked_about_and_added() {
+        let dir = remote_and_clones("new file untracked", "Alpha\n");
+        let mut app = bare_app(&dir, None);
+
+        app.create_file(&dir.join("a/new.txt"));
+
+        assert!(app.library.is_some() && app.worker.is_none());
+        assert!(matches!(app.asking, Some((_, Question::Untracked))));
+        app.answer(true);
+        wait(&mut app);
+        assert_eq!(subjects(&dir.join("a"), 1), "rtm: track new.txt");
+        assert_eq!(app.sync_status, None);
         let _ = std::fs::remove_dir_all(dir);
     }
 
