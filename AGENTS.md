@@ -104,10 +104,16 @@ one that had them.
   - So `rust.yml`, `nix.yml` and `release.yml` run on every pull request, never filtered by
     `paths` on the trigger: a workflow skipped by a path filter never reports its checks, and the
     required check would block the merge. Their `changes` job reads the pull request's diff and
-    skips the build jobs when nothing relevant changed: for Rust and Nix anything but Markdown,
-    for Release its list of package inputs (the crates, `Cargo.toml`/`Cargo.lock`, `LICENSE`, the
-    build scripts, the workflow), Markdown excluded. Keep that list in step with what goes into
-    the packages.
+    skips the build jobs when none of the workflow's inputs changed, Markdown always excluded
+    (RTM-82):
+    - Rust: the crates, `Cargo.toml`/`Cargo.lock`, the workflow.
+    - Nix: the crates, `Cargo.toml`/`Cargo.lock`, `flake.nix`, `flake.lock`, `default.nix`, the
+      workflow. Not `shell.nix`: CI does not build the dev shell.
+    - Release: its list of package inputs (the crates, `Cargo.toml`/`Cargo.lock`, `LICENSE`, the
+      build scripts, the workflow).
+
+    Keep each list in step with what its build reads (a tracked `rust-toolchain*` or `.cargo/`
+    would go into Rust's and Nix's).
   - Pushes to `main` start Rust and Nix unless every changed file is Markdown (`paths-ignore`; no
     checks are required there). Release also runs on `v*` tags and by manual dispatch, always
     building.
@@ -145,8 +151,9 @@ one that had them.
   also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul test cannot skip itself. At
   run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
 - **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
-  macOS for pushes to `main` and pull requests against `main` or `releases/**` (RTM-78) that change
-  more than Markdown (RTM-76).
+  macOS for pushes to `main` that change more than Markdown and pull requests against `main` or
+  `releases/**` (RTM-78) that change one of its inputs (RTM-76, RTM-82; see "Which changes start
+  which build").
   `nix-build` is not run in CI (it takes the caller's `<nixpkgs>`), but the flake builds the same
   definitions from `default.nix` with its pin.
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
