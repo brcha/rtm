@@ -97,6 +97,16 @@ one that had them.
   `apt-get update` and `apt-get install` as defence in depth. **Do not revert this for a marginally
   faster "good day" run** — it trades a small, predictable slowdown for an unbounded hang becoming
   a fast, loud failure instead.
+- **Which changes start which workflow (RTM-76):** Markdown alone (`**/*.md`) starts no build.
+  - `rust.yml` and `nix.yml`: pushes to and pull requests against `main`, unless every changed
+    file is Markdown (`paths-ignore`).
+  - `release.yml`: `v*` tags, manual dispatch, and pull requests against `main` or `releases/**`
+    that touch a file in its `paths` list other than Markdown (`'!**/*.md'` stays last there).
+  - `pr-title.yml`: every pull request against `main` or `releases/**`.
+
+  A new trigger takes the same filter. `main` has no required status checks; adding them would
+  need jobs that always run and skip their steps, since a workflow skipped by a path filter leaves
+  its required check pending and blocks the merge.
 
 ---
 
@@ -119,8 +129,8 @@ one that had them.
   also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul test cannot skip itself. At
   run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
 - **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
-  macOS for pushes to and pull requests against `main`. `default.nix` is not built in CI (it takes
-  the caller's `<nixpkgs>`).
+  macOS for pushes to and pull requests against `main` that change more than Markdown (RTM-76).
+  `default.nix` is not built in CI (it takes the caller's `<nixpkgs>`).
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
   needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
   `nixos-26.11` when it is released (RTM-45). `default.nix` and `shell.nix` use the caller's
@@ -178,8 +188,8 @@ one that had them.
   run, publishes nothing, no tag required), and pull requests against `main` or `releases/**`
   (`pr-title.yml` checks those too) that touch the
   crates (`rtmsync` included since RTM-21), `Cargo.toml`/`Cargo.lock`, `LICENSE`,
-  `scripts/build-appimage.sh`, `scripts/build-macos.sh` or the workflow (builds and tests the
-  packages, publishes nothing). Windows and Linux are x64 only — no
+  `scripts/build-appimage.sh`, `scripts/build-macos.sh` or the workflow, Markdown excluded (builds
+  and tests the packages, publishes nothing). Windows and Linux are x64 only — no
   ARM64, no 32-bit; macOS is one universal (arm64 + x86_64) build (RTM-11).
 - **Assets:** `rtmapp_<v>_x64_en-US.msi`, `rtmcli-<v>-x64.exe`, `rtmapp_<v>_amd64.deb`,
   `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`, `rtmapp_<v>_universal.dmg`,
