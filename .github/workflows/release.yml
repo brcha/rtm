@@ -13,22 +13,11 @@ on:
         required: false
         default: ''
   # Builds and tests the packages (publishes nothing) when a pull request touches anything that
-  # goes into them, so packaging breaks are caught before a tag rather than at release time.
-  # Markdown alone does not start it.
+  # goes into them (see the changes job), so packaging breaks are caught before a tag rather than
+  # at release time. Every pull request runs the workflow, so the required gate check always
+  # reports.
   pull_request:
     branches: [ "main", "releases/**" ]
-    paths:
-      - 'rtmapp/**'
-      - 'rtmcli/**'
-      - 'rtmsync/**'
-      - 'todotxt/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'LICENSE'
-      - 'scripts/build-appimage.sh'
-      - 'scripts/build-macos.sh'
-      - '.github/workflows/release.yml'
-      - '!**/*.md'
 
 permissions:
   contents: write
@@ -37,10 +26,46 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Whether the pull request changes anything that goes into the packages, Markdown excluded. Runs
+  # on every event and never under an `if:`: version needs it, and on other events it always
+  # reports code.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 2
+
+      - id: diff
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo code=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # HEAD is the pull request's merge commit, HEAD^1 the base it merges into. --no-renames
+          # lists both paths of a rename, so renaming a source file to .md still counts as code.
+          files=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          inputs='^(rtmapp|rtmcli|rtmsync|todotxt)/|^(Cargo\.toml|Cargo\.lock|LICENSE|scripts/build-appimage\.sh|scripts/build-macos\.sh|\.github/workflows/release\.yml)$'
+          # No -q at the end: grep -q exits early, and pipefail would read the first grep's
+          # SIGPIPE as "no code".
+          if grep -E "$inputs" <<< "$files" | grep -v '\.md$' > /dev/null; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          else
+            echo code=false >> "$GITHUB_OUTPUT"
+          fi
+
   # Extracted into its own job so all platform jobs depend on the same version checks via
   # `needs:` instead of duplicating them. Runs on ubuntu-latest purely as a cheap host for pwsh;
-  # it builds nothing.
+  # it builds nothing. Skipped when the changes job finds nothing to build, and the platform jobs
+  # skip with it.
   version:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -983,3 +1008,15 @@ jobs:
           draft: true
           body: ${{ needs.version.outputs.notes }}
           files: dist/*
+
+  # The check the main ruleset requires (RTM-76): passes when the package builds passed, or were
+  # skipped because the pull request changes nothing that goes into the packages; fails when any
+  # of them failed or was cancelled.
+  release:
+    if: always()
+    needs: [changes, version, windows, linux, macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
