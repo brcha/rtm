@@ -522,9 +522,20 @@ jobs:
 
     steps:
       # git for a real checkout, file for appimagetool, tar and zstd for the cache. Neither crate
-      # links a native library, so nothing else.
+      # links a native library, so nothing else. Retried with fresh metadata: a mirror once served
+      # an empty repomd.xml, which dnf reports as a parse error and does not retry itself (the
+      # same idea as RTM-28's apt hardening).
       - name: Install build tools
-        run: dnf install -y --quiet gcc git file tar zstd
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            dnf install -y --quiet gcc git file tar zstd && exit 0
+            echo "::warning::dnf install failed (attempt $attempt), retrying with fresh metadata."
+            dnf clean metadata
+            sleep 10
+          done
+          exit 1
 
       - uses: actions/checkout@v7
 
@@ -891,11 +902,22 @@ jobs:
         run: |
           set -euo pipefail
           rpms=("$PWD/dist/rtmapp-${VERSION}-1.x86_64.rpm" "$PWD/dist/rtmcli-${VERSION}-1.x86_64.rpm")
-          if command -v zypper > /dev/null; then
-            zypper --non-interactive --quiet install --allow-unsigned-rpm "${rpms[@]}"
-          else
-            dnf install -y --quiet "${rpms[@]}"
-          fi
+          # Retried with fresh metadata, as the build tools in the linux job.
+          for attempt in 1 2 3; do
+            if command -v zypper > /dev/null; then
+              zypper --non-interactive --quiet install --allow-unsigned-rpm "${rpms[@]}" && break
+              zypper --non-interactive clean --metadata
+            else
+              dnf install -y --quiet "${rpms[@]}" && break
+              dnf clean metadata
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::Installing the RPMs failed three times."
+              exit 1
+            fi
+            echo "::warning::Installing the RPMs failed (attempt $attempt), retrying."
+            sleep 10
+          done
           for pkg in rtmapp rtmcli; do
             installed=$(rpm -q --qf "%{VERSION}-%{RELEASE}" "$pkg")
             if [ "$installed" != "${VERSION}-1" ]; then
