@@ -697,14 +697,14 @@ impl Change {
         matches!(self, Change::Toggle(item) if !item.done)
     }
 
-    /// The commit message, as rtmcli words it.
+    /// The commit message: what was done and the item's description, without dates or tags.
     fn describe(&self) -> String {
         match self {
-            Change::Add(item) => format!("rtm: add {item}"),
-            Change::Toggle(item) if item.done => format!("rtm: uncomplete {item}"),
-            Change::Toggle(item) => format!("rtm: complete {item}"),
-            Change::Edit { original, .. } => format!("rtm: edit {original}"),
-            Change::Delete { original, .. } => format!("rtm: delete {original}"),
+            Change::Add(item) => format!("rtm: add {}", item.description),
+            Change::Toggle(item) if item.done => format!("rtm: uncomplete {}", item.description),
+            Change::Toggle(item) => format!("rtm: complete {}", item.description),
+            Change::Edit { original, .. } => format!("rtm: edit {}", original.description),
+            Change::Delete { original, .. } => format!("rtm: delete {}", original.description),
         }
     }
 }
@@ -777,6 +777,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         dir
+    }
+
+    #[test]
+    fn a_commit_message_names_only_the_description() {
+        let item: TodoItem = "(A) 2026-10-30 Pay bill +Home @online due:2026-11-01 rec:w"
+            .parse()
+            .unwrap();
+        assert_eq!(Change::Toggle(item).describe(), "rtm: complete Pay bill");
     }
 
     #[test]
