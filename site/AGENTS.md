@@ -31,18 +31,23 @@ are git-ignored; never commit them.
 
 ## Build and preview
 
-In the dev shell (`zola` comes from the nixpkgs pinned in `flake.lock`, see
+In the dev shell (`zola` and `lychee` come from the nixpkgs pinned in `flake.lock`, see
 [Nix Packaging](../doc/nix-packaging.md)):
 
 ```sh
 scripts/site/prepare.sh
-zola --root site serve                        # http://127.0.0.1:1111, reloads on change
-zola --root site check --skip-external-links  # templates and internal links
-zola --root site build                        # into site/public/
+zola --root site serve              # http://127.0.0.1:1111, reloads on change
+scripts/site/check.sh               # prepare, zola check and build, lychee offline (what CI runs)
+scripts/site/check.sh --external    # the same, then external links over the network
 ```
 
 The built pages use absolute `https://rtm.brcha.com/` URLs (`base_url`), so open them through
-`zola serve`, not from disk.
+`zola serve`, not from disk. `check.sh` maps that base URL to the built files for lychee, reading
+it from `config.toml`. Build site URLs in the templates with `get_url` (absolute), not as
+root-relative `/path` links, which lychee cannot resolve offline.
+
+CI: `.github/workflows/site.yml` runs `check.sh` for site changes and `--external` weekly; not a
+required check (RTM-89, see [CI](../doc/ci.md)).
 
 ---
 
@@ -61,5 +66,4 @@ The built pages use absolute `https://rtm.brcha.com/` URLs (`base_url`), so open
 
 ## Future Plans
 
-- CI build and link check (RTM-89), publishing for perseus (RTM-90, PER-1), download links that
-  follow the newest release (RTM-91).
+- Publishing for perseus (RTM-90, PER-1), download links that follow the newest release (RTM-91).

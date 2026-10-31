@@ -38,8 +38,9 @@ pkgs.mkShell {
     pkg-config
     # CHANGELOG.md on release branches (scripts/changelog.sh)
     git-cliff
-    # The project website (site/, scripts/site/prepare.sh)
+    # The project website (site/) and its link check (scripts/site/check.sh)
     zola
+    lychee
   ];
   # Start from empty values instead of whatever the calling session exports: a leaked
   # `-L/usr/lib` links against the system glibc instead of the shell's, and the binary
