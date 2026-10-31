@@ -212,8 +212,8 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     ui.add_space(4.0);
     submit |= field(ui, p, "Description", &mut form.description, "");
     ui.columns(2, |c| {
-        group(&mut c[0], "Priority", |ui, _| {
-            priority_combo(ui, p, &mut form.priority)
+        group(&mut c[0], "Priority", |ui, label| {
+            priority_combo(ui, p, &mut form.priority, label)
         });
         submit |= date_field(&mut c[1], p, "Due Date", &mut form.due, "Select due date");
     });
@@ -316,8 +316,8 @@ fn date_field(ui: &mut Ui, p: &Palette, label: &str, text: &mut String, hint: &s
     })
 }
 
-/// A `ComboBox` with the look of the text inputs.
-fn priority_combo(ui: &mut Ui, p: &Palette, priority: &mut Option<u8>) {
+/// A `ComboBox` with the look of the text inputs, named by the label `label`.
+fn priority_combo(ui: &mut Ui, p: &Palette, priority: &mut Option<u8>, label: egui::Id) {
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = egui::vec2(12.0, 9.0);
         let widgets = &mut ui.visuals_mut().widgets;
@@ -341,7 +341,9 @@ fn priority_combo(ui: &mut Ui, p: &Palette, priority: &mut Option<u8>) {
                 for choice in std::iter::once(None).chain((0..26).map(Some)) {
                     ui.selectable_value(priority, choice, priority_label(choice));
                 }
-            });
+            })
+            .response
+            .labelled_by(label);
     });
 }
 

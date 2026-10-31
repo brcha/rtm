@@ -991,3 +991,7 @@ mod edit_tests;
 #[cfg(test)]
 #[path = "tests/app_sync_tests.rs"]
 mod sync_tests;
+
+#[cfg(test)]
+#[path = "tests/app_ui_tests.rs"]
+mod ui_tests;
