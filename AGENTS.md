@@ -28,6 +28,7 @@ rtm/                        ← Cargo workspace root
 ├── rtmapp/                 ← Desktop app (egui/eframe)
 ├── rtmsync/                ← Sync of todo.txt through Git or Pijul (library)
 ├── doc/                    ← Detailed reference: release process, Nix packaging, CI
+├── .claude/skills/         ← Repository skills, each pointing to its document in doc/
 ├── flake.nix, default.nix  ← Nix packages
 └── shell.nix               ← Nix dev shell
 ```
