@@ -511,39 +511,47 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # Every Linux package (two debs, two RPMs, the AppImage) comes from one pair of binaries, built
+  # in an AlmaLinux 9 container: its glibc (2.34) is the floor the packages need, low enough for
+  # RHEL 9 and Ubuntu 22.04 alike. The packages are tested in linux-deb and linux-rpm.
   linux:
     needs: version
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container: almalinux:9
     timeout-minutes: 40
 
     steps:
-      - uses: actions/checkout@v7
+      # git for a real checkout, file for appimagetool, tar and zstd for the cache. Neither crate
+      # links a native library, so nothing else.
+      - name: Install build tools
+        run: dnf install -y --quiet gcc git file tar zstd
 
-      # No build dependencies: neither crate links a native library. The package index is still
-      # refreshed because the install check below resolves the debs' Depends from it. Same
-      # hardened apt pattern as before (RTM-28) -- pin the mirror, bound retries and timeouts.
-      - name: Refresh the apt index
-        timeout-minutes: 10
-        run: |
-          echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
-          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Own key: a cache from the earlier Ubuntu build (glibc 2.35) must not leak into this one.
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: almalinux-9
 
       # Compiled from source, not installed via a prebuilt-binary action (RTM-29). cargo-deb's
       # only published asset is a single amd64 .deb, built by upstream CI on ubuntu-latest --
-      # which has been noble (24.04, glibc 2.39) since GitHub's runner migration. This runner
-      # is jammy (22.04, glibc 2.35) by deliberate choice (see "Linux (RTM-8)" in root
-      # AGENTS.md), so that prebuilt binary cannot run here: `GLIBC_2.39' not found`. No older
-      # cargo-deb release fixes this either -- upstream has built on ubuntu-latest since well
+      # which has been noble (24.04, glibc 2.39) since GitHub's runner migration. This job builds
+      # on AlmaLinux 9 (glibc 2.34) by deliberate choice (see "Linux (RTM-8)" in root AGENTS.md),
+      # so that prebuilt binary cannot run here (RTM-29 hit `GLIBC_2.39' not found` on jammy). No
+      # older cargo-deb release fixes this either -- upstream has built on ubuntu-latest since well
       # before the runner migration, so every recent release has the same mismatch. Compiling
-      # locally is correct by construction, since it links against this runner's own glibc.
+      # locally is correct by construction, since it links against this container's own glibc.
       # Version pinned so a future cargo-deb release can't silently change behaviour mid-run;
       # --locked uses cargo-deb's own Cargo.lock for reproducible dependency resolution.
       - name: Install cargo-deb
         run: cargo install cargo-deb --locked --version 3.7.0
+
+      # Compiled for the same reasons as cargo-deb above (RTM-29). It writes the RPMs itself: no
+      # rpmbuild or spec file to install.
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked --version 0.21.1
 
       - name: Build rtmapp and rtmcli
         run: cargo build --release -p rtmapp -p rtmcli
@@ -564,6 +572,18 @@ jobs:
           cargo deb -p rtmapp --no-build --deb-revision="" --output "dist/rtmapp_${VERSION}_amd64.deb"
           cargo deb -p rtmcli --no-build --deb-revision="" --output "dist/rtmcli_${VERSION}_amd64.deb"
 
+      # Described in [package.metadata.generate-rpm] of each crate's Cargo.toml. Like cargo-deb it
+      # packages the binaries built above and builds nothing itself. Release "1" is set there.
+      # --auto-req builtin: the ldd-based glibc requirements, whatever rpm tooling is installed.
+      - name: Package the RPMs
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cargo generate-rpm -p rtmapp --auto-req builtin --output "dist/rtmapp-${VERSION}-1.x86_64.rpm"
+          cargo generate-rpm -p rtmcli --auto-req builtin --output "dist/rtmcli-${VERSION}-1.x86_64.rpm"
+
       # The script downloads appimagetool and the type2 runtime from pinned, checksummed
       # releases -- a network dependency in the release path, bounded by the step timeout.
       - name: Build rtmapp AppImage
@@ -582,6 +602,8 @@ jobs:
           set -euo pipefail
           for f in "dist/rtmapp_${VERSION}_amd64.deb" \
                    "dist/rtmcli_${VERSION}_amd64.deb" \
+                   "dist/rtmapp-${VERSION}-1.x86_64.rpm" \
+                   "dist/rtmcli-${VERSION}-1.x86_64.rpm" \
                    "dist/rtmapp_${VERSION}_amd64.AppImage"; do
             if [ ! -f "$f" ]; then
               echo "::error::Expected release artifact missing after staging: $f"
@@ -592,9 +614,40 @@ jobs:
           echo 'Staged artifacts:'
           ls -la dist
 
+      - name: Upload linux artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux
+          path: dist/*
+          if-no-files-found: error
+
+  # The debs on the oldest Ubuntu they target, from the binaries built in the linux job; the X11
+  # and Wayland smoke launches start the binary every Linux package ships. Then the AppImage.
+  linux-deb:
+    needs: [version, linux]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-linux
+          path: dist
+
+      # Nothing is built here. The package index is refreshed because the install check below
+      # resolves the debs' Depends from it. Same hardened apt pattern as before (RTM-28) -- pin the
+      # mirror, bound retries and timeouts.
+      - name: Refresh the apt index
+        timeout-minutes: 10
+        run: |
+          echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+
       # Building a .deb is not evidence it installs. Installing both with apt resolves every
-      # Depends from the jammy index, so a wrong package name fails here. Also checks that $auto
-      # added glibc and that a portal backend with a file chooser came with rtmapp.
+      # Depends from the jammy index, so a wrong package name fails here. Also checks that the
+      # hand-written libc6 floor (cargo-deb's $auto needs dpkg-shlibdeps, which AlmaLinux lacks)
+      # covers the newest glibc symbol each binary uses, and that a portal backend with a file
+      # chooser came with rtmapp.
       - name: Verify packages install
         timeout-minutes: 10
         shell: bash
@@ -610,15 +663,21 @@ jobs:
             echo "::error::Expected the rtmapp .deb to report Package: rtmapp, got '$pkg'."
             exit 1
           fi
-          if ! dpkg-deb --field "$deb" Depends | grep -q 'libc6'; then
-            echo "::error::The rtmapp .deb does not depend on libc6: \$auto did not resolve."
-            exit 1
-          fi
 
           sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
             "./dist/rtmcli_${VERSION}_amd64.deb" "./$deb"
 
           rtmcli --help
+
+          for name in rtmapp rtmcli; do
+            floor=$(dpkg-deb --field "dist/${name}_${VERSION}_amd64.deb" Depends | grep -oP 'libc6 \(>= \K[0-9.]+')
+            needed=$(objdump -T "/usr/bin/$name" | grep -oP 'GLIBC_\K[0-9.]+' | sort -uV | tail -1)
+            echo "$name: needs glibc $needed, its deb depends on libc6 >= $floor."
+            if [ "$(printf '%s\n' "$floor" "$needed" | sort -V | tail -1)" != "$floor" ]; then
+              echo "::error::$name needs glibc $needed but its deb only requires libc6 >= $floor."
+              exit 1
+            fi
+          done
 
           if [ ! -x /usr/bin/rtmapp ]; then
             echo "::error::/usr/bin/rtmapp missing or not executable after install."
@@ -773,7 +832,8 @@ jobs:
           done
 
       # The AppImage holds the same binary the smoke launches above ran, so it is only extracted:
-      # that proves it is well-formed rather than a truncated or corrupt build.
+      # that proves it is well-formed rather than a truncated or corrupt build. Artifacts do not
+      # keep file modes, hence the chmod.
       - name: Verify AppImage integrity
         shell: bash
         env:
@@ -795,12 +855,122 @@ jobs:
             fi
           done
 
-      - name: Upload linux artifacts
-        uses: actions/upload-artifact@v7
+  # The RPMs on each distribution they target, one job container per image, from the binaries
+  # built in the linux job. They name their libraries by soname (and the portal packages by names
+  # the distributions share), so one package serves Fedora, RHEL and openSUSE. Fedora and
+  # AlmaLinux: the oldest supported release up to the newest; bump the tags as releases end.
+  # Tumbleweed is rolling: a failure there can come from Tumbleweed rather than this change.
+  linux-rpm:
+    needs: [version, linux]
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - fedora:43
+          - fedora:44
+          - almalinux:9
+          - almalinux:10
+          - registry.opensuse.org/opensuse/leap:16.0
+          - registry.opensuse.org/opensuse/tumbleweed
+
+    steps:
+      - uses: actions/download-artifact@v8
         with:
           name: dist-linux
-          path: dist/*
-          if-no-files-found: error
+          path: dist
+
+      # Installing both from the image's default repositories resolves every Requires; then the
+      # files. The smoke launches in linux-deb start the same binary.
+      - name: Verify RPMs install
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          rpms=("$PWD/dist/rtmapp-${VERSION}-1.x86_64.rpm" "$PWD/dist/rtmcli-${VERSION}-1.x86_64.rpm")
+          if command -v zypper > /dev/null; then
+            zypper --non-interactive --quiet install --allow-unsigned-rpm "${rpms[@]}"
+          else
+            dnf install -y --quiet "${rpms[@]}"
+          fi
+          for pkg in rtmapp rtmcli; do
+            installed=$(rpm -q --qf "%{VERSION}-%{RELEASE}" "$pkg")
+            if [ "$installed" != "${VERSION}-1" ]; then
+              echo "::error::$pkg is at $installed, expected ${VERSION}-1."
+              exit 1
+            fi
+            if ! rpm -qR "$pkg" | grep "^libc\.so\.6(GLIBC_" > /dev/null; then
+              echo "::error::The $pkg RPM has no versioned glibc requirement: auto-req did not run."
+              exit 1
+            fi
+          done
+          rtmcli --help > /dev/null
+          if [ ! -x /usr/bin/rtmapp ]; then
+            echo "::error::/usr/bin/rtmapp missing or not executable after install."
+            exit 1
+          fi
+          if ! grep -q "^Exec=rtmapp" /usr/share/applications/rtmapp.desktop; then
+            echo "::error::/usr/share/applications/rtmapp.desktop missing or without Exec=rtmapp."
+            exit 1
+          fi
+          for size in 16x16 24x24 32x32 128x128 256x256 512x512; do
+            if [ ! -f "/usr/share/icons/hicolor/$size/apps/rtmapp.png" ]; then
+              echo "::error::Icon missing after install: hicolor/$size/apps/rtmapp.png"
+              exit 1
+            fi
+          done
+          if [ ! -f /usr/share/licenses/rtmapp/LICENSE ]; then
+            echo "::error::/usr/share/licenses/rtmapp/LICENSE missing after install."
+            exit 1
+          fi
+          if ! grep -l org.freedesktop.impl.portal.FileChooser /usr/share/xdg-desktop-portal/portals/*.portal; then
+            echo "::error::No installed XDG portal backend implements the file chooser."
+            exit 1
+          fi
+
+      # The same skip logic as the deb upgrade in linux-deb, on the oldest Fedora only. Installing
+      # the newer RPM over the older one with dnf upgrades it in place. No release before RTM-9 has
+      # RPMs, so this skips until the second release that has them.
+      - name: Verify RPM upgrade from the previous release
+        if: matrix.image == 'fedora:43'
+        timeout-minutes: 15
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIOUS" ]; then
+            echo "::notice::No previous release: RPM upgrade test skipped."
+            exit 0
+          fi
+          dnf install -y --quiet gh
+          old="${PREVIOUS#v}"
+          assets=$(gh release view "$PREVIOUS" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          for asset in "rtmapp-${old}-1.x86_64.rpm" "rtmcli-${old}-1.x86_64.rpm"; do
+            if ! grep -qxF "$asset" <<< "$assets"; then
+              echo "::notice::$PREVIOUS has no $asset: RPM upgrade test skipped."
+              exit 0
+            fi
+          done
+
+          # The install check above left the new RPMs installed.
+          dnf remove -y --quiet rtmapp rtmcli
+          gh release download "$PREVIOUS" --repo "$GITHUB_REPOSITORY" --pattern '*.x86_64.rpm' --dir previous-rpms
+          dnf install -y --quiet "previous-rpms/rtmapp-${old}-1.x86_64.rpm" "previous-rpms/rtmcli-${old}-1.x86_64.rpm"
+          dnf install -y --quiet "dist/rtmapp-${VERSION}-1.x86_64.rpm" "dist/rtmcli-${VERSION}-1.x86_64.rpm"
+          for pkg in rtmapp rtmcli; do
+            installed=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$pkg")
+            echo "$pkg after the upgrade: $installed"
+            if [ "$installed" != "${VERSION}-1" ]; then
+              echo "::error::$pkg is at $installed after upgrading from ${old}-1, expected ${VERSION}-1."
+              exit 1
+            fi
+          done
 
   # One universal (arm64 + x86_64) dmg for rtmapp and one tarball for rtmcli, built on the arm64
   # runner by cross-compiling the x86_64 slice. Ad-hoc signed only: no Developer ID yet (RTM-54).
@@ -970,7 +1140,7 @@ jobs:
   # create or update the same tagged GitHub Release. Pull requests stop after the platform jobs.
   publish:
     if: github.event_name != 'pull_request'
-    needs: [version, windows, linux, macos]
+    needs: [version, windows, linux, linux-deb, linux-rpm, macos]
     runs-on: ubuntu-latest
 
     steps:
@@ -1014,7 +1184,7 @@ jobs:
   # of them failed or was cancelled.
   release:
     if: always()
-    needs: [changes, version, windows, linux, macos]
+    needs: [changes, version, windows, linux, linux-deb, linux-rpm, macos]
     runs-on: ubuntu-latest
 
     steps:
