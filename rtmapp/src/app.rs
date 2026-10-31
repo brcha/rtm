@@ -59,8 +59,13 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        App::with_config(cc, config::config_path())
+    }
+
+    /// `new` with the config at `config_path`: the UI tests start the app on a temp config, so
+    /// they never read or write the user's.
+    fn with_config(cc: &eframe::CreationContext<'_>, config_path: PathBuf) -> Self {
         theme::install(&cc.egui_ctx);
-        let config_path = config::config_path();
         let config = AppConfig::load(&config_path);
         let mut error = None;
         let library = match config.file_name.as_deref().map(Path::new) {

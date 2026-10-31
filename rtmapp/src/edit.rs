@@ -212,7 +212,7 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     ui.add_space(4.0);
     submit |= field(ui, p, "Description", &mut form.description, "");
     ui.columns(2, |c| {
-        group(&mut c[0], "Priority", |ui| {
+        group(&mut c[0], "Priority", |ui, _| {
             priority_combo(ui, p, &mut form.priority)
         });
         submit |= date_field(&mut c[1], p, "Due Date", &mut form.due, "Select due date");
@@ -287,30 +287,31 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     outcome
 }
 
-/// A label with its control 6 px below. Labels are regular: the CSS weight 500 renders regular
-/// under `font-synthesis: none` (see "Look" in `rtmapp/AGENTS.md`).
-fn group<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+/// A label with its control 6 px below; `add` gets the label's id, to name the control by it.
+/// Labels are regular: the CSS weight 500 renders regular under `font-synthesis: none` (see "Look"
+/// in `rtmapp/AGENTS.md`).
+fn group<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui, egui::Id) -> R) -> R {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
-        ui.label(RichText::new(label).size(12.6));
-        add(ui)
+        let label = ui.label(RichText::new(label).size(12.6));
+        add(ui, label.id)
     })
     .inner
 }
 
 /// A labelled text field. Returns whether Enter was pressed in it (the form submits on Enter).
 fn field(ui: &mut Ui, p: &Palette, label: &str, text: &mut String, hint: &str) -> bool {
-    group(ui, label, |ui| {
+    group(ui, label, |ui, label| {
         // 9 px rather than the CSS 8 px, so the fields are as tall as the priority select.
-        let response = theme::text_input(ui, p, text, hint, 9, p.focus);
+        let response = theme::text_input(ui, p, text, hint, 9, p.focus).labelled_by(label);
         response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
     })
 }
 
 /// A labelled date field with the calendar popup. Returns whether Enter was pressed in it.
 fn date_field(ui: &mut Ui, p: &Palette, label: &str, text: &mut String, hint: &str) -> bool {
-    group(ui, label, |ui| {
-        let response = calendar::date_field(ui, p, text, hint);
+    group(ui, label, |ui, label| {
+        let response = calendar::date_field(ui, p, text, hint).labelled_by(label);
         response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
     })
 }
