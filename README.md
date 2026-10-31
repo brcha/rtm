@@ -12,6 +12,8 @@ and of the CLI:
 
 ## Installing
 
+<!-- Copied to the website's install page, site/content/install.md; change both together. -->
+
 Download the files from the latest [GitHub Release](https://github.com/brcha/rtm/releases).
 `<version>` below stands for the release version, for example `0.2.0`.
 

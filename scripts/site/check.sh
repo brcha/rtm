@@ -32,11 +32,14 @@ zola --root site build
 base_url=$(sed -n 's/^base_url = "\(.*\)"$/\1/p' site/config.toml)
 [[ -n $base_url ]] || die "no base_url in site/config.toml"
 remap="^${base_url//./\\.}/(.*) file://$PWD/site/public/\$1"
+# A directory link (the site root, a page's pretty URL) means its index.html, as on the server;
+# that also lets lychee check fragments such as /#download.
+local_links=(--remap "$remap" --index-files index.html)
 
 if $external; then
     # No fragment checks: GitHub renders README headings with user-content- ids, so anchors on
     # github.com would fail falsely.
-    lychee --no-progress --remap "$remap" site/public
+    lychee --no-progress "${local_links[@]}" site/public
 else
-    lychee --no-progress --offline --include-fragments --remap "$remap" site/public
+    lychee --no-progress --offline --include-fragments "${local_links[@]}" site/public
 fi
