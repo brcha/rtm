@@ -126,8 +126,8 @@ one that had them.
   `nixos-26.11` when it is released (RTM-45). `default.nix` and `shell.nix` use the caller's
   `<nixpkgs>`, which must also have rustc ≥ 1.95.
 - **Dev shell:** `nix develop` (flake) or `nix-shell` (legacy). `.envrc` uses `use_nix`; change
-  to `use flake` if using nix-direnv ≥ 2.30. Both shells have `rustfmt` and `clippy`, and both
-  start `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and set
+  to `use flake` if using nix-direnv ≥ 2.30. Both shells have `rustfmt`, `clippy` and
+  `git-cliff`, and both start `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and set
   `RUSTC_WRAPPER` to empty: a calling session that exports `-L/usr/lib` otherwise links against the
   system glibc instead of the shell's (the binary then fails with `GLIBC_2.xx not found`), and a
   user-configured sccache fails inside the shell. Keep these in both shells.
@@ -146,32 +146,36 @@ one that had them.
     2. On `main`, a PR `build: set version to <next> -- RTM-NN` (`scripts/set-version.sh`, then
        `cargo update --workspace` to refresh `Cargo.lock`): the next minor, `YY.(M+1).0`, or the
        next year's first version (`27.1.0`) when no further minor release is wanted this year.
-    3. On the branch, a PR `docs: changelog for YY.M.0 -- RTM-NN` that writes the release's
-       section of `CHANGELOG.md` with git-cliff.
+    3. On the branch, a PR `docs: changelog for YY.M.0 -- RTM-NN` with the `CHANGELOG.md`
+       written by `scripts/changelog.sh YY.M.0`.
     4. Run the Release workflow on `releases/vYY.M`.
   - **Patch release `YY.M.P`:**
     1. Fixes land on `main` like all development and are cherry-picked to `releases/vYY.M` by PRs
        titled like the original PR (not the squash commit's subject, which ends in `(#NN)`).
        Several fixes can go in before a release.
     2. On the branch, a PR `build: set version to YY.M.P -- RTM-NN`: `set-version`,
-       `cargo update --workspace` and the release's `CHANGELOG.md` section.
+       `cargo update --workspace` and `scripts/changelog.sh YY.M.P`, which needs the previous
+       patch's tag, so its draft must be published first.
     3. Run the Release workflow on `releases/vYY.M`.
   - **The release run:** a `workflow_dispatch` of Release on a release branch builds and tests the
     packages and publishes a draft release tagged `vX.Y.Z` on that commit, with the version's
     `CHANGELOG.md` section as its body. It first checks that the branch matches the version
     (`releases/v26.1` releases only `26.1.*`) and that no release, draft included, or tag exists
-    for it (RTM-73). A patch on an older line (26.1.2 after 26.2.0) is created with
+    for it (RTM-73), and that `CHANGELOG.md` has entries for it (RTM-74; a hand-pushed `v*` tag
+    needs them on its commit too). A patch on an older line (26.1.2 after 26.2.0) is created with
     `make_latest: false`; when publishing it, make sure "Set as the latest release" is unticked.
     Download and try the draft, then publish it by hand. Releases are not marked as prereleases.
     Keep the `build: set version` and `docs: changelog` subjects exact when squash-merging: the
     changelog leaves those commits out.
-  - **`CHANGELOG.md`** lives on the release branches only, never on `main`. A minor release's
-    section covers the commits since the previous release branch was cut.
+  - **`CHANGELOG.md`** lives on the release branches only, never on `main`, and is written by
+    `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in both Nix dev shells; bash only).
+    A patch release's section covers the commits since the line's previous tag, prepended; a minor
+    release's the commits since the previous release branch was cut (the first CalVer release:
+    since `v0.1.3`), in a new file. If the release branch moves while the changelog or version PR
+    is open, update the PR from the branch and run the script again. Release branches are never
+    deleted: the next minor release's range starts at the previous one's cut.
   - **The first CalVer release:** `main` is at 0.1.4, which is never released. Its release issue
     first sets `main` to `YY.1.0` by PR, then follows the minor-release steps.
-
-  Not in the workflow yet: `CHANGELOG.md` with git-cliff as the release body (RTM-74; until then,
-  skip the changelog PRs and the draft carries GitHub's generated notes).
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
   (publishes a draft GitHub Release), manual `workflow_dispatch` (on a `releases/**` branch a
   release, see "Making a release"; on any other branch a dry run: builds and uploads to the Actions
@@ -190,7 +194,8 @@ one that had them.
   A manual run can name another one with the `previous` input (`gh workflow run Release --ref <branch>
   -f previous=v0.1.3`), which also lifts the Windows v0.1.3 skip.
 - **Job structure:** `version` (resolves and verifies the release version once, on `ubuntu-latest`;
-  outputs the run's `mode`, `release`, `dry-run` or `check`, which `publish` acts on, and `latest`)
+  outputs the run's `mode`, `release`, `dry-run` or `check`, which `publish` acts on, `latest`, and
+  `notes`, the draft's body)
   → `windows`, `linux` and `macos` (build and test in parallel, each `needs: version`, each uploading
   its own `dist/` as a plain build artifact — `dist-windows` / `dist-linux` / `dist-macos`) → `publish`
   (`needs: [version, windows, linux, macos]`, skipped on pull requests, downloads all artifact sets and
@@ -224,8 +229,7 @@ one that had them.
   on both MSI shortcuts (RTM-48).
 - **Merges are squashes.** One PR becomes exactly one commit on its target branch, so PR titles are
   the changelog, and `.github/workflows/pr-title.yml` forces them to be conventional and RTM-tagged.
-  git-cliff turns them into `CHANGELOG.md` on the release branches (RTM-74); until then the release
-  workflow's `generate_release_notes: true` lists them.
+  git-cliff turns them into `CHANGELOG.md` on the release branches (RTM-74), the release body.
 - **No raw platform binaries are published redundantly with their installer.** `rtmapp.exe` is not
   staged on Windows — the MSI installs the identical binary. `rtmcli.exe` **is** staged, because
   neither the MSI nor (on Linux) the `rtmapp` deb packages the CLI; it is the only channel for
