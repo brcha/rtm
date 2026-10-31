@@ -10,7 +10,7 @@ Done: detecting the VCS (RTM-12), committing the file (RTM-18), syncing with the
 which also took Pijul's part from RTM-53), the checks the frontends need and sync in the CLI
 (RTM-21), sync in the GUI and the `index.lock` retry (RTM-64), the todo.txt's state for the check on
 open and its use in the CLI (RTM-63, decided in RTM-57), background GUI sync replacing RTM-64's
-per-change sync (RTM-20). Still to come: the GUI's check on open (RTM-70).
+per-change sync (RTM-20), the GUI's check on open (RTM-70).
 
 ---
 
@@ -87,12 +87,12 @@ rtmsync/
   | untracked | offers to add it (rtmcli: a hint unless `--commit-changes`); declined: used without sync, asked again next time |
   | ignored | not versioned: used, never synced, never asked |
   | other files dirty | nothing extra (`git pull --autostash` keeps their content, not their staging) |
-  | conflicted | not opened until the user resolves it (RTM-16 rule 8) |
+  | conflicted | not opened until the user resolves it (RTM-16 rule 8); an untracked file is used without sync instead |
   | missing | unchanged (the frontend's missing-file behaviour) |
 
-  rtmcli implements it (RTM-63); the GUI's part is RTM-70. Since RTM-20 the app writes and commits
-  each change at once whenever no job runs; a failed commit or a crash between the two can still
-  leave its own change uncommitted.
+  rtmcli implements it (RTM-63), the desktop app with a dialog (RTM-70). Since RTM-20 the app writes
+  and commits each change at once whenever no job runs; a failed commit or a crash between the two
+  can still leave its own change uncommitted, which the check then reports as an outside change.
 - Network calls (pull, push) run with `GIT_TERMINAL_PROMPT=0`: credentials come from a helper or
   ssh-agent, never a terminal prompt (decided for the CLI too). They are killed after 60 s
   (`Timeout`). Their stdout is discarded and their stderr goes to a temporary file, not a pipe: ssh
