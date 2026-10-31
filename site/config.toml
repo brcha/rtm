@@ -1,0 +1,4 @@
+# The rtm website, built with Zola; see site/AGENTS.md.
+base_url = "https://rtm.brcha.com"
+title = "Rusty Todo.txt Manager"
+description = "A Todo.txt manager written in Rust: a desktop app and a command-line tool for GNU/Linux, macOS and Windows."

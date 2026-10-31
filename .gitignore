@@ -148,3 +148,9 @@ target/
 
 # Claude Code: personal, machine-local settings
 .claude/settings.local.json
+
+# Project website: Zola output and the images copied by scripts/site/prepare.sh
+site/public/
+site/static/screenshot_*.png
+site/static/rtmapp.svg
+site/static/rtmapp-small.svg

@@ -1,10 +1,28 @@
 # The development shell, used by `nix-shell` (and direnv's `use_nix`) and by `nix develop`, which
 # imports it from flake.nix with the flake's pinned nixpkgs.
 #
+# Called without `pkgs`, it uses the nixpkgs revision locked in flake.lock rather than the
+# caller's channel, so `nix-shell` and direnv get the same packages as `nix develop` and the Nix
+# builds in CI.
+#
 # If you use nix-direnv ≥ 2.30, change .envrc from `use_nix` to `use flake` to get a
 # faster, cached dev shell from the flake instead.
 
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import (
+    let
+      lock = builtins.fromJSON (builtins.readFile ./flake.lock);
+      # Looked up through the root's inputs: the node name can change (`nixpkgs_2`) after an
+      # update or a new `follows`.
+      nixpkgs = lock.nodes.${lock.nodes.root.inputs.nixpkgs}.locked;
+    in
+    # The URL below is GitHub's; another input type needs another fetcher.
+    assert nixpkgs.type == "github";
+    fetchTarball {
+      url = "https://github.com/${nixpkgs.owner}/${nixpkgs.repo}/archive/${nixpkgs.rev}.tar.gz";
+      sha256 = nixpkgs.narHash;
+    }
+  ) {}
+}:
 
 let
   # The libraries rtmapp loads with dlopen, from its package in default.nix.
@@ -20,6 +38,8 @@ pkgs.mkShell {
     pkg-config
     # CHANGELOG.md on release branches (scripts/changelog.sh)
     git-cliff
+    # The project website (site/, scripts/site/prepare.sh)
+    zola
   ];
   # Start from empty values instead of whatever the calling session exports: a leaked
   # `-L/usr/lib` links against the system glibc instead of the shell's, and the binary
