@@ -16,6 +16,7 @@
     3. On the branch, a PR `docs: changelog for YY.M.0 -- RTM-NN` with the `CHANGELOG.md`
        written by `scripts/changelog.sh YY.M.0`.
     4. Run the Release workflow on `releases/vYY.M`.
+    5. Once the release is published, open the website post PR (see "Website post" below).
   - **Patch release `YY.M.P`:**
     1. Fixes land on `main` like all development and are cherry-picked to `releases/vYY.M` by PRs
        titled like the original PR (not the squash commit's subject, which ends in `(#NN)`).
@@ -24,6 +25,7 @@
        `cargo update --workspace` and `scripts/changelog.sh YY.M.P`, which needs the previous
        patch's tag, so its draft must be published first.
     3. Run the Release workflow on `releases/vYY.M`.
+    4. Once the release is published, open the website post PR (see "Website post" below).
   - **The release run:** a `workflow_dispatch` of Release on a release branch builds and tests the
     packages and publishes a draft release tagged `vX.Y.Z` on that commit, with the version's
     `CHANGELOG.md` section as its body. It first checks that the branch matches the version
@@ -34,6 +36,21 @@
     Download and try the draft, then publish it by hand. Releases are not marked as prereleases.
     Keep the `build: set version` and `docs: changelog` subjects exact when squash-merging: the
     changelog leaves those commits out.
+  - **Website post (RTM-91):** each published release gets a post on the project website, and the
+    website's download links are updated by hand in the same change; the site has no JavaScript
+    and no automatic links. A PR against `main`, `docs: website post for X.Y.Z -- RTM-NN` (the
+    release issue's key), that
+    - adds `site/content/news/X.Y.Z.md` with the version's `CHANGELOG.md` section (from the release
+      branch, or the release's body);
+    - points the download links in `site/` at the release's files,
+      `https://github.com/brcha/rtm/releases/download/vX.Y.Z/<asset>` (names as under "Assets"),
+      with `scripts/site/check.sh --external` passing;
+    - for a patch on an older line (published with "Set as the latest release" unticked) adds the
+      post only: the links stay on the newest line.
+
+    The first CalVer release's PR also creates the news section (`site/content/news/_index.md` and
+    its templates) and replaces the download cards' links to the releases page. See
+    `site/AGENTS.md`.
   - **`CHANGELOG.md`** lives on the release branches only, never on `main`, and is written by
     `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in the Nix dev shell; bash only).
     A patch release's section covers the commits since the line's previous tag, prepended; a minor
