@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ config.title }}{% endblock %}</title>
+  <meta name="description" content="{{ config.description }}">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="{{ get_url(path='rtmapp-small.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ get_url(path='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="{{ config.base_url }}">
+      <img src="{{ get_url(path='rtmapp-small.svg') }}" alt="" width="28" height="28">
+      <span>rtm</span>
+    </a>
+    <nav>
+      <a href="#download">Download</a>
+      <a href="https://github.com/brcha/rtm">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      rtm is free software under the <a href="https://brcha.mit-license.org/@2023">MIT licence</a>.
+      Source and issues on <a href="https://github.com/brcha/rtm">GitHub</a>.
+      Built on the <a href="https://github.com/todotxt/todo.txt">Todo.txt</a> format.
+    </p>
+  </footer>
+</body>
+</html>

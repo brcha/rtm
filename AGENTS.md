@@ -10,6 +10,7 @@ Subpart AGENTS.md files:
 - [`rtmcli/AGENTS.md`](rtmcli/AGENTS.md) — CLI frontend
 - [`rtmapp/AGENTS.md`](rtmapp/AGENTS.md) — egui desktop app
 - [`rtmsync/AGENTS.md`](rtmsync/AGENTS.md) — sync through a VCS (epic RTM-1)
+- [`site/AGENTS.md`](site/AGENTS.md) — the project website (Zola, epic RTM-79)
 
 Documents:
 - [`doc/release-process.md`](doc/release-process.md) — making a release, the Release workflow, and
@@ -27,6 +28,7 @@ rtm/                        ← Cargo workspace root
 ├── rtmcli/                 ← CLI (clap-based)
 ├── rtmapp/                 ← Desktop app (egui/eframe)
 ├── rtmsync/                ← Sync of todo.txt through Git or Pijul (library)
+├── site/                   ← Project website (Zola); its scripts are in scripts/site/
 ├── doc/                    ← Detailed reference: release process, Nix packaging, CI
 ├── .claude/skills/         ← Repository skills, each pointing to its document in doc/
 ├── flake.nix, default.nix  ← Nix packages

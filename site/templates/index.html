@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <img class="logo" src="{{ get_url(path='rtmapp.svg') }}" alt="" width="112" height="112">
+  <h1>{{ section.title }}</h1>
+  <p class="tagline">{{ section.description }}</p>
+  <p class="actions">
+    <a class="button primary" href="#download">Download</a>
+    <a class="button" href="https://github.com/brcha/rtm">Source on GitHub</a>
+  </p>
+</section>
+
+<section class="screenshots" aria-label="Screenshots">
+  <figure>
+    <img src="{{ get_url(path='screenshot_gui.png') }}" width="900" height="650"
+         alt="The rtm desktop app in the light theme, showing a list of tasks with priorities and due dates">
+    <figcaption>Desktop app, light theme</figcaption>
+  </figure>
+  <figure>
+    <img src="{{ get_url(path='screenshot_gui_dark.png') }}" width="900" height="650"
+         alt="The rtm desktop app in the dark theme">
+    <figcaption>Desktop app, dark theme</figcaption>
+  </figure>
+  <figure class="wide">
+    <img src="{{ get_url(path='screenshot_cli.png') }}" width="807" height="285" loading="lazy"
+         alt="rtmcli listing tasks in a terminal">
+    <figcaption>Command line</figcaption>
+  </figure>
+</section>
+
+<section class="features">
+  {{ section.content | safe }}
+</section>
+
+<section class="download" id="download">
+  <h2>Download</h2>
+  <p>The packages are attached to the GitHub releases.</p>
+  <ul class="platforms">
+    <li>
+      <h3>GNU/Linux</h3>
+      <p>x86-64</p>
+      <a class="button" href="https://github.com/brcha/rtm/releases">Get it from the releases</a>
+    </li>
+    <li>
+      <h3>macOS</h3>
+      <p>Apple Silicon and Intel</p>
+      <a class="button" href="https://github.com/brcha/rtm/releases">Get it from the releases</a>
+    </li>
+    <li>
+      <h3>Windows</h3>
+      <p>x64</p>
+      <a class="button" href="https://github.com/brcha/rtm/releases">Get it from the releases</a>
+    </li>
+  </ul>
+  <p class="more">
+    <a href="https://github.com/brcha/rtm#installing">Install guide</a>, including Nix and NixOS
+    ·
+    <a href="https://github.com/brcha/rtm/releases">Changelog</a>
+  </p>
+</section>
+{% endblock %}

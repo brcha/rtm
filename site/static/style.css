@@ -1,0 +1,163 @@
+/* The rtm website. Colours follow the app icon (#ce422b) and the system light or dark theme. */
+
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f5f6f8;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --border: #d8dee4;
+  --accent: #ce422b;
+  --accent-fg: #ffffff;
+  --link: #b33520;
+  --shadow: 0 4px 24px rgb(0 0 0 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --bg-alt: #1e2127;
+    --fg: #e6e8eb;
+    --muted: #9aa3ad;
+    --border: #30363d;
+    --link: #f0806b;
+    --shadow: 0 4px 24px rgb(0 0 0 / 0.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
+}
+
+a { color: var(--link); }
+
+a:focus-visible, .button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--bg-alt);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+img { max-width: 100%; height: auto; }
+
+main > section {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 3rem 1rem;
+}
+
+/* Header and footer */
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--fg);
+  font-weight: 700;
+  font-size: 1.15rem;
+  text-decoration: none;
+}
+
+.site-header nav { display: flex; gap: 1.25rem; }
+.site-header nav a { color: var(--muted); text-decoration: none; }
+.site-header nav a:hover { color: var(--fg); }
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+/* Hero */
+
+.hero { text-align: center; }
+.hero .logo { display: block; margin: 0 auto 1rem; }
+.hero h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.15; margin: 0 0 0.5rem; }
+.tagline { font-size: 1.25rem; color: var(--muted); margin: 0 0 1.5rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
+
+.button {
+  display: inline-block;
+  padding: 0.6rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  background: var(--bg-alt);
+  font-weight: 600;
+  text-decoration: none;
+}
+.button:hover { border-color: var(--accent); }
+.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* Screenshots: two columns, stacked on narrow screens */
+
+.screenshots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+.screenshots .wide { grid-column: 1 / -1; max-width: 807px; justify-self: center; }
+.screenshots figure { margin: 0; }
+.screenshots img {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.screenshots figcaption { color: var(--muted); font-size: 0.9rem; text-align: center; margin-top: 0.5rem; }
+
+@media (max-width: 720px) {
+  .screenshots { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Features */
+
+.features { max-width: 760px; }
+.features ul { padding-left: 1.25rem; }
+.features li { margin-bottom: 0.6rem; }
+
+/* Download */
+
+.download { text-align: center; }
+.download h2 { font-size: 2rem; margin: 0 0 0.5rem; }
+.platforms {
+  list-style: none;
+  padding: 0;
+  margin: 2rem 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+}
+.platforms li {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+.platforms h3 { margin: 0 0 0.5rem; }
+.platforms p { color: var(--muted); margin: 0 0 1rem; }
+.more { color: var(--muted); }
