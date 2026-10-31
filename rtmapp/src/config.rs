@@ -18,6 +18,8 @@ pub struct AppConfig {
     pub sync: bool,
     /// `"git"` or `"pijul"`: the user's choice when the file's directory belongs to both.
     pub vcs: Option<String>,
+    /// Minutes between background syncs (RTM-20); 0 syncs only on open, on exit and on demand.
+    pub sync_interval_minutes: u64,
 }
 
 impl Default for AppConfig {
@@ -30,6 +32,7 @@ impl Default for AppConfig {
             reverse_sort: false,
             sync: true,
             vcs: None,
+            sync_interval_minutes: 10,
         }
     }
 }
@@ -86,6 +89,7 @@ mod tests {
             reverse_sort: true,
             sync: false,
             vcs: Some("pijul".into()),
+            sync_interval_minutes: 0,
         };
         config.save(&path).unwrap();
         assert_eq!(AppConfig::load(&path), config);
@@ -100,6 +104,7 @@ mod tests {
         // Files written before sync existed keep syncing on.
         assert!(config.sync);
         assert_eq!(config.vcs, None);
+        assert_eq!(config.sync_interval_minutes, 10);
     }
 
     #[test]

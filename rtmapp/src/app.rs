@@ -34,6 +34,8 @@ pub struct App {
     pending: Vec<Change>,
     /// The sync line in the header: a failed pull or push, or why sync is off.
     sync_status: Option<String>,
+    /// When the last sync was asked for; the next one is due `sync_interval_minutes` later.
+    last_sync: Instant,
     /// The VCSs to choose from when the file's directory belongs to several.
     choose_vcs: Option<Vec<rtmsync::Vcs>>,
     /// The edit dialog's item as it was when the dialog opened, and what deleting it would remove,
@@ -72,6 +74,7 @@ impl App {
             worker: None,
             pending: Vec::new(),
             sync_status: None,
+            last_sync: Instant::now(),
             choose_vcs: None,
             edited: None,
             deleting: None,
@@ -93,9 +96,8 @@ impl App {
         match sync::find(Path::new(&library.file_name), &self.config) {
             Found::NoSync => {}
             Found::Repo(repo) => {
-                let mut worker = Worker::start(repo, self.ctx.clone());
-                worker.sync();
-                self.worker = Some(worker);
+                self.worker = Some(Worker::start(repo, self.ctx.clone()));
+                self.sync_now(Instant::now());
             }
             Found::Ambiguous(found) => self.choose_vcs = Some(found),
             Found::Conflicted => self.conflicted(),
@@ -160,6 +162,32 @@ impl App {
         if let Some(worker) = &mut self.worker {
             worker.commit(commit_message(&changes));
         }
+    }
+
+    fn sync_now(&mut self, now: Instant) {
+        if let Some(worker) = &mut self.worker {
+            worker.sync();
+            self.last_sync = now;
+        }
+    }
+
+    /// Syncs when the interval has passed since the last sync, and asks for a repaint when the
+    /// next one is due, so the timer runs in a hidden or minimized window too.
+    fn tick(&mut self, now: Instant) {
+        let minutes = self.config.sync_interval_minutes;
+        if minutes == 0 || !self.worker.as_ref().is_some_and(Worker::has_remote) {
+            return;
+        }
+        let interval = Duration::from_secs(minutes.saturating_mul(60));
+        let wait = match self.last_sync.checked_add(interval) {
+            None => return,
+            Some(due) if now < due => due - now,
+            Some(_) => {
+                self.sync_now(now);
+                interval
+            }
+        };
+        self.ctx.request_repaint_after(wait);
     }
 
     /// Applies the worker's finished jobs, then writes the changes that waited for them.
@@ -589,18 +617,30 @@ impl eframe::App for App {
     /// Runs before each `ui`, and also while the window is hidden (when a repaint was requested).
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.sync_results();
+        self.tick(Instant::now());
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let p = theme::palette(ui);
-        let status = if self.worker.as_ref().is_some_and(Worker::syncing) {
+        let syncing = self.worker.as_ref().is_some_and(Worker::syncing);
+        let status = if syncing {
             Some("Syncing…".to_owned())
         } else {
             self.sync_status.clone()
         };
-        egui::Panel::top("header")
+        // Sync now: enabled unless a sync is already running.
+        let sync_button = self
+            .worker
+            .as_ref()
+            .filter(|worker| worker.has_remote())
+            .map(|_| !syncing);
+        let sync_clicked = egui::Panel::top("header")
             .frame(Frame::NONE)
-            .show(ui, |ui| header(ui, p, status.as_deref()));
+            .show(ui, |ui| header(ui, p, status.as_deref(), sync_button))
+            .inner;
+        if sync_clicked {
+            self.sync_now(Instant::now());
+        }
         egui::Panel::left("sidebar")
             .exact_size(220.0)
             .resizable(false)
@@ -733,8 +773,10 @@ fn load_library(path: &Path) -> Result<TodoLibrary, String> {
     Ok(library)
 }
 
-/// The title bar; `status` is the sync line, at the right.
-fn header(ui: &mut Ui, p: &Palette, status: Option<&str>) {
+/// The title bar, with the sync status and, when `sync_button` is set, a Sync now button enabled
+/// as it says. Returns whether the button was clicked.
+fn header(ui: &mut Ui, p: &Palette, status: Option<&str>, sync_button: Option<bool>) -> bool {
+    let mut clicked = false;
     Frame::new()
         .fill(p.header)
         .inner_margin(Margin::symmetric(20, 12))
@@ -748,16 +790,24 @@ fn header(ui: &mut Ui, p: &Palette, status: Option<&str>) {
                         .font(theme::bold(17.5))
                         .color(Color32::WHITE),
                 );
-                if let Some(status) = status {
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if let Some(enabled) = sync_button {
+                        let button = egui::Button::new(
+                            RichText::new("Sync now").size(12.6).color(Color32::WHITE),
+                        )
+                        .frame(false);
+                        clicked = ui.add_enabled(enabled, button).clicked();
+                    }
+                    if let Some(status) = status {
                         // git's errors run to several lines; the first fits, the rest on hover.
                         let first = status.lines().next().unwrap_or_default();
                         ui.label(RichText::new(first).size(12.6).color(Color32::WHITE))
                             .on_hover_text(status);
-                    });
-                }
+                    }
+                });
             });
         });
+    clicked
 }
 
 fn empty_state(ui: &mut Ui, p: &Palette, text: &str) {
@@ -841,6 +891,7 @@ mod tests {
             worker: None,
             pending: Vec::new(),
             sync_status: None,
+            last_sync: Instant::now(),
             choose_vcs: None,
             edited: None,
             deleting: None,
@@ -1125,7 +1176,7 @@ mod tests {
 
     /// Queues a sync, as the timer or Sync now does.
     fn sync(app: &mut App) {
-        app.worker.as_mut().unwrap().sync();
+        app.sync_now(Instant::now());
     }
 
     fn subjects(repo: &Path, count: usize) -> String {
@@ -1360,6 +1411,26 @@ mod tests {
         assert!(error.contains("resolve them by hand"), "{error}");
         assert!(error.contains("One change"), "{error}");
         assert!(app.worker.is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_sync_is_due_once_the_interval_has_passed_and_never_with_0() {
+        let dir = remote_and_clones("sync timer", "Alpha\n");
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        let opened = app.last_sync;
+        let minutes = |n: u64| Duration::from_secs(n * 60);
+
+        app.tick(opened + minutes(9));
+        assert!(!app.worker.as_ref().unwrap().syncing());
+        app.tick(opened + minutes(10));
+        assert!(app.worker.as_ref().unwrap().syncing());
+        assert_eq!(app.last_sync, opened + minutes(10));
+        wait(&mut app);
+
+        app.config.sync_interval_minutes = 0;
+        app.tick(opened + minutes(60 * 24));
+        assert!(!app.worker.as_ref().unwrap().syncing());
         let _ = std::fs::remove_dir_all(dir);
     }
 

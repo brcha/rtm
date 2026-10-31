@@ -161,6 +161,10 @@ impl Worker {
         self.pending > 0
     }
 
+    pub fn has_remote(&self) -> bool {
+        self.remote
+    }
+
     pub fn syncing(&self) -> bool {
         self.syncs_pending > 0
     }
