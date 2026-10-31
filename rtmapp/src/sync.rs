@@ -1,15 +1,16 @@
 //! Sync of the open todo.txt through its Git or Pijul repository (RTM-64), with the same rules as
-//! rtmcli: only a tracked file syncs, a conflicted repository is not opened, a repository without a
-//! remote is committed to without pulling or pushing. Every git or pijul call after opening runs on
-//! one worker thread, so calls never overlap each other; the app writes the file only while the
-//! worker is idle (RTM-20), so they never overlap a save either.
+//! rtmcli: outside changes and an untracked file are asked about first (RTM-70), an ignored file
+//! never syncs, a conflicted repository is not opened, a repository without a remote is committed
+//! to without pulling or pushing. Every git or pijul call after opening runs on one worker thread,
+//! so calls never overlap each other; the app writes the file only while the worker is idle
+//! (RTM-20), so they never overlap a save either.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use eframe::egui;
-use rtmsync::Vcs;
+use rtmsync::{State, Vcs};
 
 use crate::config::AppConfig;
 
@@ -22,15 +23,25 @@ pub struct Repo {
 
 /// What opening a file means for sync.
 pub enum Found {
-    /// Sync is off, the file is not in a repository, or it is not tracked.
+    /// Sync is off, the file is not in a repository, or it is ignored (or untracked in a
+    /// conflicted repository).
     NoSync,
     Repo(Repo),
+    /// The file has changes rtm did not commit, or is not tracked yet: ask before committing.
+    Ask(Repo, Question),
     /// The directory belongs to several VCSs and the config names none of them.
     Ambiguous(Vec<Vcs>),
     /// Unmerged paths, a stopped rebase or merge, or Pijul conflict markers.
     Conflicted,
     /// A check failed, for example because `git` is not installed.
     Unavailable(String),
+}
+
+/// What to ask about a file before it syncs (RTM-57, RTM-70).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Question {
+    Modified,
+    Untracked,
 }
 
 /// The VCS named in the config (`"git"`, `"pijul"`, any case). Anything else is no choice.
@@ -56,22 +67,42 @@ pub fn find(file: &Path, config: &AppConfig) -> Found {
             None => return Found::Ambiguous(found),
         },
     };
-    match vcs.is_tracked(file) {
-        Ok(true) => {}
-        Ok(false) => return Found::NoSync,
+    let state = if file.exists() {
+        vcs.state(file)
+    } else {
+        // A missing file's state cannot be told reliably (a deleted tracked file is modified for
+        // Git), so it keeps the rule from before the check, as in rtmcli: tracked files sync.
+        vcs.is_tracked(file).map(|tracked| {
+            if tracked {
+                State::Clean
+            } else {
+                State::Ignored
+            }
+        })
+    };
+    let question = match state {
+        Ok(State::Clean) => None,
+        Ok(State::Modified) => Some(Question::Modified),
+        Ok(State::Untracked) => Some(Question::Untracked),
+        Ok(State::Ignored) => return Found::NoSync,
         Err(e) => return Found::Unavailable(e.to_string()),
-    }
+    };
     match vcs.is_conflicted(file) {
         Ok(false) => {}
+        // Nothing can be committed into the repository, so an untracked file opens as before.
+        Ok(true) if question == Some(Question::Untracked) => return Found::NoSync,
         Ok(true) => return Found::Conflicted,
         Err(e) => return Found::Unavailable(e.to_string()),
     }
-    let remote = vcs.has_remote(file).unwrap_or(false);
-    Found::Repo(Repo {
+    let repo = Repo {
         vcs,
         file: file.to_path_buf(),
-        remote,
-    })
+        remote: vcs.has_remote(file).unwrap_or(false),
+    };
+    match question {
+        None => Found::Repo(repo),
+        Some(question) => Found::Ask(repo, question),
+    }
 }
 
 enum Job {
@@ -194,6 +225,21 @@ impl Worker {
 }
 
 impl Repo {
+    pub fn vcs(&self) -> Vcs {
+        self.vcs
+    }
+
+    /// rtmcli's message for committing what `question` asked about (RTM-63).
+    pub fn commit_message(&self, question: Question) -> String {
+        match question {
+            Question::Modified => "rtm: commit outside changes".to_owned(),
+            Question::Untracked => format!(
+                "rtm: track {}",
+                self.file.file_name().unwrap_or_default().to_string_lossy()
+            ),
+        }
+    }
+
     /// Pulls and pushes when there is a remote; otherwise there is nothing to do.
     fn sync(&self) -> Done {
         if !self.remote {
