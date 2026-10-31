@@ -83,7 +83,8 @@ one that had them.
   **Test tools are not native dependencies.** `rust.yml` builds `pijul` (RTM-18), which the
   `rtmsync` tests drive, on Linux and macOS, installing the libraries it needs (OpenSSL and
   libsodium, from apt and Homebrew), and downloads a prebuilt `pijul.exe` on Windows. No crate
-  links them, so they do not go into the Nix lists or the debs. See `rtmsync/AGENTS.md`.
+  links them, so they do not go into the Nix lists or the debs; in Nix they go into
+  `nativeCheckInputs` only, never `eguiDeps` (see Nix Packaging). See `rtmsync/AGENTS.md`.
 - **Linux CI apt hardening (RTM-28):** GitHub-hosted Ubuntu runners resolve apt through a
   mirrorlist that tries `azure.archive.ubuntu.com` before falling back to `archive.ubuntu.com`.
   When the Azure-local mirror degrades — dropping connections rather than refusing them — apt
@@ -102,12 +103,20 @@ one that had them.
 - **`flake.nix`** — modern entry point. `nix build .#rtmcli`, `nix build .#rtmapp`.
 - **`default.nix`** — legacy entry point. `nix-build -A rtmcli`, `nix-build -A rtmapp`.
 - **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
-- **`rtmapp` package (Linux only):** no native build inputs; `eguiDeps` are added to the binary's
-  rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which would drop
-  them). `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons (PNGs from 16 to
-  512 px and the scalable SVG, see `rtmapp/AGENTS.md`) and
+- **`rtmapp` package (Linux and macOS):** no native build inputs; on Linux `eguiDeps` are added to
+  the binary's rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which
+  would drop them); on macOS the system frameworks come from stdenv's Apple SDK, and the result is
+  a plain binary under `bin/`, not an app bundle (the dmg comes from `scripts/build-macos.sh`).
+  `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons (PNGs from 16 to 512 px and the scalable SVG, see `rtmapp/AGENTS.md`) and
   `Inter-LICENSE.txt` (under `share/licenses/rtmapp`). Its version is read from
   `rtmapp/Cargo.toml`; `rtmcli` still has a hard-coded `version` in `commonArgs`.
+- **Tests in the build (RTM-71):** the check phase runs the sync tests, so `gitMinimal`, `pijul` and
+  `openssh` (the Pijul test signs through a scratch `ssh-agent`) are `nativeCheckInputs`; `rtmcli`
+  also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul test cannot skip itself. At
+  run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
+- **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
+  macOS for pushes to and pull requests against `main`. `default.nix` is not built in CI (it takes
+  the caller's `<nixpkgs>`).
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
   needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
   `nixos-26.11` when it is released (RTM-45). `default.nix` and `shell.nix` use the caller's
