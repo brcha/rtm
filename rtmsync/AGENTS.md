@@ -9,8 +9,8 @@ dependency.
 Done: detecting the VCS (RTM-12), committing the file (RTM-18), syncing with the remote (RTM-19,
 which also took Pijul's part from RTM-53), the checks the frontends need and sync in the CLI
 (RTM-21), sync in the GUI and the `index.lock` retry (RTM-64), the todo.txt's state for the check on
-open and its use in the CLI (RTM-63, decided in RTM-57). Still to come: background GUI sync, which
-replaces RTM-64's per-change sync and takes over the GUI's check on open (RTM-20).
+open and its use in the CLI (RTM-63, decided in RTM-57), background GUI sync replacing RTM-64's
+per-change sync (RTM-20). Still to come: the GUI's check on open (RTM-70).
 
 ---
 
@@ -90,8 +90,9 @@ rtmsync/
   | conflicted | not opened until the user resolves it (RTM-16 rule 8) |
   | missing | unchanged (the frontend's missing-file behaviour) |
 
-  rtmcli implements it (RTM-63); the GUI's part comes with RTM-20, since whether a dirty todo.txt at
-  open is an outside change depends on how the app buffers changes between syncs.
+  rtmcli implements it (RTM-63); the GUI's part is RTM-70. Since RTM-20 the app writes and commits
+  each change at once whenever no job runs; a failed commit or a crash between the two can still
+  leave its own change uncommitted.
 - Network calls (pull, push) run with `GIT_TERMINAL_PROMPT=0`: credentials come from a helper or
   ssh-agent, never a terminal prompt (decided for the CLI too). They are killed after 60 s
   (`Timeout`). Their stdout is discarded and their stderr goes to a temporary file, not a pipe: ssh
