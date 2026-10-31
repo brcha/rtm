@@ -56,12 +56,15 @@ rtmapp/
 | serde, toml 0.8     | Config file                                        |
 | dirs 5              | OS config directory                                |
 | chrono              | Dates (same as the core library)                   |
-| pollster 0.4        | Waits for `rfd`'s async file dialog on its thread  |
+| pollster 1          | Waits for `rfd`'s async file dialog on its thread  |
 | env_logger 0.11     | Logs to stderr (`rfd`'s file dialog errors)        |
 | sys-locale 0.3      | The OS locale, for the calendar's week start       |
 | icu_calendar 2.4    | CLDR first day of the week for a locale            |
 | icu_locale_core 2.4 | Parses the locale for `icu_calendar`               |
 | windows-sys 0.52    | Windows only: the taskbar ID (winit's version)     |
+
+`Cargo.lock` also has pollster 0.4: `rfd` up to 0.17.2 needs it on Linux for `xdg-portal`. rfd's main
+branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 
 ---
 

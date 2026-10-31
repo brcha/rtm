@@ -16,7 +16,7 @@ dirs = "5"
 toml = "0.8"
 rfd = "0.16"
 # Waits for rfd's async file dialog on its own thread (the one exception to "no async").
-pollster = "0.4"
+pollster = "1"
 env_logger = { version = "0.11.11", default-features = false }
 # The calendar's first day of the week: the OS locale, and CLDR's week data for it.
 sys-locale = "0.3"
