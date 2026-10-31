@@ -21,8 +21,8 @@ rtmsync/
 ├── src/lib.rs        ← Vcs enum, detect(), Vcs::{commit, sync, state, is_tracked,
 │                       is_conflicted, has_remote}, State, Error, unit tests
 └── tests/
-    ├── git.rs        ← Vcs::commit, Vcs::state and Vcs::sync with Git
-    └── pijul.rs      ← Vcs::commit, Vcs::state and Vcs::sync with Pijul (a single test, see below)
+    ├── sync_git_tests.rs    ← Vcs::commit, Vcs::state and Vcs::sync with Git
+    └── sync_pijul_tests.rs  ← Vcs::commit, Vcs::state and Vcs::sync with Pijul (a single test, see below)
 ```
 
 ---
@@ -116,11 +116,11 @@ rtmsync/
 
 - Detection and process-runner tests are inline, commit and sync tests in `tests/`; all use scratch
   directories under the system temp directory. Run with `cargo test -p rtmsync`.
-- `tests/git.rs` gives each scratch repository, the bare remote of the sync tests included, a local
+- `tests/sync_git_tests.rs` gives each scratch repository, the bare remote of the sync tests included, a local
   identity, `commit.gpgsign=false`, an empty `core.hooksPath` and `rerere.enabled=false`, so the
   user's global config does not interfere. The sync tests use a bare remote and two clones on local
   paths: no network.
-- `tests/pijul.rs` holds exactly one test, because it sets process-wide environment variables
+- `tests/sync_pijul_tests.rs` holds exactly one test, because it sets process-wide environment variables
   (`unsafe` in Rust 2024): `HOME`, `XDG_CONFIG_HOME` and `PIJUL_CONFIG_DIR` (on Windows pijul's
   default comes from the system, not `APPDATA`) point at scratch directories. On Unix it starts its
   own `ssh-agent` with a generated key and gives every ssh tool that socket explicitly, so it never
