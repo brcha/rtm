@@ -14,7 +14,7 @@ complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date pic
 package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); the MSI, deb and
 AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11); sync
 through Git or Pijul (RTM-64), in the background since RTM-20, with the check for a dirty or
-untracked todo.txt on open (RTM-70).
+untracked todo.txt on open (RTM-70); "New File" (RTM-55).
 
 ---
 
@@ -32,8 +32,8 @@ rtmapp/
 │   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
-    ├── app.rs              ← App state, panels, Load File, filters, quick-add, complete/uncomplete,
-    │                         saving an edit, deleting
+    ├── app.rs              ← App state, panels, New File and Load File, filters, quick-add,
+    │                         complete/uncomplete, saving an edit, deleting
     ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
@@ -73,11 +73,12 @@ rtmapp/
   otherwise). Keep them all in agreement.
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one the Tauri app wrote,
   so existing users' settings carry over: do not rename fields or change defaults (`#[serde(default)]`
-  on `AppConfig`). The file is written after a successful file load or a filter change, never at
-  startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can default to true): a
-  new field gets its default there. Keys added for sync: `sync` (default true; false turns off
-  commits as well as pulls and pushes) and `vcs` (`"git"` or `"pijul"`, any case, the answer when
-  the file's directory has both; anything else means ask; cleared when another file is opened).
+  on `AppConfig`). The file is written after a successful file load (or creation) or a filter
+  change, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
+  default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
+  false turns off commits as well as pulls and pushes) and `vcs` (`"git"` or `"pijul"`, any case,
+  the answer when the file's directory has both; anything else means ask; cleared when another
+  file is opened).
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
@@ -268,6 +269,14 @@ more. Windows release builds have no console (see Conventions), so there the log
 debug build.
 
 A load error (unreadable file, missing path) is shown above the list.
+
+"New File" (RTM-55) shows a save dialog (`.txt` filter, default name `todo.txt`), creates the file
+empty (`File::create`) and opens it through the same path as "Load File" (`open_file`: config, check
+on open). An existing file chosen there is **replaced** with an empty one: every backend `rfd` uses
+asks before returning it (the portal's backends, gtk3, `zenity --confirm-overwrite`, the Windows and
+macOS save panels). A new file inside a repository is untracked, so the check on open asks "Add it";
+replacing a tracked file leaves it modified, so it asks "Commit them" (which commits and syncs the
+empty file) or "Don't open" (the old items stay only in the file's history).
 
 ---
 
