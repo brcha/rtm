@@ -1,4 +1,6 @@
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, TryRecvError};
 use std::time::{Duration, Instant};
 
 use eframe::egui::{
@@ -16,6 +18,9 @@ use crate::theme::{self, Palette};
 /// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
 /// push, 60 s each at most, and a little more.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(125);
+
+/// What to do with the path a file dialog returned: `App::open_file` or `App::create_file`.
+type OnPath = fn(&mut App, &Path);
 
 pub struct App {
     config: AppConfig,
@@ -47,6 +52,8 @@ pub struct App {
     /// A pull changed the edit dialog's item, or what deleting it would remove; Save and Delete
     /// are refused.
     stale: bool,
+    /// The open file dialog: its result, and what to do with a chosen path.
+    dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
     ctx: egui::Context,
 }
 
@@ -82,6 +89,7 @@ impl App {
             edited: None,
             deleting: None,
             stale: false,
+            dialog: None,
             ctx: cc.egui_ctx.clone(),
         };
         app.connect();
@@ -420,35 +428,71 @@ impl App {
         }
     }
 
-    /// Asks for a file and loads it. The dialog blocks the UI thread while it is open.
-    fn pick_file(&mut self) {
-        // A sync may be writing the file; the widgets are disabled too, but this is the guarantee.
-        if self.busy() {
+    /// Asks for a file and loads it once the dialog returns (see `dialog_result`).
+    fn pick_file(&mut self, frame: &eframe::Frame) {
+        // Matches the disabled buttons; `dialog_result` is what waits for an idle worker before
+        // the file is switched.
+        if self.busy() || self.dialog.is_some() {
             return;
         }
-        let Some(path) = rfd::FileDialog::new()
+        let dialog = rfd::AsyncFileDialog::new()
             .add_filter("Text Files", &["txt"])
-            .pick_file()
-        else {
-            return;
-        };
-        self.open_file(&path);
+            .set_parent(frame)
+            .pick_file();
+        self.show_dialog(dialog, App::open_file);
     }
 
-    /// Asks where to create a todo.txt, creates it empty and opens it. The dialog has asked before
-    /// returning an existing file, so that file is replaced. Blocks the UI thread like `pick_file`.
-    fn new_file(&mut self) {
-        if self.busy() {
+    /// Asks where to create a todo.txt, then creates it empty and opens it. The dialog has asked
+    /// before returning an existing file, so that file is replaced.
+    fn new_file(&mut self, frame: &eframe::Frame) {
+        if self.busy() || self.dialog.is_some() {
             return;
         }
-        let Some(path) = rfd::FileDialog::new()
+        let dialog = rfd::AsyncFileDialog::new()
             .add_filter("Text Files", &["txt"])
             .set_file_name("todo.txt")
-            .save_file()
-        else {
+            .set_parent(frame)
+            .save_file();
+        self.show_dialog(dialog, App::create_file);
+    }
+
+    /// Waits for `dialog` on its own thread, so the window keeps repainting while it is open. The
+    /// future is created on the UI thread, where macOS has to run the panel.
+    fn show_dialog(
+        &mut self,
+        dialog: impl Future<Output = Option<rfd::FileHandle>> + Send + 'static,
+        then: OnPath,
+    ) {
+        let (send, receive) = mpsc::channel();
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || {
+            let path = pollster::block_on(dialog).map(|file| file.path().to_owned());
+            let _ = send.send(path);
+            ctx.request_repaint();
+        });
+        self.dialog = Some((receive, then));
+    }
+
+    /// Applies the file dialog's result once nothing depends on the open file: no job is running
+    /// (its pending changes are written then) and no item is being edited. Until then the result
+    /// waits in the channel; the worker's results and closing the edit dialog repaint.
+    fn dialog_result(&mut self) {
+        if self.busy() || self.editing.is_some() {
+            return;
+        }
+        let Some((receive, then)) = &self.dialog else {
             return;
         };
-        self.create_file(&path);
+        let then = *then;
+        match receive.try_recv() {
+            Err(TryRecvError::Empty) => {}
+            // A cancel, a failure (rfd logs it) or a dialog thread that died.
+            Ok(None) | Err(TryRecvError::Disconnected) => self.dialog = None,
+            Ok(Some(path)) => {
+                self.dialog = None;
+                then(self, &path);
+            }
+        }
     }
 
     fn create_file(&mut self, path: &Path) {
@@ -516,9 +560,9 @@ impl App {
         }
     }
 
-    fn sidebar(&mut self, ui: &mut Ui, p: &Palette) {
+    fn sidebar(&mut self, ui: &mut Ui, p: &Palette, frame: &eframe::Frame) {
         ui.spacing_mut().item_spacing.y = 16.0;
-        let busy = self.busy();
+        let busy = self.busy() || self.dialog.is_some();
         let (new, load) = ui
             .add_enabled_ui(!busy, |ui| {
                 ui.horizontal(|ui| {
@@ -529,10 +573,10 @@ impl App {
             })
             .inner;
         if new {
-            self.new_file();
+            self.new_file(frame);
         }
         if load {
-            self.pick_file();
+            self.pick_file(frame);
         }
         Frame::new()
             .fill(p.info_bg)
@@ -725,10 +769,11 @@ impl eframe::App for App {
     /// Runs before each `ui`, and also while the window is hidden (when a repaint was requested).
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.sync_results();
+        self.dialog_result();
         self.tick(Instant::now());
     }
 
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let p = theme::palette(ui);
         let syncing = self.worker.as_ref().is_some_and(Worker::syncing);
         let status = if syncing {
@@ -755,7 +800,7 @@ impl eframe::App for App {
             .show_separator_line(false)
             .frame(Frame::new().fill(p.panel).inner_margin(16.0))
             .show(ui, |ui| {
-                self.sidebar(ui, p);
+                self.sidebar(ui, p, frame);
                 // Right border, drawn on the outer edge of the panel's margin.
                 let edge = ui.max_rect().expand(16.0);
                 ui.painter().vline(
@@ -1006,6 +1051,7 @@ mod tests {
             edited: None,
             deleting: None,
             stale: false,
+            dialog: None,
             ctx: egui::Context::default(),
         }
     }
@@ -1086,6 +1132,88 @@ mod tests {
         assert_eq!(Path::new(&name), canonical);
         let library = load_library(Path::new(&name)).unwrap();
         assert_eq!(library.items[0].description, "Buy milk");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Gives the app a file dialog that has already returned `path`.
+    fn dialog_returned(app: &mut App, path: Option<PathBuf>, then: OnPath) {
+        let (send, receive) = mpsc::channel();
+        send.send(path).unwrap();
+        app.dialog = Some((receive, then));
+    }
+
+    #[test]
+    fn a_picked_file_is_opened_when_the_dialog_returns() {
+        let dir = temp_dir("dialog pick");
+        std::fs::write(dir.join("other.txt"), "Other item\n").unwrap();
+        let mut app = app_with(&dir, "First\n");
+
+        dialog_returned(&mut app, Some(dir.join("other.txt")), App::open_file);
+        app.dialog_result();
+
+        assert!(app.dialog.is_none());
+        assert_eq!(app.error, None);
+        assert_eq!(
+            app.library.as_ref().unwrap().items[0].description,
+            "Other item"
+        );
+        let name = AppConfig::load(&dir.join("config.toml")).file_name.unwrap();
+        assert_eq!(
+            Path::new(&name),
+            dir.join("other.txt").canonicalize().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_cancelled_dialog_changes_nothing() {
+        let dir = temp_dir("dialog cancel");
+        let mut app = app_with(&dir, "First\n");
+
+        dialog_returned(&mut app, None, App::open_file);
+        app.dialog_result();
+
+        assert!(app.dialog.is_none());
+        assert_eq!(app.error, None);
+        assert_eq!(app.library.as_ref().unwrap().items[0].description, "First");
+        assert!(!dir.join("config.toml").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_file_named_in_the_save_dialog_is_created_and_opened() {
+        let dir = temp_dir("dialog new");
+        let mut app = bare_app(&dir, None);
+
+        dialog_returned(&mut app, Some(dir.join("new.txt")), App::create_file);
+        app.dialog_result();
+
+        assert!(app.dialog.is_none());
+        assert_eq!(app.error, None);
+        assert_eq!(std::fs::read_to_string(dir.join("new.txt")).unwrap(), "");
+        assert_eq!(app.library.as_ref().unwrap().item_count(), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_picked_file_waits_for_the_edit_dialog_to_close() {
+        let dir = temp_dir("dialog editing");
+        std::fs::write(dir.join("other.txt"), "Other item\n").unwrap();
+        let mut app = app_with(&dir, "First\n");
+        open_editor(&mut app, 0);
+
+        dialog_returned(&mut app, Some(dir.join("other.txt")), App::open_file);
+        app.dialog_result();
+        assert!(app.dialog.is_some());
+        assert_eq!(app.library.as_ref().unwrap().items[0].description, "First");
+
+        app.editing = None;
+        app.dialog_result();
+        assert!(app.dialog.is_none());
+        assert_eq!(
+            app.library.as_ref().unwrap().items[0].description,
+            "Other item"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1519,6 +1647,29 @@ mod tests {
         assert!(app.editing.is_none());
         assert_eq!(descriptions(&app), ["First", "Alpha", "Bravo, edited"]);
         assert_eq!(subjects(&dir.join("a"), 1), "rtm: edit Bravo");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_picked_file_waits_for_the_sync_and_the_pending_changes() {
+        let dir = remote_and_clones("sync dialog", "Alpha\n");
+        std::fs::write(dir.join("other.txt"), "Other item\n").unwrap();
+        let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+        sync(&mut app);
+        app.new_item = "Call mom".to_owned();
+        app.add_item();
+
+        dialog_returned(&mut app, Some(dir.join("other.txt")), App::open_file);
+        app.dialog_result();
+        assert!(app.dialog.is_some());
+        assert_eq!(descriptions(&app), ["Alpha", "Call mom"]);
+
+        wait(&mut app);
+        app.dialog_result();
+        assert!(app.dialog.is_none());
+        assert_eq!(descriptions(&app), ["Other item"]);
+        assert!(file_lines(&dir.join("a"))[1].ends_with(" Call mom"));
+        assert_eq!(subjects(&dir.join("a"), 1), "rtm: add Call mom");
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -41,7 +41,8 @@ one that had them.
 ## Conventions
 
 - **Rust edition:** 2024 everywhere.
-- **No async** in the core library, the CLI or the desktop app.
+- **No async** in the core library, the CLI or the desktop app; the one exception is rtmapp's file
+  dialogs (RTM-65, see `rtmapp/AGENTS.md`).
 - **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file. `rtmapp`
   also has `sync` (default true), `vcs` (`"git"`/`"pijul"`) and `sync_interval_minutes` (default 10),
   see `rtmapp/AGENTS.md`.
