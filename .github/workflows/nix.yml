@@ -3,7 +3,12 @@ name: Nix
 on:
   push:
     branches: [ "main" ]
-    paths-ignore: [ '**/*.md' ]
+    paths-ignore:
+      - '**/*.md'
+      # Website files (RTM-79) are not inputs of this build.
+      - 'site/**'
+      - 'scripts/site/**'
+      - '.github/workflows/site.yml'
   # Pull requests always run it, so the required gate check below always reports.
   pull_request:
     branches: [ "main", "releases/**" ]

@@ -27,8 +27,10 @@
       build scripts, the workflow).
 
     Keep each list in step with what its build reads (a tracked `rust-toolchain*` or `.cargo/`
-    would go into Rust's and Nix's).
-  - Pushes to `main` start Rust and Nix unless every changed file is Markdown (`paths-ignore`; no
+    would go into Rust's and Nix's). The website (`site/`, `scripts/site/`, `site.yml`; RTM-79) is
+    in none of them.
+  - Pushes to `main` start Rust and Nix unless every changed file is Markdown or part of the
+    website (RTM-87): `site/**`, `scripts/site/**`, `.github/workflows/site.yml` (`paths-ignore`; no
     checks are required there). Release also runs on `v*` tags and by manual dispatch, always
     building.
   - All four workflows run on every pull request against `main` or `releases/**`. The required
