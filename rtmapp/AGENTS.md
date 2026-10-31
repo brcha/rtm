@@ -13,7 +13,8 @@ the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorti
 complete/uncomplete (RTM-35); the edit dialog (RTM-36) and its calendar date picker (RTM-40); the Nix
 package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); the MSI, deb and
 AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11); sync
-through Git or Pijul (RTM-64).
+through Git or Pijul (RTM-64), in the background since RTM-20. Still to come: the check for a dirty
+or untracked todo.txt on open (RTM-70).
 
 ---
 
@@ -77,6 +78,7 @@ rtmapp/
   new field gets its default there. Keys added for sync: `sync` (default true; false turns off
   commits as well as pulls and pushes) and `vcs` (`"git"` or `"pijul"`, any case, the answer when
   the file's directory has both; anything else means ask; cleared when another file is opened).
+  `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
@@ -132,28 +134,36 @@ rtmapp/
   Tauri app did, so no console window opens behind the GUI. The window opens centred at 900 × 650.
   Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
   uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
-- **Sync (RTM-64)** follows rtmcli's rules (`sync::find`): `sync = false`, no repository or an
-  untracked file → no sync and no commits; both Git and Pijul → the Git-or-Pijul dialog (or "Don't
-  sync", which asks again next time); a conflicted repository (`is_conflicted`) → the file is not
-  opened and the error line says to resolve it by hand; a failed check (e.g. `git` missing) → "Not
-  syncing: …" in the header; no remote → commit only.
-  - **One worker thread** (`sync::Worker`) runs every git or pijul call: `Pull` and `CommitAndSync`
-    jobs, a result per job (`Done`), and `ctx.request_repaint()` after each, so results arrive
-    without input. `App::sync_results` applies them at the start of each frame.
-  - **Pulls happen ahead of changes:** after the file is opened, when the window regains focus
-    (`viewport().focused`), and when the edit dialog or the delete confirmation opens. A pull that
-    changed the file reloads it; the dialog's item (kept in `edited` when it opened) is found again
-    by equality, and if it is gone, or (while the delete confirmation shows) what deleting it would
-    remove changed, `stale` makes Save and Delete refuse.
-  - **Each save queues `commit_and_sync`** with rtmcli's messages (`rtm: complete …`, `rtm:
-    uncomplete …`, `rtm: add …`, `rtm: edit …`, `rtm: delete …`).
-  - **No change while a job runs** (`App::busy`): the row checkboxes, quick-add, Load File, and the
-    dialog's Save and delete buttons are disabled, and every mutation also returns early on its own,
-    so the file is never written while git works on it. The header shows "Syncing…", or "Not synced:
-    …" (git's first line; the rest on hover) after a failed pull or push.
+- **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::find`): `sync = false`,
+  no repository or an untracked file → no sync and no commits; both Git and Pijul → the Git-or-Pijul
+  dialog (or "Don't sync", which asks again next time); a conflicted repository (`is_conflicted`) →
+  the file is not opened and the error line says to resolve it by hand; a failed check (e.g. `git`
+  missing) → "Not syncing: …" in the header; no remote → commit only.
+  - **One worker thread** (`sync::Worker`) runs every git or pijul call: `Commit` (local) and
+    `Sync` (pull, then push) jobs, a result per job (`Done`), and `ctx.request_repaint()` after each,
+    so results arrive without input. At most one `Sync` waits in the queue.
+  - **When it syncs:** after the file is opened, every `sync_interval_minutes` since the last sync
+    was asked for, on the header's **Sync now** button (shown when there is a remote, disabled while
+    a sync runs) and on exit. The timer and the results run in `App::logic`, which eframe also calls
+    while the window is minimized or hidden; `request_repaint_after` wakes it when a sync is due.
+  - **Editing never waits.** Each mutation is a `Change` (add, toggle, edit, delete) applied to the
+    list at once and kept in `pending` until written. `flush` writes and queues one `Commit` only
+    while the worker is idle (`Worker::busy`: jobs sent whose result was not handled yet, so a pull
+    whose reload has not happened still counts); changes made during a job wait in memory and make
+    one commit (`rtm: N changes`, one line each). Messages name the item's description only (`rtm:
+    complete Pay bill`). Load File is disabled during any job, Sync now during a sync; nothing else.
+  - **A pull that changed the file** (also one whose push then failed: `NotSynced { changed }`)
+    reloads it and redoes `pending` on it, finding each item by equality (with two identical lines,
+    the first); a change whose item the pull changed or removed is dropped and named in the error
+    line. The edit dialog's item (kept in `edited`) is then found again; if it is gone, or what
+    deleting it would remove changed, `stale` makes Save and Delete refuse. The header shows
+    "Syncing…", or "Not synced: …" (git's first line; the rest on hover) after a failed pull or push.
   - **A conflict from a job closes the file**, as on open: a reload would read the markers as items.
-  - **On exit** (`on_exit`, eframe's wgpu build), queued jobs get up to 5 s, so a change saved just
-    before closing is still committed.
+    The error line counts the pending changes that could not be saved.
+  - **On exit** (`on_exit`, eframe's wgpu build, `finish_jobs`): outstanding results are handled as
+    in `logic`, pending changes are written and committed, and a last sync runs, within 5 s. When
+    changes are waiting behind a running job, that job gets up to `SAVE_TIMEOUT` (125 s, a pull and
+    a push timeout), so they are not lost.
 - Tests are inline `#[cfg(test)]` modules; they use temp files and never open a window. `App` tests
   build `App { .. }` directly with a temp `config_path` (see `app_with` and `bare_app`), never
   `config::config_path()`: a load or filter save would overwrite the user's real `rtm/config.toml`.

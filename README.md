@@ -154,9 +154,11 @@ ARM64 and 32-bit Windows builds are not currently produced.
 ## Syncing through Git or Pijul
 
 `rtmcli` and the desktop app sync your todo.txt when it is tracked in a Git or Pijul repository.
-Nothing to set up: rtmcli pulls before every command, the desktop app when it opens the file, when
-its window comes back to the front and when you open an item; every change is committed and pushed.
-While the app syncs ("Syncing…" in its title bar), changes wait until it is done.
+Nothing to set up: rtmcli pulls before every command and commits and pushes every change. The
+desktop app commits every change at once and syncs (pulls, then pushes) in the background: when it
+opens the file, every 10 minutes, when you click **Sync now** in its title bar, and when you close
+it. Editing never waits for a sync. Set `sync_interval_minutes` in `rtm/config.toml` to change the
+interval, or to 0 to sync only on open, on close and on demand.
 
 - Commit the todo.txt to the repository once (`git add todo.txt` and commit, or `pijul add` and
   `pijul record`), or let rtmcli do it with `--commit-changes`; rtm never adds an untracked file
