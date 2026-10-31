@@ -111,5 +111,5 @@ cargo test -p rtmcli
   incorrectly assumed. Naming the destination explicitly removes any dependence on guessing
   cargo-deb's internal default.
 - `scripts/set-version.ps1` already scopes its edit to `rtmcli/Cargo.toml`'s `[package]` table
-  (see root `AGENTS.md`), so a CalVer bump reaches the Debian package version with no extra
+  (see [`doc/release-process.md`](../doc/release-process.md)), so a CalVer bump reaches the Debian package version with no extra
   step.

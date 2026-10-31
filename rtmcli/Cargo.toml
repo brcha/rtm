@@ -17,7 +17,7 @@ uuid = "1.18.1"
 
 # cargo-deb metadata -- RTM-8. name is pinned explicitly rather than left to derive from
 # [package].name, matching the load-bearing-invariant precedent set for rtmapp's Windows
-# packaging identity in root AGENTS.md.
+# packaging identity in doc/release-process.md.
 [package.metadata.deb]
 name = "rtmcli"
 maintainer = "Filip Brcic <filip.brcic@brcha.com>"

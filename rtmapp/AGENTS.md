@@ -317,7 +317,7 @@ nix build .#rtmapp      # or: nix-build -A rtmapp
 
 The binary links no native libraries beyond glibc; it loads Wayland, xkbcommon, X11, GL, Vulkan and
 fontconfig with `dlopen`. The dev shell puts them on `LD_LIBRARY_PATH`, and the Nix package on the
-binary's rpath (`eguiDeps` in `default.nix`, see the root `AGENTS.md`).
+binary's rpath (`eguiDeps` in `default.nix`, see [`doc/nix-packaging.md`](../doc/nix-packaging.md)).
 
 What it needs at run time (RTM-38); the deb's `depends` and `suggests` and the RPM's `requires` and
 `suggests` (by soname, RTM-9) in `Cargo.toml` follow this. The Wayland entries were found by starting
@@ -349,7 +349,7 @@ screenshots of both themes; any other value is ignored.
 
 ## Packaging
 
-Built by the Release workflow (root `AGENTS.md`, "Release Process"). The deb and the AppImage install
+Built by the Release workflow ([`doc/release-process.md`](../doc/release-process.md)). The deb and the AppImage install
 the binary, the desktop entry, the hicolor icons and both licences; the MSI installs `rtmapp.exe`
 (icon embedded), both licences and the Start Menu and desktop shortcuts; the dmg holds the bundle with
 the binary, `Info.plist`, the icon and both licences.
@@ -357,7 +357,7 @@ the binary, `Info.plist`, the icon and both licences.
 - **deb:** `[package.metadata.deb]` in `Cargo.toml` (cargo-deb). `depends` and `suggests` follow the
   run-time list under Build & Run.
 - **RPM:** `[package.metadata.generate-rpm]` in `Cargo.toml` (cargo-generate-rpm); `requires` and
-  `suggests` follow the same list, by soname (see "Linux (RTM-8)" in the root `AGENTS.md`).
+  `suggests` follow the same list, by soname (see "Linux (RTM-8)" in [`doc/release-process.md`](../doc/release-process.md)).
 - **AppImage:** `scripts/build-appimage.sh <binary> <version> <output>` (also runs locally; set
   `APPIMAGE_TOOLS_DIR` to keep its downloads).
 - **dmg:** `scripts/build-macos.sh <binary> <version> <output.dmg>`, on a Mac only. Bundle
