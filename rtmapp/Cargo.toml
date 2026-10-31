@@ -27,6 +27,10 @@ icu_locale_core = "2.4"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_UI_Shell"] }
 
+[dev-dependencies]
+# UI tests: drives App headless through the AccessKit tree; no snapshot (wgpu) features.
+egui_kittest = { version = "0.37", features = ["eframe"] }
+
 # CoTaskMemFree, for the test that reads the ID back.
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { version = "0.52", features = ["Win32_System_Com"] }

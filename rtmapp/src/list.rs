@@ -69,7 +69,7 @@ pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) -> 
                         ui.set_min_height(25.0);
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = 10.0;
-                            if checkbox(ui, p, item.done, index) {
+                            if checkbox(ui, p, item, index) {
                                 clicked = Some(RowAction::Toggle(index));
                             }
                             ui.add_space(10.0);
@@ -118,15 +118,20 @@ pub fn show(ui: &mut Ui, p: &Palette, items: &[TodoItem], visible: &[usize]) -> 
 /// Painted, because the ☐ and ☑ glyphs are missing from most fonts (see "Look" in
 /// `rtmapp/AGENTS.md`). Returns whether it was clicked. `index` is the item's file index, for a
 /// stable widget id.
-fn checkbox(ui: &mut Ui, p: &Palette, done: bool, index: usize) -> bool {
+fn checkbox(ui: &mut Ui, p: &Palette, item: &TodoItem, index: usize) -> bool {
+    let done = item.done;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
     // The CSS button is padded around its glyph: a larger hit area that leaves the layout alone.
-    let response = ui
-        .interact(
-            rect.expand(3.0),
-            ui.make_persistent_id(("toggle", index)),
-            Sense::click(),
-        )
+    let response = ui.interact(
+        rect.expand(3.0),
+        ui.make_persistent_id(("toggle", index)),
+        Sense::click(),
+    );
+    // A painted box has no accessible name; screen readers (and the UI tests) find it by the item.
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, true, done, &item.description)
+    });
+    let response = response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(if done { "Uncomplete" } else { "Complete" });
     // CSS: grey turns green on hover, and green turns grey.

@@ -15,7 +15,7 @@ package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); t
 AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11); sync
 through Git or Pijul (RTM-64), in the background since RTM-20, with the check for a dirty or
 untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do not block the UI
-(RTM-65).
+(RTM-65); UI tests with `egui_kittest` (RTM-86).
 
 ---
 
@@ -63,6 +63,7 @@ rtmapp/
 | icu_calendar 2.4    | CLDR first day of the week for a locale            |
 | icu_locale_core 2.4 | Parses the locale for `icu_calendar`               |
 | windows-sys 0.52    | Windows only: the taskbar ID (winit's version)     |
+| egui_kittest 0.37   | Dev-dependency: the UI tests (see Conventions)     |
 
 `Cargo.lock` also has pollster 0.4: `rfd` up to 0.17.2 needs it on Linux for `xdg-portal`. rfd's main
 branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
@@ -183,13 +184,39 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     changes are waiting behind a running job, that job gets up to `SAVE_TIMEOUT` (125 s, a pull and
     a push timeout), so they are not lost.
 - Tests are unit tests in `src/tests/`, one file per source file and topic (see Tests in the root
-  `AGENTS.md`); rtmapp is a binary crate, so it has no integration tests (UI tests with
-  `egui_kittest` are RTM-86). They use temp files and never open a window. `App` tests build
-  `App { .. }` directly with a temp `config_path` (see `app_with` and `bare_app` in
+  `AGENTS.md`); rtmapp is a binary crate, so it has no integration tests, and its UI tests are
+  unit tests too (see UI tests below). They use temp files and never open a window. `App` tests
+  build `App { .. }` directly with a temp `config_path` (see `app_with` and `bare_app` in
   `app_support_tests.rs`), never `config::config_path()`: a load or filter save would overwrite the
   user's real `rtm/config.toml`. They do not start sync; the sync tests call `connect` on scratch
   git remotes and clones (local paths, local config keeping the user's identity, signing, hooks and
   rerere out) and `wait` for the worker, which a headless `egui::Context` serves.
+- **UI tests (RTM-86)** in `app_ui_tests.rs` drive the real app with `egui_kittest` (dev-dependency,
+  `eframe` feature only): `build_eframe` runs `App::logic` and `App::ui` each frame, headless and
+  in-process, with no display or GPU, so they run in `rust.yml` on all three OSes and in the Nix
+  check phase like any other test. They click and type through the AccessKit tree, then check the
+  todo.txt and config on disk.
+  - The `harness` helper writes a temp todo.txt and `config.toml` (sync off) and starts the app
+    with `App::with_config(cc, path)`, the constructor `App::new` calls with the real path. Never
+    `App::new` in a test. Temp dirs use a `ui-` prefix: all unit tests share one process, and
+    two tests that pass `temp_dir` the same name share, and wipe, one directory.
+  - Widgets are found by role and accessible name. A row checkbox is named after its item's
+    description (and is toggled when done), like the row's text label, so queries name the role
+    (`get_by_role_and_label(Role::CheckBox, …)`). The edit dialog's fields and the priority
+    dropdown are `labelled_by` their labels; kittest then returns the field, not the label, for
+    `get_by_label("Description")`. The quick-add input is the only `Role::TextInput` outside the
+    dialog.
+  - kittest's accessibility check is on: after each `run()`, any visible input without an
+    accessible name fails the test. A new input needs a name (a linked label, `accessible_name`, or
+    a hint text).
+  - The harness allows 60 steps per `run()` (the default 4 is too few for the modal fade and a
+    focused text cursor).
+  - File dialogs are not clicked (they would open a real dialog): a test hands the app the
+    dialog's result with `dialog_returned`, as the file tests do.
+  - With the calendar open (a date field has focus), a click elsewhere in the dialog only closes it,
+    so the edit test presses Escape before Save.
+  - Not covered: screenshot snapshots (kittest's `snapshot`/`wgpu` features would need a GPU or
+    software renderer and stored images), and the sync dialogs.
 
 ---
 
