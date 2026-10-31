@@ -23,9 +23,23 @@ name = "rtmcli"
 maintainer = "Filip Brcic <filip.brcic@brcha.com>"
 section = "utils"
 priority = "optional"
+# By hand, not $auto: built on AlmaLinux 9 (glibc 2.34), which has no dpkg-shlibdeps (see rtmapp).
+depends = "libc6 (>= 2.34), libgcc-s1"
 # Sync runs through the repository's own executable; without one rtmcli works unsynced.
 suggests = "git, pijul"
 assets = [
     ["target/release/rtmcli", "usr/bin/", "755"],
     ["../LICENSE", "usr/share/doc/rtmcli/copyright", "644"],
 ]
+
+# RPM package, built with cargo-generate-rpm by the Release workflow; glibc comes from auto-req.
+[package.metadata.generate-rpm]
+release = "1"
+assets = [
+    { source = "target/release/rtmcli", dest = "/usr/bin/rtmcli", mode = "755" },
+    { source = "LICENSE", dest = "/usr/share/licenses/rtmcli/LICENSE", mode = "644" },
+]
+
+[package.metadata.generate-rpm.suggests]
+git = "*"
+pijul = "*"

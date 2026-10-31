@@ -17,7 +17,8 @@ Download the files from the latest [GitHub Release](https://github.com/brcha/rtm
 
 ### GNU/Linux (x64)
 
-The packages are built on Ubuntu 22.04 and install there and on newer Debian-based systems.
+The debs install on Ubuntu 22.04 and newer and Debian 12 and newer. The RPMs install on Fedora,
+RHEL 9 and 10 and their clones (AlmaLinux, Rocky Linux), and openSUSE Leap 16.0 and Tumbleweed.
 
 Desktop app, deb:
 
@@ -28,6 +29,14 @@ Desktop app, deb:
 
 It runs on Wayland; X11 works with the X11 libraries the package suggests.
 
+Desktop app, RPM:
+
+1. Download `rtmapp-<version>-1.x86_64.rpm`.
+2. Run `sudo dnf install ./rtmapp-<version>-1.x86_64.rpm` (Fedora, RHEL), or
+   `sudo zypper install --allow-unsigned-rpm ./rtmapp-<version>-1.x86_64.rpm` (openSUSE). This also
+   installs the XDG desktop portal with a file chooser (gtk, gnome or kde).
+3. Start "Rusty Todo.txt Manager" from the application menu, or run `rtmapp`.
+
 Desktop app, AppImage (for other distributions):
 
 1. Download `rtmapp_<version>_amd64.AppImage`.
@@ -36,8 +45,10 @@ Desktop app, AppImage (for other distributions):
 
 CLI:
 
-1. Download `rtmcli_<version>_amd64.deb`.
-2. Run `sudo apt install ./rtmcli_<version>_amd64.deb`.
+1. Download `rtmcli_<version>_amd64.deb` or `rtmcli-<version>-1.x86_64.rpm`.
+2. Run `sudo apt install ./rtmcli_<version>_amd64.deb`,
+   `sudo dnf install ./rtmcli-<version>-1.x86_64.rpm` or
+   `sudo zypper install --allow-unsigned-rpm ./rtmcli-<version>-1.x86_64.rpm`.
 3. Run `rtmcli --help`.
 
 ### Nix and NixOS

@@ -35,8 +35,10 @@ windows-sys = { version = "0.52", features = ["Win32_System_Com"] }
 # Embeds the exe icon on Windows targets (see build.rs).
 winresource = "0.1.34"
 
-# Debian package, built with cargo-deb by the Release workflow. Depends lists only what the app needs on
-# Wayland (it loads these with dlopen, so $auto cannot see them): the Wayland client and xkbcommon, a GPU
+# Debian package, built with cargo-deb by the Release workflow. glibc and libgcc_s are listed by hand:
+# the binaries are built on AlmaLinux 9, where cargo-deb's $auto (dpkg-shlibdeps) does not exist, and the
+# libc6 floor is that build image's glibc, so it changes with it. The rest is what the app needs on
+# Wayland (it loads these with dlopen, so no tool could see them): the Wayland client and xkbcommon, a GPU
 # API (OpenGL ES through EGL, or Vulkan), fontconfig (system fonts for glyphs missing from the bundled
 # Inter), and the XDG portal with a backend that has a file chooser (not the virtual
 # xdg-desktop-portal-backend: xdg-desktop-portal-wlr provides it without one). X11 support is optional,
@@ -46,7 +48,7 @@ name = "rtmapp"
 maintainer = "Filip Brcic <filip.brcic@brcha.com>"
 section = "utils"
 priority = "optional"
-depends = "$auto, libwayland-client0, libxkbcommon0, libegl1 | libvulkan1, libwayland-egl1, libfontconfig1, xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde"
+depends = "libc6 (>= 2.34), libgcc-s1, libwayland-client0, libxkbcommon0, libegl1 | libvulkan1, libwayland-egl1, libfontconfig1, xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde"
 suggests = "libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon-x11-0, git, pijul"
 assets = [
     ["target/release/rtmapp", "usr/bin/", "755"],
@@ -61,3 +63,40 @@ assets = [
     ["../LICENSE", "usr/share/doc/rtmapp/copyright", "644"],
     ["assets/fonts/Inter-LICENSE.txt", "usr/share/doc/rtmapp/", "644"],
 ]
+
+# RPM package, built with cargo-generate-rpm by the Release workflow. Same files and dependencies as the
+# deb, named by soname (and portal package names that Fedora, openSUSE and RHEL share), so one package
+# installs on all of them. glibc comes from auto-req; the run-time list is in AGENTS.md.
+[package.metadata.generate-rpm]
+release = "1"
+assets = [
+    { source = "target/release/rtmapp", dest = "/usr/bin/rtmapp", mode = "755" },
+    { source = "assets/rtmapp.desktop", dest = "/usr/share/applications/rtmapp.desktop", mode = "644" },
+    { source = "assets/icons/16x16.png", dest = "/usr/share/icons/hicolor/16x16/apps/rtmapp.png", mode = "644" },
+    { source = "assets/icons/24x24.png", dest = "/usr/share/icons/hicolor/24x24/apps/rtmapp.png", mode = "644" },
+    { source = "assets/icons/32x32.png", dest = "/usr/share/icons/hicolor/32x32/apps/rtmapp.png", mode = "644" },
+    { source = "assets/icons/128x128.png", dest = "/usr/share/icons/hicolor/128x128/apps/rtmapp.png", mode = "644" },
+    { source = "assets/icons/128x128@2x.png", dest = "/usr/share/icons/hicolor/256x256/apps/rtmapp.png", mode = "644" },
+    { source = "assets/icons/icon.png", dest = "/usr/share/icons/hicolor/512x512/apps/rtmapp.png", mode = "644" },
+    { source = "assets/icons/rtmapp.svg", dest = "/usr/share/icons/hicolor/scalable/apps/rtmapp.svg", mode = "644" },
+    { source = "LICENSE", dest = "/usr/share/licenses/rtmapp/LICENSE", mode = "644" },
+    { source = "assets/fonts/Inter-LICENSE.txt", dest = "/usr/share/licenses/rtmapp/Inter-LICENSE.txt", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+"libwayland-client.so.0()(64bit)" = "*"
+"libxkbcommon.so.0()(64bit)" = "*"
+"(libEGL.so.1()(64bit) or libvulkan.so.1()(64bit))" = "*"
+"libwayland-egl.so.1()(64bit)" = "*"
+"libfontconfig.so.1()(64bit)" = "*"
+xdg-desktop-portal = "*"
+"(xdg-desktop-portal-gtk or xdg-desktop-portal-gnome or xdg-desktop-portal-kde)" = "*"
+
+[package.metadata.generate-rpm.suggests]
+"libX11.so.6()(64bit)" = "*"
+"libX11-xcb.so.1()(64bit)" = "*"
+"libXcursor.so.1()(64bit)" = "*"
+"libXi.so.6()(64bit)" = "*"
+"libxkbcommon-x11.so.0()(64bit)" = "*"
+git = "*"
+pijul = "*"
