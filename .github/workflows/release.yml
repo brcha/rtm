@@ -73,6 +73,8 @@ jobs:
       # (pull request); publish acts on it.
       mode: ${{ steps.version.outputs.mode }}
       latest: ${{ steps.release.outputs.latest }}
+      # The version's section of CHANGELOG.md, the draft release's body (release mode only).
+      notes: ${{ steps.release.outputs.notes }}
       previous: ${{ steps.previous.outputs.previous }}
 
     steps:
@@ -140,7 +142,9 @@ jobs:
       # included: a draft has no tag until it is published). Draft releases are only visible with
       # write access, which the workflow-level `contents: write` gives; narrowing it breaks this
       # check. Also decides whether the release becomes Latest: a patch on an older line (26.1.2
-      # after 26.2.0) must not.
+      # after 26.2.0) must not. Every release, a hand-pushed tag included, needs the version's
+      # section in CHANGELOG.md (written by scripts/changelog.sh in the release PR); it becomes the
+      # draft's body.
       # shortcut: two manual runs of one version at once can both pass and make two drafts; delete
       # one by hand, or add a concurrency group if that ever happens.
       - name: Check the release
@@ -172,6 +176,28 @@ jobs:
           $latest = if ($newer) { 'false' } else { 'true' }
           Write-Host "Latest: $latest"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "latest=$latest"
+
+          if (-not (Test-Path CHANGELOG.md)) {
+            throw "CHANGELOG.md not found. Write it with scripts/changelog.sh $env:VERSION in the release PR."
+          }
+          $notes = @()
+          $inSection = $false
+          foreach ($line in Get-Content CHANGELOG.md) {
+            if ($line.StartsWith('## ')) {
+              if ($inSection) { break }
+              $inSection = $line.StartsWith("## [$env:VERSION]")
+            } elseif ($inSection) {
+              $notes += $line
+            }
+          }
+          if (-not ($notes | Where-Object { $_.StartsWith('- ') })) {
+            throw "CHANGELOG.md has no entries for $env:VERSION. Write them with scripts/changelog.sh $env:VERSION in the release PR."
+          }
+          # A random delimiter, so no changelog line can end the value early.
+          $delimiter = "NOTES_$([guid]::NewGuid().ToString('N'))"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "notes<<$delimiter"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value (($notes -join "`n").Trim())
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $delimiter
 
       # The release the upgrade tests start from: the newest published (non-draft) release below the
       # version being built. Prereleases count -- every release so far is one. Empty if there is
@@ -971,8 +997,7 @@ jobs:
       # Release (tag push, or a manual run on a release branch): publish as a draft. The maintainer
       # reviews and publishes it manually, so a broken release can never become permanent. For a
       # manual run the tag does not exist yet: GitHub creates it on the built commit when the draft
-      # is published. Release notes are generated from squashed PR titles, which pr-title.yml
-      # already forces to be conventional and RTM-tagged.
+      # is published. The body is the version's section of CHANGELOG.md (see Check the release).
       - name: Publish draft release
         if: needs.version.outputs.mode == 'release'
         uses: softprops/action-gh-release@v3
@@ -981,7 +1006,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           make_latest: ${{ needs.version.outputs.latest }}
           draft: true
-          generate_release_notes: true
+          body: ${{ needs.version.outputs.notes }}
           files: dist/*
 
   # The check the main ruleset requires (RTM-76): passes when the package builds passed, or were

@@ -31,6 +31,9 @@ pkgs.mkShell {
     cargo
     rustfmt
     clippy
+
+    # CHANGELOG.md on release branches (scripts/changelog.sh)
+    git-cliff
   ];
   # buildInputs is for 32bit versions
   buildInputs = with pkgs.pkgsi686Linux; [
