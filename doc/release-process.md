@@ -30,10 +30,11 @@
     packages and publishes a draft release tagged `vX.Y.Z` on that commit, with the version's
     `CHANGELOG.md` section as its body. It first checks that the branch matches the version
     (`releases/v26.1` releases only `26.1.*`) and that no release, draft included, or tag exists
-    for it (RTM-73), and that `CHANGELOG.md` has entries for it (RTM-74; a hand-pushed `v*` tag
-    needs them on its commit too). A patch on an older line (26.1.2 after 26.2.0) is created with
-    `make_latest: false`; when publishing it, make sure "Set as the latest release" is unticked.
-    Download and try the draft, then publish it by hand. Releases are not marked as prereleases.
+    for it (RTM-73), and that `CHANGELOG.md` has entries for it (RTM-74). A patch on an older line
+    (26.1.2 after 26.2.0) is created with `make_latest: false`; when publishing it, make sure "Set
+    as the latest release" is unticked. Download and try the draft, then publish it by hand.
+    Publishing creates the `vX.Y.Z` tag, which starts no run: the workflow has no tag trigger
+    (RTM-102). Releases are not marked as prereleases.
     Keep the `build: set version` and `docs: changelog` subjects exact when squash-merging: the
     changelog leaves those commits out.
   - **Website post (RTM-91):** each published release gets a post on the project website, and the
@@ -60,14 +61,17 @@
     deleted: the next minor release's range starts at the previous one's cut.
   - **The first CalVer release:** `main` is at 0.1.4, which is never released. Its release issue
     first sets `main` to `YY.1.0` by PR, then follows the minor-release steps.
-- **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
-  (publishes a draft GitHub Release), manual `workflow_dispatch` (on a `releases/**` branch a
-  release, see "Making a release"; on any other branch a dry run: builds and uploads to the Actions
-  run, publishes nothing, no tag required), and pull requests against `main` or `releases/**`
-  (`pr-title.yml` checks those too); on those it builds and tests the packages (publishes nothing)
+- **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on manual
+  `workflow_dispatch` (on a `releases/**` branch a release, see "Making a release"; on any other
+  branch a dry run: builds and uploads to the Actions run, publishes nothing) and pull requests
+  against `main` or `releases/**` (`pr-title.yml` checks those too); on those it builds and tests the packages (publishes nothing)
   only when they touch the crates (`rtmsync` included since RTM-21), `Cargo.toml`/`Cargo.lock`,
   `LICENSE`, `scripts/build-appimage.sh`, `scripts/build-macos.sh` or the workflow, Markdown
-  excluded (its `changes` job, see "Which changes start which build" in [CI](ci.md)). Windows and Linux are x64
+  excluded (its `changes` job, see "Which changes start which build" in [CI](ci.md)). It has no
+  `v*` tag trigger (RTM-102): publishing a draft creates its tag, and a run started by that tag
+  would rebuild the packages and publish them over the release, which could turn it back into a
+  draft;
+  releasing by pushing a tag by hand is not supported. Windows and Linux are x64
   only — no ARM64, no 32-bit; macOS is one universal (arm64 + x86_64) build (RTM-11).
 - **Assets:** `rtmapp_<v>_x64_en-US.msi`, `rtmcli-<v>-x64.exe`, `rtmapp_<v>_amd64.deb`,
   `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`, `rtmapp-<v>-1.x86_64.rpm`,
@@ -95,10 +99,9 @@
   and starts at 1 (the first release of 2027 is `27.1.0`, the next `27.2.0`); `patch` fixes a
   release (`27.1.1`). Every `YY.*` is above `0.1.x`, so the MSI and apt upgrades keep working. The
   `[package]` version of `rtmapp/Cargo.toml` is the single source of truth — the release workflow reads
-  it (only that table: other tables have their own `version` keys) and never writes to it. On a tag
-  push, the tag is required to match it exactly, and on a release branch the branch name (see "Making a
-  release"); a mismatch fails the build loudly instead of shipping packages whose internal version
-  disagrees with their file names.
+  it (only that table: other tables have their own `version` keys) and never writes to it. On a release
+  branch the branch name is required to match it (see "Making a release"); a mismatch fails the
+  build loudly instead of shipping packages whose internal version disagrees with their file names.
 - **`scripts/set-version.ps1`** (PowerShell) and **`scripts/set-version.sh`** (bash) are two ports of
   one manual pre-release tool, not something CI invokes; keep them in step. Run either on `main`
   after a cut, or on a release branch for a patch release (see "Making a release"), to bump the
