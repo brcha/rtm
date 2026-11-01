@@ -154,3 +154,5 @@ site/public/
 site/static/screenshot_*.png
 site/static/rtmapp.svg
 site/static/rtmapp-small.svg
+# The Zola binary scripts/site/install-zola.sh downloads (Vercel's install step)
+/zola

@@ -27,11 +27,11 @@
       build scripts, the workflow).
 
     Keep each list in step with what its build reads (a tracked `rust-toolchain*` or `.cargo/`
-    would go into Rust's and Nix's). The website (`site/`, `scripts/site/`, `site.yml`; RTM-79) is
-    in none of them.
+    would go into Rust's and Nix's). The website (`site/`, `scripts/site/`, `site.yml`,
+    `vercel.json`; RTM-79) is in none of them.
   - Pushes to `main` start Rust and Nix unless every changed file is Markdown or part of the
-    website (RTM-87): `site/**`, `scripts/site/**`, `.github/workflows/site.yml` (`paths-ignore`; no
-    checks are required there). Release also runs on `v*` tags and by manual dispatch, always
+    website (RTM-87): `site/**`, `scripts/site/**`, `.github/workflows/site.yml`, `vercel.json`
+    (`paths-ignore`; no checks are required there). Release also runs on `v*` tags and by manual dispatch, always
     building.
   - The four workflows behind the required checks run on every pull request against `main` or
     `releases/**`. The required checks are not enforced when a branch is created
@@ -48,3 +48,6 @@
   without site changes never see it. External links are checked only weekly and on manual
   dispatch (`check.sh --external`, with `GITHUB_TOKEN`), so a remote outage never blocks a merge.
   Zola and lychee come from the pinned nixpkgs through `nix shell`, not the full dev shell.
+  Publishing is not CI's job: Vercel's Git integration builds and deploys the site from
+  `vercel.json` (RTM-90, see `site/AGENTS.md`); its preview status on pull requests is not a
+  required check.

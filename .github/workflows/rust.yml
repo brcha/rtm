@@ -9,6 +9,7 @@ on:
       - 'site/**'
       - 'scripts/site/**'
       - '.github/workflows/site.yml'
+      - 'vercel.json'
   # Pull requests always run it, so the required gate check below always reports.
   pull_request:
     branches: [ "main", "releases/**" ]

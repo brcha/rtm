@@ -29,6 +29,7 @@ rtm/                        ← Cargo workspace root
 ├── rtmapp/                 ← Desktop app (egui/eframe)
 ├── rtmsync/                ← Sync of todo.txt through Git or Pijul (library)
 ├── site/                   ← Project website (Zola); its scripts are in scripts/site/
+├── vercel.json             ← How Vercel builds and deploys the website (site/AGENTS.md)
 ├── doc/                    ← Detailed reference: release process, Nix packaging, CI
 ├── .claude/skills/         ← Repository skills, each pointing to its document in doc/
 ├── flake.nix, default.nix  ← Nix packages
