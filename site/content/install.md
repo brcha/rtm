@@ -1,6 +1,10 @@
 +++
 title = "Install rtm"
 description = "How to install the rtm desktop app and CLI on GNU/Linux, Nix and NixOS, macOS and Windows."
+
+[extra]
+# Open with the latest release's download links (templates/page.html).
+downloads = true
 +++
 
 <!-- A copy of the "Installing" section of README.md (headings one level up). Change both together. -->

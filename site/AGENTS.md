@@ -24,7 +24,8 @@ site/
 │   │                       and their viewer, features, downloads
 │   ├── macros.html       ← the download links and the latest release's version
 │   ├── news-post.html    ← the release posts, dated, opening with that release's downloads
-│   ├── page.html         ← plain pages (the install guide)
+│   ├── page.html         ← plain pages (the install guide, opening with the latest downloads
+│   │                       when its front matter sets `downloads = true` under `[extra]`)
 │   └── section.html      ← the news list
 └── static/style.css      ← the only stylesheet; light and dark through prefers-color-scheme
 ```

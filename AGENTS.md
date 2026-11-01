@@ -62,6 +62,8 @@ one that had them.
 - All `save()` calls happen immediately after mutations (no deferred/batched writes).
 - **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`, or from
   `releases/vYY.M` for a PR against a release branch (see [Release Process](doc/release-process.md)).
+  A cherry-pick of a merged change to a release branch goes on `cherry/RTM-NN/<slug>`, branched
+  from `releases/vYY.M`.
 - **Commit subjects** (RTM-110): `type(scope): summary -- RTM-NN`, a conventional-commit type and
   exactly one scope, for commits on issue branches and PR titles alike (merges are squashes, so a PR
   title becomes the commit). `.github/workflows/pr-title.yml` rejects a PR title without one of
