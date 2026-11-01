@@ -21,10 +21,10 @@ trim = true
 [git]
 conventional_commits = true
 filter_unconventional = true
-# The release PRs' own commits are not changes.
+# The release PRs' own commits are not changes. They carry the release scope; older ones have none.
 commit_parsers = [
-  { message = "^build: set version to ", skip = true },
-  { message = "^docs: changelog for ", skip = true },
+  { message = "^build(\\(release\\))?: set version to ", skip = true },
+  { message = "^docs(\\(release\\))?: changelog for ", skip = true },
   { message = "^feat", group = "<!-- 0 -->Features" },
   { message = "^fix", group = "<!-- 1 -->Bug fixes" },
   { message = "^perf", group = "<!-- 2 -->Performance" },
