@@ -7,9 +7,8 @@
   on `main` (the ruleset covers both, RTM-78). `main` always carries the next release's version.
   - **Minor release `YY.M.0`:**
     1. Cut `releases/vYY.M` from `main` (already at `YY.M.0`) and push it. The ruleset allows
-       creating it without checks (`do_not_enforce_on_create`). If the push is still rejected
-       (not tried yet; the ruleset has no bypass), remove `refs/heads/releases/**` from the
-       ruleset's branches, push, and put the pattern back; record the outcome here.
+       creating it without checks (`do_not_enforce_on_create`): `releases/v26.1` was pushed with
+       the ruleset unchanged (RTM-98).
     2. On `main`, a PR `build: set version to <next> -- RTM-NN` (`scripts/set-version.sh`, then
        `cargo update --workspace` to refresh `Cargo.lock`): the next minor, `YY.(M+1).0`, or the
        next year's first version (`27.1.0`) when no further minor release is wanted this year.
@@ -58,8 +57,8 @@
     since `v0.1.3`), in a new file. If the release branch moves while the changelog or version PR
     is open, update the PR from the branch and run the script again. Release branches are never
     deleted: the next minor release's range starts at the previous one's cut.
-  - **The first CalVer release:** `main` is at 0.1.4, which is never released. Its release issue
-    first sets `main` to `YY.1.0` by PR, then follows the minor-release steps.
+  - **The first CalVer release** was 26.1.0 (RTM-98): its release issue first set `main` from
+    0.1.4, which was never released, to 26.1.0 by PR, then followed the minor-release steps.
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on a `v*` tag push
   (publishes a draft GitHub Release), manual `workflow_dispatch` (on a `releases/**` branch a
   release, see "Making a release"; on any other branch a dry run: builds and uploads to the Actions
@@ -90,10 +89,9 @@
   same jobs. The platform jobs deliberately do **not** call `softprops/action-gh-release` themselves —
   independent jobs calling it concurrently would race to create/update the same tagged release.
 - **Versioning:** `major.minor.patch`, all numeric (MSI `ProductVersion` allows nothing else). The
-  0.x alpha ends with the next release, which is the first CalVer one (`YY.minor.patch`); 0.1.4,
-  the version in the crates today, is never released. `minor` counts the releases within a year
-  and starts at 1 (the first release of 2027 is `27.1.0`, the next `27.2.0`); `patch` fixes a
-  release (`27.1.1`). Every `YY.*` is above `0.1.x`, so the MSI and apt upgrades keep working. The
+  0.x alpha ended with 26.1.0, the first CalVer release (`YY.minor.patch`); 0.1.4 was never
+  released. `minor` counts the releases within a year and starts at 1 (the first release of 2027
+  is `27.1.0`, the next `27.2.0`); `patch` fixes a release (`27.1.1`). Every `YY.*` is above `0.1.x`, so the MSI and apt upgrades keep working. The
   `[package]` version of `rtmapp/Cargo.toml` is the single source of truth — the release workflow reads
   it (only that table: other tables have their own `version` keys) and never writes to it. On a tag
   push, the tag is required to match it exactly, and on a release branch the branch name (see "Making a
