@@ -64,6 +64,23 @@ one that had them.
   `releases/vYY.M` for a PR against a release branch (see [Release Process](doc/release-process.md)).
   A cherry-pick of a merged change to a release branch goes on `cherry/RTM-NN/<slug>`, branched
   from `releases/vYY.M`.
+- **Commit subjects** (RTM-110): `type(scope): summary -- RTM-NN`, a conventional-commit type and
+  exactly one scope, for commits on issue branches and PR titles alike (merges are squashes, so a PR
+  title becomes the commit). `.github/workflows/pr-title.yml` rejects a PR title without one of
+  these scopes; a new part of the repository adds its scope there and here in the same PR.
+  - `todotxt`, `rtmcli`, `rtmapp`, `rtmsync`: the crates (for `rtmapp`, its packaging metadata in
+    `rtmapp/Cargo.toml` too).
+  - `site`: the website, `scripts/site/`, `vercel.json`, its workflow and the release posts.
+  - `release`: `release.yml`, the packages, `scripts/set-version.*`, `scripts/changelog.sh`,
+    `cliff.toml`, `doc/release-process.md` and the release PRs.
+  - `nix`: `default.nix`, `flake.nix`, `shell.nix`, `doc/nix-packaging.md`.
+  - `github`: the other GitHub Actions workflows, the rulesets and `doc/ci.md`.
+  - `workspace`: repository-wide files (root `AGENTS.md`, `README.md`, the workspace `Cargo.toml`
+    and `Cargo.lock`, `.claude/`) and changes spread over several parts.
+
+  A change that touches several parts takes the scope of the part it is about (a crate change with
+  its documentation and tests is that crate's); `workspace` only when no part dominates. The type
+  says what kind of change it is, the scope where: `ci(github): ...`, not `ci(ci): ...`.
 - **Tests** (RTM-83):
   - Unit tests, which reach a module's private items, live in `<crate>/src/tests/`, one file per
     source file and topic, named `<source file stem>_<topic>_tests.rs`
