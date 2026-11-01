@@ -29,6 +29,11 @@
   </figure>
 </section>
 
+<dialog class="viewer" aria-label="Enlarged screenshot">
+  <img alt="">
+  <button type="button" class="close" aria-label="Close" autofocus>×</button>
+</dialog>
+
 <section class="features">
   {{ section.content | safe }}
 </section>
@@ -59,4 +64,58 @@
     <a href="https://github.com/brcha/rtm/releases">Changelog</a>
   </p>
 </section>
+
+<script>
+// Opens a screenshot enlarged in the dialog above, growing from its place on the page. The buttons
+// are added here, so without JavaScript the screenshots stay plain images.
+{
+  const viewer = document.querySelector(".viewer");
+  const large = viewer.querySelector("img");
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  let opener = null;
+
+  const grow = (thumb) => {
+    const from = thumb.getBoundingClientRect();
+    const to = large.getBoundingClientRect();
+    if (reducedMotion.matches || !from.width || !to.width) return;
+    large.animate([
+      { transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)
+                    scale(${from.width / to.width}, ${from.height / to.height})` },
+      { transform: "none" },
+    ], { duration: 250, easing: "ease-out" });
+  };
+
+  const open = (button, thumb) => {
+    opener = button;
+    large.src = thumb.src;
+    large.alt = thumb.alt;
+    viewer.showModal();
+    // A loaded thumbnail has its size at once; the lazily loaded one may not be loaded yet.
+    // Assigning onload replaces the handler of an earlier opening whose image never loaded.
+    large.onload = large.complete ? null : () => grow(thumb);
+    if (large.complete) grow(thumb);
+  };
+
+  if (viewer.showModal) {
+    for (const thumb of document.querySelectorAll(".screenshots img")) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "zoom";
+      button.setAttribute("aria-haspopup", "dialog");
+      thumb.replaceWith(button);
+      button.append(thumb);
+      button.addEventListener("click", () => open(button, thumb));
+    }
+    viewer.querySelector(".close").addEventListener("click", () => viewer.close());
+    // A click outside the dialog's box is on the backdrop. The box, unlike the image, does not move
+    // during the grow animation, so a click on the image never closes the dialog.
+    viewer.addEventListener("click", (event) => {
+      const box = viewer.getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX > box.right
+          || event.clientY < box.top || event.clientY > box.bottom) viewer.close();
+    });
+    viewer.addEventListener("close", () => opener?.focus());
+  }
+}
+</script>
 {% endblock %}
