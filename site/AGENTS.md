@@ -16,11 +16,13 @@ site/
 ├── config.toml           ← base URL, title, description
 ├── content/
 │   ├── _index.md         ← the landing page's text: tagline (front matter), intro and features
-│   └── install.md        ← the install guide, a copy of README.md's "Installing" section
+│   ├── install.md        ← the install guide, a copy of README.md's "Installing" section
+│   └── news/             ← one post per release (`X.Y.Z.md`), listed newest first
 ├── templates/
-│   ├── base.html         ← skeleton: head, header (Install, Download, GitHub), footer
+│   ├── base.html         ← skeleton: head, header (Install, Download, News, GitHub), footer
 │   ├── index.html        ← the landing page: hero, screenshots and their viewer, features, downloads
-│   └── page.html         ← plain pages (the install guide)
+│   ├── page.html         ← plain pages (the install guide) and the release posts, dated
+│   └── section.html      ← the news list
 └── static/style.css      ← the only stylesheet; light and dark through prefers-color-scheme
 ```
 
@@ -89,14 +91,14 @@ in `vercel.json`:
        <(sed '1,/^<!--/d' site/content/install.md | sed '1d')
   ```
 - Release changes appear in each release's post (`content/news/X.Y.Z.md`, its `CHANGELOG.md`
-  section); the landing page links to the GitHub releases.
+  section, headings one level up); the landing page's downloads link to the release's files.
 - The only JavaScript is the screenshot viewer (RTM-99), inline at the end of
   `templates/index.html`: it wraps each screenshot in a button that opens it enlarged in a native
   `<dialog>`, so without JavaScript the screenshots stay plain images. Keep it dependency-free and
   add no other scripts.
 - The download links are updated by hand in each release's website PR, a step of the release
-  process ("Website post" in [Release Process](../doc/release-process.md), RTM-91). Until the
-  first CalVer release they point at the releases page.
+  process ("Website post" in [Release Process](../doc/release-process.md), RTM-91): the `version`
+  set at the top of the download section in `templates/index.html`.
 - Screenshots and the icon stay where they are; update them there, not in `site/static/`.
 - Website-only changes start no Rust or Nix build (`paths-ignore` on push, RTM-87; see
   [CI](../doc/ci.md)).
@@ -106,4 +108,3 @@ in `vercel.json`:
 ## Future Plans
 
 - Serving the site from perseus as a container image (epic RTM-94; cluster side PER-52).
-- The news section and the real download links, with the first CalVer release's website post.

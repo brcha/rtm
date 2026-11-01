@@ -47,9 +47,8 @@
     - for a patch on an older line (published with "Set as the latest release" unticked) adds the
       post only: the links stay on the newest line.
 
-    The first CalVer release's PR also creates the news section (`site/content/news/_index.md` and
-    its templates) and replaces the download cards' links to the releases page. See
-    `site/AGENTS.md`.
+    The download links take their version from `version` at the top of the download section in
+    `site/templates/index.html`. See `site/AGENTS.md`.
   - **`CHANGELOG.md`** lives on the release branches only, never on `main`, and is written by
     `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in the Nix dev shell; bash only).
     A patch release's section covers the commits since the line's previous tag, prepended; a minor
