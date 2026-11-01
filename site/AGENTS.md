@@ -25,7 +25,8 @@ site/
 │   ├── macros.html       ← the download links and the latest release's version
 │   ├── news-post.html    ← the release posts, dated, opening with that release's downloads
 │   ├── page.html         ← plain pages (the install guide, opening with the latest downloads
-│   │                       when its front matter sets `downloads = true` under `[extra]`)
+│   │                       and its Nix references when its front matter sets
+│   │                       `downloads = true` under `[extra]`)
 │   └── section.html      ← the news list
 └── static/style.css      ← the only stylesheet; light and dark through prefers-color-scheme
 ```
@@ -109,6 +110,9 @@ in `vercel.json`:
   `content/news/` that does not set `older_line = true` under `[extra]` (a patch on an older line
   sets it). Adding the post in each release's website PR therefore moves the links; there is no
   version to edit ("Website post" in [Release Process](../doc/release-process.md), RTM-91, RTM-104).
+  The install guide's download block also shows that release's Nix references, its tag and its
+  release branch (`releases/vYY.M`, from the version's first two parts), in `page.html` (RTM-111);
+  the guide's text itself, a copy of README, uses placeholders.
 - Screenshots and the icon stay where they are; update them there, not in `site/static/`.
 - Website-only changes start no Rust or Nix build (`paths-ignore` on push, RTM-87; see
   [CI](../doc/ci.md)).

@@ -10,7 +10,7 @@ downloads = true
 <!-- A copy of the "Installing" section of README.md (headings one level up). Change both together. -->
 
 Download the files from the latest [GitHub Release](https://github.com/brcha/rtm/releases).
-`<version>` below stands for the release version, for example `0.2.0`.
+`<version>` below stands for the release version, for example `26.1.0`.
 
 ## GNU/Linux (x64)
 
@@ -50,14 +50,26 @@ CLI:
 
 ## Nix and NixOS
 
-The flake provides `rtmcli` (all platforms) and `rtmapp` (Linux only). From a checkout, build them
-with `nix build .#rtmcli` and `nix build .#rtmapp`; without one, install them into your profile with
+The flake provides `rtmcli` and `rtmapp`. From a checkout, build them with `nix build .#rtmcli` and
+`nix build .#rtmapp`; without one, install them into your profile with
 `nix profile add github:brcha/rtm#rtmapp` (or `#rtmcli`).
+
+`github:brcha/rtm` follows `main`, the development branch. To install a release instead, name a
+release tag or a release branch:
+
+- `github:brcha/rtm/v<version>`: that release, which never changes, for example
+  `nix profile add github:brcha/rtm/v<version>#rtmapp`.
+- `github:brcha/rtm/releases/v<line>`: the branch of a release line, for example `releases/v26.1`
+  for the 26.1 releases. It gets the line's fixes as soon as they are merged, before their patch
+  release; `nix profile upgrade rtmapp` updates to it.
+
+To try a release without installing it, run it:
+`nix run github:brcha/rtm/v<version>#rtmcli -- --help`.
 
 To install them on NixOS from a flake-based configuration:
 
 1. Add the `rtm` input to your system `flake.nix`, following your `nixpkgs`, which must have rustc
-   1.95 or later (`nixos-26.05` does).
+   1.95 or later (`nixos-26.05` does). For a release, use one of the references above as its `url`.
 2. Add the packages to `environment.systemPackages` (or to `home.packages` with Home Manager):
 
    ```nix
