@@ -2,6 +2,16 @@
 
 {% block content %}
 <section class="hero">
+  {#- The newest post in content/news, so publishing a release's post updates the notice. #}
+  {%- set news = get_section(path="news/_index.md") %}
+  {%- if news.pages %}
+  {%- set latest = news.pages | first %}
+  <a class="release-notice" href="{{ latest.permalink }}">
+    <span class="label">Latest release</span>
+    <span><strong>{{ latest.title }}</strong>{% if latest.description %} — {{ latest.description }}{% endif %}
+      <span aria-hidden="true">→</span></span>
+  </a>
+  {%- endif %}
   <img class="logo" src="{{ get_url(path='rtmapp.svg') }}" alt="" width="112" height="112">
   <h1>{{ section.title }}</h1>
   <p class="tagline">{{ section.description }}</p>

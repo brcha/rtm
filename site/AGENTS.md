@@ -20,7 +20,8 @@ site/
 │   └── news/             ← one post per release (`X.Y.Z.md`), listed newest first
 ├── templates/
 │   ├── base.html         ← skeleton: head, header (Install, Download, News, GitHub), footer
-│   ├── index.html        ← the landing page: hero, screenshots and their viewer, features, downloads
+│   ├── index.html        ← the landing page: hero (with the latest release notice), screenshots
+│   │                       and their viewer, features, downloads
 │   ├── page.html         ← plain pages (the install guide) and the release posts, dated
 │   └── section.html      ← the news list
 └── static/style.css      ← the only stylesheet; light and dark through prefers-color-scheme
@@ -92,6 +93,8 @@ in `vercel.json`:
   ```
 - Release changes appear in each release's post (`content/news/X.Y.Z.md`, its `CHANGELOG.md`
   section, headings one level up); the landing page's downloads link to the release's files.
+  The notice at the top of the landing page's hero links to the newest post on its own (Zola's
+  `get_section`, RTM-103); only the download `version` is set by hand.
 - The only JavaScript is the screenshot viewer (RTM-99), inline at the end of
   `templates/index.html`: it wraps each screenshot in a button that opens it enlarged in a native
   `<dialog>`, so without JavaScript the screenshots stay plain images. Keep it dependency-free and
