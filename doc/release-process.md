@@ -129,7 +129,8 @@
   notarization: RTM-54.
 - **Other channels:** Homebrew (RTM-52) and Developer ID signing and notarization (RTM-54) are not
   required to end the alpha; each is done when wanted. The Nix flake is not a
-  release channel: users pin a tag (`github:brcha/rtm/vX.Y.Z`).
+  release channel: users pin a tag (`github:brcha/rtm/vX.Y.Z`) or follow a release branch
+  (`github:brcha/rtm/releases/vYY.M`); the install guide shows both.
 
 ## Windows
 
