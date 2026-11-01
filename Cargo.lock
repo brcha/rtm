@@ -3211,7 +3211,7 @@ dependencies = [
 
 [[package]]
 name = "rtmapp"
-version = "0.1.4"
+version = "26.1.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -3233,7 +3233,7 @@ dependencies = [
 
 [[package]]
 name = "rtmcli"
-version = "0.1.4"
+version = "26.1.0"
 dependencies = [
  "chrono",
  "clap",
@@ -3244,7 +3244,7 @@ dependencies = [
 
 [[package]]
 name = "rtmsync"
-version = "0.1.4"
+version = "26.1.0"
 dependencies = [
  "thiserror 2.0.21",
 ]
@@ -3749,7 +3749,7 @@ dependencies = [
 
 [[package]]
 name = "todotxt"
-version = "0.1.4"
+version = "26.1.0"
 dependencies = [
  "chrono",
  "thiserror 2.0.21",
