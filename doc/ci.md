@@ -31,8 +31,8 @@
     `vercel.json`; RTM-79) is in none of them.
   - Pushes to `main` start Rust and Nix unless every changed file is Markdown or part of the
     website (RTM-87): `site/**`, `scripts/site/**`, `.github/workflows/site.yml`, `vercel.json`
-    (`paths-ignore`; no checks are required there). Release also runs on `v*` tags and by manual dispatch, always
-    building.
+    (`paths-ignore`; no checks are required there). Release also runs by manual dispatch, always
+    building, and never on tags (RTM-102, see [Release Process](release-process.md)).
   - The four workflows behind the required checks run on every pull request against `main` or
     `releases/**`. The required checks are not enforced when a branch is created
     (`do_not_enforce_on_create`), so a release branch can be cut by pushing a `main` commit,
