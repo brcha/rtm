@@ -9,10 +9,11 @@
     1. Cut `releases/vYY.M` from `main` (already at `YY.M.0`) and push it. The ruleset allows
        creating it without checks (`do_not_enforce_on_create`): `releases/v26.1` was pushed with
        the ruleset unchanged (RTM-98).
-    2. On `main`, a PR `build: set version to <next> -- RTM-NN` (`scripts/set-version.sh`, then
-       `cargo update --workspace` to refresh `Cargo.lock`): the next minor, `YY.(M+1).0`, or the
-       next year's first version (`27.1.0`) when no further minor release is wanted this year.
-    3. On the branch, a PR `docs: changelog for YY.M.0 -- RTM-NN` with the `CHANGELOG.md`
+    2. On `main`, a PR `build(release): set version to <next> -- RTM-NN`
+       (`scripts/set-version.sh`, then `cargo update --workspace` to refresh `Cargo.lock`): the
+       next minor, `YY.(M+1).0`, or the next year's first version (`27.1.0`) when no further
+       minor release is wanted this year.
+    3. On the branch, a PR `docs(release): changelog for YY.M.0 -- RTM-NN` with the `CHANGELOG.md`
        written by `scripts/changelog.sh YY.M.0`.
     4. Run the Release workflow on `releases/vYY.M`.
     5. Once the release is published, open the website post PR (see "Website post" below).
@@ -20,7 +21,7 @@
     1. Fixes land on `main` like all development and are cherry-picked to `releases/vYY.M` by PRs
        titled like the original PR (not the squash commit's subject, which ends in `(#NN)`).
        Several fixes can go in before a release.
-    2. On the branch, a PR `build: set version to YY.M.P -- RTM-NN`: `set-version`,
+    2. On the branch, a PR `build(release): set version to YY.M.P -- RTM-NN`: `set-version`,
        `cargo update --workspace` and `scripts/changelog.sh YY.M.P`, which needs the previous
        patch's tag, so its draft must be published first.
     3. Run the Release workflow on `releases/vYY.M`.
@@ -34,11 +35,11 @@
     as the latest release" is unticked. Download and try the draft, then publish it by hand.
     Publishing creates the `vX.Y.Z` tag, which starts no run: the workflow has no tag trigger
     (RTM-102). Releases are not marked as prereleases.
-    Keep the `build: set version` and `docs: changelog` subjects exact when squash-merging: the
-    changelog leaves those commits out.
+    Keep the `build(release): set version` and `docs(release): changelog` subjects exact when
+    squash-merging: the changelog leaves those commits out.
   - **Website post (RTM-91):** each published release gets a post on the project website, and the
     website's download links are updated by hand in the same change; the site has no JavaScript
-    and no automatic links. A PR against `main`, `docs: website post for X.Y.Z -- RTM-NN` (the
+    and no automatic links. A PR against `main`, `docs(site): website post for X.Y.Z -- RTM-NN` (the
     release issue's key), that
     - adds `site/content/news/X.Y.Z.md` with the version's `CHANGELOG.md` section (from the release
       branch, or the release's body);
@@ -115,7 +116,8 @@
   the macOS `CFBundleIdentifier` (RTM-11) and the Windows AppUserModelID, set by the app at startup and
   on both MSI shortcuts (RTM-48).
 - **Merges are squashes.** One PR becomes exactly one commit on its target branch, so PR titles are
-  the changelog, and `.github/workflows/pr-title.yml` forces them to be conventional and RTM-tagged.
+  the changelog, and `.github/workflows/pr-title.yml` forces them to be conventional, scoped (the
+  scopes are listed under "Commit subjects" in `AGENTS.md`) and RTM-tagged.
   git-cliff turns them into `CHANGELOG.md` on the release branches (RTM-74), the release body.
 - **No raw platform binaries are published redundantly with their installer.** `rtmapp.exe` is not
   staged on Windows — the MSI installs the identical binary. `rtmcli.exe` **is** staged, because

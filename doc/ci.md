@@ -12,7 +12,8 @@
   a fast, loud failure instead.
 - **Which changes start which build (RTM-76):** Markdown alone (`**/*.md`) starts no build.
   - The ruleset "Run tests in the PR" covers `main` and `releases/**` (RTM-78). It requires the
-    checks `validate` (`pr-title.yml`) and `rust`, `nix` and `release`: one gate job per
+    checks `validate` (`pr-title.yml`, which requires a scope from the list under "Commit
+    subjects" in `AGENTS.md`) and `rust`, `nix` and `release`: one gate job per
     workflow, which passes when its builds passed or were skipped and fails when any failed or was
     cancelled.
   - So `rust.yml`, `nix.yml` and `release.yml` run on every pull request, never filtered by
