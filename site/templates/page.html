@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros.html" as downloads %}
 
 {% block title %}{{ page.title }} — {{ config.title }}{% endblock %}
 {% block description %}{{ page.description | default(value=config.description) }}{% endblock %}
@@ -7,6 +8,18 @@
 <article class="page">
   <h1>{{ page.title }}</h1>
   {% if page.date %}<p class="date"><time datetime="{{ page.date }}">{{ page.date | date(format="%Y-%m-%d") }}</time></p>{% endif %}
+  {%- if page.extra.downloads %}
+  {%- set version = downloads::latest_version() | trim %}
+  <section class="release-downloads" aria-labelledby="release-downloads">
+    <h2 id="release-downloads">Download rtm {{ version }}</h2>
+    {{ downloads::platforms(version=version) }}
+    <p class="more">
+      <a href="https://github.com/brcha/rtm/releases/tag/v{{ version }}">GitHub release</a>
+      ·
+      <a href="https://github.com/brcha/rtm/releases">All releases</a>
+    </p>
+  </section>
+  {%- endif %}
   {{ page.content | safe }}
 </article>
 {% endblock %}
