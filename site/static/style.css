@@ -264,6 +264,12 @@ body:has(.viewer[open]) { overflow: hidden; }
 .platforms .button { margin: 0 0.4rem 0.4rem 0; }
 .platforms .cli { margin: 0.6rem 0 0; }
 
+/* The download links inside a page (a release post, the install guide): a compact block above the text. */
+.page .release-downloads { text-align: center; margin: 0 0 2.5rem; }
+.page .release-downloads h2 { margin: 0; padding: 0; border: 0; font-size: 1.4rem; }
+.page .release-downloads .platforms { margin: 1rem 0; gap: 0.75rem; }
+.page .release-downloads .platforms li { padding: 1rem; margin: 0; }
+
 /* News */
 
 .date { color: var(--muted); margin: -1rem 0 1.5rem; }

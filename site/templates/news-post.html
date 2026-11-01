@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% import "macros.html" as downloads %}
+
+{% block title %}{{ page.title }} — {{ config.title }}{% endblock %}
+{% block description %}{{ page.description | default(value=config.description) }}{% endblock %}
+
+{% block content %}
+{%- set version = downloads::release_version(post=page) | trim %}
+<article class="page">
+  <h1>{{ page.title }}</h1>
+  {% if page.date %}<p class="date"><time datetime="{{ page.date }}">{{ page.date | date(format="%Y-%m-%d") }}</time></p>{% endif %}
+  <section class="release-downloads" aria-labelledby="release-downloads">
+    <h2 id="release-downloads">Download rtm {{ version }}</h2>
+    {{ downloads::platforms(version=version) }}
+    <p class="more">
+      <a href="{{ get_url(path='@/install.md') }}">Install guide</a>, including Nix and NixOS
+      ·
+      <a href="https://github.com/brcha/rtm/releases/tag/v{{ version }}">GitHub release</a>
+    </p>
+  </section>
+  {{ page.content | safe }}
+</article>
+{% endblock %}

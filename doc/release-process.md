@@ -41,14 +41,14 @@
     release issue's key), that
     - adds `site/content/news/X.Y.Z.md` with the version's `CHANGELOG.md` section (from the release
       branch, or the release's body);
-    - points the download links in `site/` at the release's files,
-      `https://github.com/brcha/rtm/releases/download/vX.Y.Z/<asset>` (names as under "Assets"),
-      with `scripts/site/check.sh --external` passing;
-    - for a patch on an older line (published with "Set as the latest release" unticked) adds the
-      post only: the links stay on the newest line.
+    - for a patch on an older line (published with "Set as the latest release" unticked) sets
+      `older_line = true` under `[extra]` in the post's front matter;
+    - passes `scripts/site/check.sh --external`.
 
-    The download links take their version from `version` at the top of the download section in
-    `site/templates/index.html`. See `site/AGENTS.md`.
+    The download links follow the newest post without `older_line`: they point at
+    `https://github.com/brcha/rtm/releases/download/vX.Y.Z/<asset>`, with X.Y.Z from the post's
+    file name (names as under "Assets"; `platforms` in `site/templates/macros.html`). See
+    `site/AGENTS.md`.
   - **`CHANGELOG.md`** lives on the release branches only, never on `main`, and is written by
     `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in the Nix dev shell; bash only).
     A patch release's section covers the commits since the line's previous tag, prepended; a minor

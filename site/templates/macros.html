@@ -1,0 +1,47 @@
+{#- The download links, shared by the landing page, the install guide and the release posts. #}
+
+{#- The version of a release post: its file name, `news/X.Y.Z.md` (the slug turns dots into dashes). #}
+{% macro release_version(post) -%}
+  {{ post.relative_path | split(pat="/") | last | trim_end_matches(pat=".md") }}
+{%- endmacro release_version %}
+
+{#- The newest release's version: that of the newest release post. A patch on an older line
+    sets `older_line = true` in its post's [extra], so it does not move the downloads. Callers trim
+    the result, since a macro returns text. #}
+{% macro latest_version() -%}
+  {%- set news = get_section(path="news/_index.md") -%}
+  {%- for post in news.pages -%}
+    {%- if not post.extra.older_line %}{{ self::release_version(post=post) }}{% break %}{% endif -%}
+  {%- endfor -%}
+{%- endmacro latest_version %}
+
+{#- The files of release `version` for each platform. #}
+{% macro platforms(version) -%}
+  {%- set files = "https://github.com/brcha/rtm/releases/download/v" ~ version ~ "/" -%}
+  <ul class="platforms">
+    <li>
+      <h3>GNU/Linux</h3>
+      <p>x86-64</p>
+      <a class="button" href="{{ files }}rtmapp_{{ version }}_amd64.deb">.deb</a>
+      <a class="button" href="{{ files }}rtmapp-{{ version }}-1.x86_64.rpm">.rpm</a>
+      <a class="button" href="{{ files }}rtmapp_{{ version }}_amd64.AppImage">AppImage</a>
+      <p class="cli">rtmcli:
+        <a href="{{ files }}rtmcli_{{ version }}_amd64.deb">.deb</a> ·
+        <a href="{{ files }}rtmcli-{{ version }}-1.x86_64.rpm">.rpm</a></p>
+    </li>
+    <li>
+      <h3>macOS</h3>
+      <p>Apple Silicon and Intel</p>
+      <a class="button" href="{{ files }}rtmapp_{{ version }}_universal.dmg">.dmg</a>
+      <p class="cli">rtmcli:
+        <a href="{{ files }}rtmcli-{{ version }}-macos-universal.tar.gz">.tar.gz</a></p>
+    </li>
+    <li>
+      <h3>Windows</h3>
+      <p>x64</p>
+      <a class="button" href="{{ files }}rtmapp_{{ version }}_x64_en-US.msi">.msi</a>
+      <p class="cli">rtmcli:
+        <a href="{{ files }}rtmcli-{{ version }}-x64.exe">.exe</a></p>
+    </li>
+  </ul>
+{%- endmacro platforms %}
