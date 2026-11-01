@@ -22,6 +22,7 @@ site/
 │   ├── base.html         ← skeleton: head, header (Install, Download, News, GitHub), footer
 │   ├── index.html        ← the landing page: hero (with the latest release notice), screenshots
 │   │                       and their viewer, features, downloads
+│   ├── macros.html       ← the download links and the latest release's version
 │   ├── page.html         ← plain pages (the install guide) and the release posts, dated
 │   └── section.html      ← the news list
 └── static/style.css      ← the only stylesheet; light and dark through prefers-color-scheme
@@ -94,14 +95,16 @@ in `vercel.json`:
 - Release changes appear in each release's post (`content/news/X.Y.Z.md`, its `CHANGELOG.md`
   section, headings one level up); the landing page's downloads link to the release's files.
   The notice at the top of the landing page's hero links to the newest post on its own (Zola's
-  `get_section`, RTM-103); only the download `version` is set by hand.
+  `get_section`, RTM-103); the downloads follow the posts too (below).
 - The only JavaScript is the screenshot viewer (RTM-99), inline at the end of
   `templates/index.html`: it wraps each screenshot in a button that opens it enlarged in a native
   `<dialog>`, so without JavaScript the screenshots stay plain images. Keep it dependency-free and
   add no other scripts.
-- The download links are updated by hand in each release's website PR, a step of the release
-  process ("Website post" in [Release Process](../doc/release-process.md), RTM-91): the `version`
-  set at the top of the download section in `templates/index.html`.
+- The download links are the `platforms` macro in `templates/macros.html`, given a version. The
+  landing page shows the latest release: `latest_version`, the file name of the newest post in
+  `content/news/` that does not set `older_line = true` under `[extra]` (a patch on an older line
+  sets it). Adding the post in each release's website PR therefore moves the links; there is no
+  version to edit ("Website post" in [Release Process](../doc/release-process.md), RTM-91, RTM-104).
 - Screenshots and the icon stay where they are; update them there, not in `site/static/`.
 - Website-only changes start no Rust or Nix build (`paths-ignore` on push, RTM-87; see
   [CI](../doc/ci.md)).

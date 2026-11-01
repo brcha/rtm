@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros.html" as downloads %}
 
 {% block content %}
 <section class="hero">
@@ -49,37 +50,10 @@
 </section>
 
 <section class="download" id="download">
-  {#- Set by hand in each release's website post PR; see "Website post" in doc/release-process.md. #}
-  {%- set version = "26.1.0" %}
-  {%- set files = "https://github.com/brcha/rtm/releases/download/v" ~ version ~ "/" %}
+  {%- set version = downloads::latest_version() | trim %}
   <h2>Download</h2>
   <p>Version {{ version }}. The desktop app is <code>rtmapp</code>, the command line <code>rtmcli</code>.</p>
-  <ul class="platforms">
-    <li>
-      <h3>GNU/Linux</h3>
-      <p>x86-64</p>
-      <a class="button" href="{{ files }}rtmapp_{{ version }}_amd64.deb">.deb</a>
-      <a class="button" href="{{ files }}rtmapp-{{ version }}-1.x86_64.rpm">.rpm</a>
-      <a class="button" href="{{ files }}rtmapp_{{ version }}_amd64.AppImage">AppImage</a>
-      <p class="cli">rtmcli:
-        <a href="{{ files }}rtmcli_{{ version }}_amd64.deb">.deb</a> ·
-        <a href="{{ files }}rtmcli-{{ version }}-1.x86_64.rpm">.rpm</a></p>
-    </li>
-    <li>
-      <h3>macOS</h3>
-      <p>Apple Silicon and Intel</p>
-      <a class="button" href="{{ files }}rtmapp_{{ version }}_universal.dmg">.dmg</a>
-      <p class="cli">rtmcli:
-        <a href="{{ files }}rtmcli-{{ version }}-macos-universal.tar.gz">.tar.gz</a></p>
-    </li>
-    <li>
-      <h3>Windows</h3>
-      <p>x64</p>
-      <a class="button" href="{{ files }}rtmapp_{{ version }}_x64_en-US.msi">.msi</a>
-      <p class="cli">rtmcli:
-        <a href="{{ files }}rtmcli-{{ version }}-x64.exe">.exe</a></p>
-    </li>
-  </ul>
+  {{ downloads::platforms(version=version) }}
   <p class="more">
     <a href="{{ get_url(path='@/install.md') }}">Install guide</a>, including Nix and NixOS
     ·
