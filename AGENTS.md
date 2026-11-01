@@ -62,6 +62,8 @@ one that had them.
 - All `save()` calls happen immediately after mutations (no deferred/batched writes).
 - **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`, or from
   `releases/vYY.M` for a PR against a release branch (see [Release Process](doc/release-process.md)).
+  A cherry-pick of a merged change to a release branch goes on `cherry/RTM-NN/<slug>`, branched
+  from `releases/vYY.M`.
 - **Tests** (RTM-83):
   - Unit tests, which reach a module's private items, live in `<crate>/src/tests/`, one file per
     source file and topic, named `<source file stem>_<topic>_tests.rs`
