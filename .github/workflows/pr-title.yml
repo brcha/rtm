@@ -42,10 +42,13 @@ jobs:
             --title "${PR_TITLE} -- ${ticket}"
           echo "patched=true" >> "$GITHUB_OUTPUT"
 
+      # Every title names one scope from this list, the one in AGENTS.md (change both together).
+      # The empty scope "" is left out so that a title without a scope fails.
       - name: Validate PR title
         if: steps.autofix.outputs.patched != 'true'
         uses: ytanikin/pr-conventional-commits@639145d78959c53c43112365837e3abd21ed67c1 # 1.5.2
         with:
           task_types: '["feat","fix","docs","test","ci","build","refactor","perf","style","chore","revert"]'
+          scope_types: '["todotxt","rtmcli","rtmapp","rtmsync","site","release","nix","github","workspace"]'
           title_regex: ' -- RTM-\d+$'
           add_label: 'true'
