@@ -19,7 +19,7 @@ site/
 │   └── install.md        ← the install guide, a copy of README.md's "Installing" section
 ├── templates/
 │   ├── base.html         ← skeleton: head, header (Install, Download, GitHub), footer
-│   ├── index.html        ← the landing page: hero, screenshots, features, downloads
+│   ├── index.html        ← the landing page: hero, screenshots and their viewer, features, downloads
 │   └── page.html         ← plain pages (the install guide)
 └── static/style.css      ← the only stylesheet; light and dark through prefers-color-scheme
 ```
@@ -90,9 +90,13 @@ in `vercel.json`:
   ```
 - Release changes appear in each release's post (`content/news/X.Y.Z.md`, its `CHANGELOG.md`
   section); the landing page links to the GitHub releases.
-- No JavaScript. The download links are updated by hand in each release's website PR, a step of
-  the release process ("Website post" in [Release Process](../doc/release-process.md), RTM-91).
-  Until the first CalVer release they point at the releases page.
+- The only JavaScript is the screenshot viewer (RTM-99), inline at the end of
+  `templates/index.html`: it wraps each screenshot in a button that opens it enlarged in a native
+  `<dialog>`, so without JavaScript the screenshots stay plain images. Keep it dependency-free and
+  add no other scripts.
+- The download links are updated by hand in each release's website PR, a step of the release
+  process ("Website post" in [Release Process](../doc/release-process.md), RTM-91). Until the
+  first CalVer release they point at the releases page.
 - Screenshots and the icon stay where they are; update them there, not in `site/static/`.
 - Website-only changes start no Rust or Nix build (`paths-ignore` on push, RTM-87; see
   [CI](../doc/ci.md)).
