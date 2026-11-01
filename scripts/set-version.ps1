@@ -2,13 +2,13 @@
 <#
 .SYNOPSIS
     Manual pre-release tool: sets the release version across all version-carrying manifests in
-    the workspace. Run this locally, commit the result, and only then tag the release.
+    the workspace. Run this locally and commit the result in a PR before running the release.
 
 .DESCRIPTION
     The release workflow (.github/workflows/release.yml) treats the committed manifests as the
-    single source of truth for the release version — it never writes to them, and on a tag push
-    it fails the build if the tag doesn't match what's already committed. This script is how you
-    make that be true: run it, review the diff, commit it, then `git tag`.
+    single source of truth for the release version — it never writes to them, and on a release
+    branch it fails the build if the branch (releases/vYY.M) doesn't match what's already
+    committed. This script is how you make that be true: run it, review the diff, commit it.
 
     Rewrites the `version` field in:
       - rtmapp/Cargo.toml   (the release version's source of truth; drives the installers)
