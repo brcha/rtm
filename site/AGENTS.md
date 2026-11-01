@@ -23,7 +23,8 @@ site/
 │   ├── index.html        ← the landing page: hero (with the latest release notice), screenshots
 │   │                       and their viewer, features, downloads
 │   ├── macros.html       ← the download links and the latest release's version
-│   ├── page.html         ← plain pages (the install guide) and the release posts, dated
+│   ├── news-post.html    ← the release posts, dated, opening with that release's downloads
+│   ├── page.html         ← plain pages (the install guide)
 │   └── section.html      ← the news list
 └── static/style.css      ← the only stylesheet; light and dark through prefers-color-scheme
 ```
@@ -93,7 +94,9 @@ in `vercel.json`:
        <(sed '1,/^<!--/d' site/content/install.md | sed '1d')
   ```
 - Release changes appear in each release's post (`content/news/X.Y.Z.md`, its `CHANGELOG.md`
-  section, headings one level up); the landing page's downloads link to the release's files.
+  section, headings one level up). The post opens with the downloads of its own release, taken from
+  its file name (`news-post.html`, set as `page_template` in `content/news/_index.md`); the landing
+  page's downloads link to the latest release's files.
   The notice at the top of the landing page's hero links to the newest post on its own (Zola's
   `get_section`, RTM-103); the downloads follow the posts too (below).
 - The only JavaScript is the screenshot viewer (RTM-99), inline at the end of
