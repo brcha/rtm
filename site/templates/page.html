@@ -13,6 +13,11 @@
   <section class="release-downloads" aria-labelledby="release-downloads">
     <h2 id="release-downloads">Download rtm {{ version }}</h2>
     {{ downloads::platforms(version=version) }}
+    {#- The release line, YY.M, names the release branch. #}
+    {%- set line = version | split(pat=".") | slice(end=2) | join(sep=".") %}
+    <p>Nix: <code>nix profile add github:brcha/rtm/v{{ version }}#rtmapp</code>, or
+      <code>github:brcha/rtm/releases/v{{ line }}#rtmapp</code> to follow the {{ line }} fixes
+      (<a href="#nix-and-nixos">more</a>).</p>
     <p class="more">
       <a href="https://github.com/brcha/rtm/releases/tag/v{{ version }}">GitHub release</a>
       ·
