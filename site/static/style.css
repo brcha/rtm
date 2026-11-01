@@ -236,4 +236,15 @@ body:has(.viewer[open]) { overflow: hidden; }
 }
 .platforms h3 { margin: 0 0 0.5rem; }
 .platforms p { color: var(--muted); margin: 0 0 1rem; }
+.platforms .button { margin: 0 0.4rem 0.4rem 0; }
+.platforms .cli { margin: 0.6rem 0 0; }
+
+/* News */
+
+.date { color: var(--muted); margin: -1rem 0 1.5rem; }
+.news { list-style: none; padding: 0; }
+.news li { margin-bottom: 1.25rem; }
+.news a { font-weight: 600; }
+.news time { color: var(--muted); margin-left: 0.5rem; }
+.news p { margin: 0.25rem 0 0; color: var(--muted); }
 .more { color: var(--muted); }
