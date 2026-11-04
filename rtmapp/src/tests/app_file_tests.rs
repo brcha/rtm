@@ -42,15 +42,15 @@ fn a_new_file_is_created_empty_opened_and_kept_in_the_config() {
 
     app.create_file(&dir.join("sub/todo.txt"));
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert_eq!(
         std::fs::read_to_string(dir.join("sub/todo.txt")).unwrap(),
         ""
     );
-    assert_eq!(app.library.as_ref().unwrap().item_count(), 0);
+    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 0);
     app.new_item = "Buy milk".to_owned();
     app.add_item();
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     // What the next start reads.
     let name = AppConfig::load(&dir.join("config.toml")).file_name.unwrap();
     let canonical = dir.join("sub/todo.txt").canonicalize().unwrap();
@@ -70,9 +70,9 @@ fn a_picked_file_is_opened_when_the_dialog_returns() {
     app.dialog_result();
 
     assert!(app.dialog.is_none());
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert_eq!(
-        app.library.as_ref().unwrap().items[0].description,
+        app.file().library.as_ref().unwrap().items[0].description,
         "Other item"
     );
     let name = AppConfig::load(&dir.join("config.toml")).file_name.unwrap();
@@ -88,7 +88,7 @@ fn opening_another_file_replaces_its_entry_in_the_config() {
     let dir = temp_dir("replace entry");
     std::fs::write(dir.join("other.txt"), "Other item\n").unwrap();
     let mut app = app_with(&dir, "First\n");
-    let first = app.library.as_ref().unwrap().file_name.clone();
+    let first = app.file().library.as_ref().unwrap().file_name.clone();
     app.config.set_active(&first);
     app.config.set_vcs(&first, "git");
 
@@ -113,8 +113,11 @@ fn a_cancelled_dialog_changes_nothing() {
     app.dialog_result();
 
     assert!(app.dialog.is_none());
-    assert_eq!(app.error, None);
-    assert_eq!(app.library.as_ref().unwrap().items[0].description, "First");
+    assert_eq!(errors(&app), Vec::<&str>::new());
+    assert_eq!(
+        app.file().library.as_ref().unwrap().items[0].description,
+        "First"
+    );
     assert!(!dir.join("config.toml").exists());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -128,9 +131,9 @@ fn a_file_named_in_the_save_dialog_is_created_and_opened() {
     app.dialog_result();
 
     assert!(app.dialog.is_none());
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert_eq!(std::fs::read_to_string(dir.join("new.txt")).unwrap(), "");
-    assert_eq!(app.library.as_ref().unwrap().item_count(), 0);
+    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 0);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -144,13 +147,16 @@ fn a_picked_file_waits_for_the_edit_dialog_to_close() {
     dialog_returned(&mut app, Some(dir.join("other.txt")), App::open_file);
     app.dialog_result();
     assert!(app.dialog.is_some());
-    assert_eq!(app.library.as_ref().unwrap().items[0].description, "First");
+    assert_eq!(
+        app.file().library.as_ref().unwrap().items[0].description,
+        "First"
+    );
 
     app.editing = None;
     app.dialog_result();
     assert!(app.dialog.is_none());
     assert_eq!(
-        app.library.as_ref().unwrap().items[0].description,
+        app.file().library.as_ref().unwrap().items[0].description,
         "Other item"
     );
     let _ = std::fs::remove_dir_all(dir);
@@ -164,9 +170,9 @@ fn a_new_file_replaces_an_existing_one() {
 
     app.create_file(&dir.join("todo.txt"));
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert_eq!(std::fs::read_to_string(dir.join("todo.txt")).unwrap(), "");
-    assert_eq!(app.library.as_ref().unwrap().item_count(), 0);
+    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 0);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -178,7 +184,7 @@ fn a_new_file_in_a_missing_folder_is_an_error() {
     app.create_file(&dir.join("missing/todo.txt"));
 
     assert!(app.error.as_deref().unwrap().contains("missing"));
-    assert!(app.library.is_none());
+    assert!(app.file().library.is_none());
     assert!(!dir.join("config.toml").exists());
     let _ = std::fs::remove_dir_all(dir);
 }

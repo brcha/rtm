@@ -25,8 +25,12 @@ type OnPath = fn(&mut App, &Path);
 pub struct App {
     config: AppConfig,
     config_path: PathBuf,
-    library: Option<TodoLibrary>,
-    /// Shown above the list until the next successful action.
+    /// The open files (RTM-66); one until tabs come (RTM-127).
+    files: Vec<OpenFile>,
+    /// The index in `files` of the file shown.
+    active: usize,
+    /// The app line, above the file's: the config, a file that could not be created or opened,
+    /// the quick-add input. Shown until the next successful change or config save.
     error: Option<String>,
     /// The quick-add input.
     new_item: String,
@@ -34,13 +38,26 @@ pub struct App {
     editing: Option<EditForm>,
     /// Sync of the open file (RTM-64), when it syncs.
     worker: Option<Worker>,
-    /// Changes applied to `library` but not yet written: the file is written only while the worker
-    /// is idle (RTM-20), and these are redone on the file a pull brings.
-    pending: Vec<Change>,
     /// The sync line in the header: a failed pull or push, or why sync is off.
     sync_status: Option<String>,
     /// When the last sync was asked for; the next one is due `sync_interval_minutes` later.
     last_sync: Instant,
+    /// The open file dialog: its result, and what to do with a chosen path.
+    dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
+    ctx: egui::Context,
+}
+
+/// What belongs to one open todo.txt (RTM-125).
+#[derive(Default)]
+struct OpenFile {
+    library: Option<TodoLibrary>,
+    /// The file line, below the app's: what happened to this file (a failed load at startup, a
+    /// conflict, outside changes, a failed write, commit or reload, changes a pull dropped). Shown until the next successful
+    /// change or until a file is opened in its place.
+    error: Option<String>,
+    /// Changes applied to `library` but not yet written: the file is written only while the worker
+    /// is idle (RTM-20), and these are redone on the file a pull brings.
+    pending: Vec<Change>,
     /// The VCSs to choose from when the file's directory belongs to several.
     choose_vcs: Option<Vec<rtmsync::Vcs>>,
     /// The question about the file's outside changes or untracked state, asked before it syncs.
@@ -52,9 +69,6 @@ pub struct App {
     /// A pull changed the edit dialog's item, or what deleting it would remove; Save and Delete
     /// are refused.
     stale: bool,
-    /// The open file dialog: its result, and what to do with a chosen path.
-    dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
-    ctx: egui::Context,
 }
 
 impl App {
@@ -86,19 +100,18 @@ impl App {
         let mut app = App {
             config,
             config_path,
-            library,
-            error,
+            files: vec![OpenFile {
+                library,
+                error,
+                ..OpenFile::default()
+            }],
+            active: 0,
+            error: None,
             new_item: String::new(),
             editing: None,
             worker: None,
-            pending: Vec::new(),
             sync_status: None,
             last_sync: Instant::now(),
-            choose_vcs: None,
-            asking: None,
-            edited: None,
-            deleting: None,
-            stale: false,
             dialog: None,
             ctx: cc.egui_ctx.clone(),
         };
@@ -106,13 +119,23 @@ impl App {
         app
     }
 
+    /// The file shown.
+    fn file(&self) -> &OpenFile {
+        &self.files[self.active]
+    }
+
+    fn file_mut(&mut self) -> &mut OpenFile {
+        &mut self.files[self.active]
+    }
+
     /// Starts sync for the loaded file, if it syncs, and syncs once. Stops it for a previous file.
     fn connect(&mut self) {
         self.worker = None;
         self.sync_status = None;
-        self.choose_vcs = None;
-        self.asking = None;
-        let Some(library) = &self.library else {
+        let file = self.file_mut();
+        file.choose_vcs = None;
+        file.asking = None;
+        let Some(library) = &self.file().library else {
             return;
         };
         match sync::find(Path::new(&library.file_name), &self.config) {
@@ -121,8 +144,8 @@ impl App {
                 self.worker = Some(Worker::start(repo, self.ctx.clone()));
                 self.sync_now(Instant::now());
             }
-            Found::Ask(repo, question) => self.asking = Some((repo, question)),
-            Found::Ambiguous(found) => self.choose_vcs = Some(found),
+            Found::Ask(repo, question) => self.file_mut().asking = Some((repo, question)),
+            Found::Ambiguous(found) => self.file_mut().choose_vcs = Some(found),
             Found::Conflicted => self.conflicted(),
             Found::Unavailable(e) => self.sync_status = Some(format!("Not syncing: {e}")),
         }
@@ -131,16 +154,17 @@ impl App {
     /// Closes the file: its repository has conflicts, which a reload would read as items. Pending
     /// changes cannot be written into it.
     fn conflicted(&mut self) {
-        let file = self.library.take().map(|library| library.file_name);
+        let open = self.file_mut();
+        let file = open.library.take().map(|library| library.file_name);
+        let lost = std::mem::take(&mut open.pending).len();
         self.worker = None;
         self.editing = None;
-        let lost = std::mem::take(&mut self.pending).len();
         let lost = match lost {
             0 => String::new(),
             1 => " One change made during the sync was not saved.".to_owned(),
             n => format!(" {n} changes made during the sync were not saved."),
         };
-        self.error = Some(format!(
+        self.file_mut().error = Some(format!(
             "The repository holding {} has conflicts or a stopped rebase or merge; resolve them by \
              hand, then load the file again.{lost}",
             file.unwrap_or_default()
@@ -150,7 +174,7 @@ impl App {
     /// The answer to `asking`: yes commits the outside changes or adds the file, then syncs; no
     /// closes a modified file, and opens an untracked one without sync (asked again next time).
     fn answer(&mut self, yes: bool) {
-        let Some((repo, question)) = self.asking.take() else {
+        let Some((repo, question)) = self.file_mut().asking.take() else {
             return;
         };
         if yes {
@@ -160,9 +184,13 @@ impl App {
             self.worker = Some(worker);
             self.sync_now(Instant::now());
         } else if question == Question::Modified {
-            let file = self.library.take().map(|library| library.file_name);
+            let file = self
+                .file_mut()
+                .library
+                .take()
+                .map(|library| library.file_name);
             self.editing = None;
-            self.error = Some(format!(
+            self.file_mut().error = Some(format!(
                 "{} has changes rtm did not commit; commit or revert them by hand, then load the \
                  file again.",
                 file.unwrap_or_default()
@@ -176,12 +204,14 @@ impl App {
 
     /// Applies `change` to the list at once and writes it when the worker is idle.
     fn apply(&mut self, change: Change) {
-        let Some(library) = &mut self.library else {
+        let file = &mut self.files[self.active];
+        let Some(library) = &mut file.library else {
             return;
         };
         if change.redo(library) {
+            file.error = None;
+            file.pending.push(change);
             self.error = None;
-            self.pending.push(change);
             self.flush();
         }
     }
@@ -189,20 +219,21 @@ impl App {
     /// Writes the pending changes and queues their commit, unless a job is outstanding: it may be
     /// a pull about to change the file, and the changes are redone on what it brings.
     fn flush(&mut self) {
-        if self.pending.is_empty() || self.busy() {
+        if self.file().pending.is_empty() || self.busy() {
             return;
         }
-        let Some(library) = &mut self.library else {
+        let file = &mut self.files[self.active];
+        let Some(library) = &mut file.library else {
             return;
         };
-        let changes = std::mem::take(&mut self.pending);
+        let changes = std::mem::take(&mut file.pending);
         // The Tauri app read the file again after a completion; kept.
         let reread = changes.iter().any(Change::completes);
         let saved = library
             .save()
             .and_then(|()| if reread { library.load() } else { Ok(()) });
         if let Err(e) = saved {
-            self.error = Some(format!("{}: {e}", library.file_name));
+            file.error = Some(format!("{}: {e}", library.file_name));
             return;
         }
         if let Some(worker) = &mut self.worker {
@@ -265,8 +296,8 @@ impl App {
                     self.reload();
                 }
             }
-            Done::NotCommitted(e) => self.error = Some(format!("Not committed: {e}")),
-            Done::Conflict if self.library.is_some() => self.conflicted(),
+            Done::NotCommitted(e) => self.file_mut().error = Some(format!("Not committed: {e}")),
+            Done::Conflict if self.file().library.is_some() => self.conflicted(),
             Done::Conflict => {}
         }
     }
@@ -278,7 +309,7 @@ impl App {
         while let Some(worker) = &mut self.worker
             && worker.busy()
         {
-            let saving = !self.pending.is_empty() || !worker.syncing();
+            let saving = !self.files[self.active].pending.is_empty() || !worker.syncing();
             let until = if saving {
                 deadline.max(Instant::now() + SAVE_TIMEOUT)
             } else {
@@ -295,15 +326,16 @@ impl App {
     /// Reads the file again after a pull changed it, redoes the pending changes on it, and finds
     /// the edit dialog's item in the result.
     fn reload(&mut self) {
-        let Some(library) = &mut self.library else {
+        let file = &mut self.files[self.active];
+        let Some(library) = &mut file.library else {
             return;
         };
         if let Err(e) = library.load() {
-            self.error = Some(format!("{}: {e}", library.file_name));
+            file.error = Some(format!("{}: {e}", library.file_name));
             return;
         }
         let mut dropped = Vec::new();
-        self.pending.retain(|change| {
+        file.pending.retain(|change| {
             let redone = change.redo(library);
             if !redone {
                 dropped.push(change.describe());
@@ -311,56 +343,56 @@ impl App {
             redone
         });
         if !dropped.is_empty() {
-            self.error = Some(format!(
+            file.error = Some(format!(
                 "A sync changed or removed the item of a change made meanwhile, which was not \
                  applied: {}",
                 dropped.join("; ")
             ));
         }
-        let (Some(form), Some(original)) = (&mut self.editing, &self.edited) else {
+        let (Some(form), Some(original)) = (&mut self.editing, &file.edited) else {
             return;
         };
         let Some(index) = library.items.iter().position(|item| item == original) else {
-            self.stale = true;
+            file.stale = true;
             return;
         };
         form.index = index;
         if form.confirm_delete.is_some()
-            && let Some(removing) = &self.deleting
+            && let Some(removing) = &file.deleting
             && library.clone().remove_item(index).as_ref() != Some(removing)
         {
-            self.stale = true;
+            file.stale = true;
         }
     }
 
     /// Opens the edit dialog on the item at `index`.
     fn open_editor(&mut self, index: usize) {
-        let Some(item) = self.library.as_ref().and_then(|l| l.items.get(index)) else {
+        let file = &mut self.files[self.active];
+        let Some(item) = file.library.as_ref().and_then(|l| l.items.get(index)) else {
             return;
         };
         self.editing = Some(EditForm::new(index, item));
-        self.edited = Some(item.clone());
-        self.deleting = None;
-        self.stale = false;
+        file.edited = Some(item.clone());
+        file.deleting = None;
+        file.stale = false;
     }
 
     /// Refuses Save or Delete when a pull changed the dialog's item; true when refused.
     fn refuse_stale(&mut self) -> bool {
-        if self.stale
-            && let Some(form) = &mut self.editing
-        {
+        let stale = self.file().stale;
+        if stale && let Some(form) = &mut self.editing {
             form.error = Some(
                 "A sync changed this item, or what deleting it would remove; close the dialog and \
                  open the item again."
                     .to_owned(),
             );
         }
-        self.stale
+        stale
     }
 
     /// The Git-or-Pijul question, while it is open. The answer is saved in the config.
     fn vcs_question(&mut self, ctx: &egui::Context, p: &Palette) {
-        let Some(found) = &self.choose_vcs else {
+        let Some(found) = &self.file().choose_vcs else {
             return;
         };
         let mut answer = None;
@@ -386,9 +418,9 @@ impl App {
         });
         match answer.as_deref() {
             None => {}
-            Some("") => self.choose_vcs = None,
+            Some("") => self.file_mut().choose_vcs = None,
             Some(name) => {
-                if let Some(library) = &self.library {
+                if let Some(library) = &self.files[self.active].library {
                     self.config.set_vcs(&library.file_name, name);
                 }
                 self.save_config();
@@ -398,10 +430,11 @@ impl App {
     }
 
     fn sync_question(&mut self, ctx: &egui::Context, p: &Palette) {
-        let Some((repo, question)) = &self.asking else {
+        let Some((repo, question)) = &self.file().asking else {
             return;
         };
         let name = self
+            .file()
             .library
             .as_ref()
             .and_then(|library| Path::new(&library.file_name).file_name())
@@ -519,7 +552,9 @@ impl App {
         match load_library(path) {
             Ok(library) => {
                 self.config.set_active(&library.file_name);
-                self.library = Some(library);
+                let file = self.file_mut();
+                file.library = Some(library);
+                file.error = None;
                 self.save_config();
                 self.connect();
             }
@@ -527,7 +562,7 @@ impl App {
         }
     }
 
-    /// Writes the config; replaces the error line with the result.
+    /// Writes the config; replaces the app line with the result.
     fn save_config(&mut self) {
         self.error = self
             .config
@@ -602,7 +637,11 @@ impl App {
                 ui.add(egui::Label::new(job));
             });
         self.filters(ui, p);
-        let count = self.library.as_ref().map_or(0, TodoLibrary::item_count);
+        let count = self
+            .file()
+            .library
+            .as_ref()
+            .map_or(0, TodoLibrary::item_count);
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             ui.label(
                 RichText::new(format!("Total items: {count}"))
@@ -614,7 +653,11 @@ impl App {
 
     /// Completes or uncompletes the item at file index `index`, as the Tauri app did.
     fn toggle(&mut self, index: usize) {
-        let item = self.library.as_ref().and_then(|l| l.items.get(index));
+        let item = self
+            .file()
+            .library
+            .as_ref()
+            .and_then(|l| l.items.get(index));
         if let Some(item) = item.cloned() {
             self.apply(Change::Toggle(item));
         }
@@ -627,7 +670,7 @@ impl App {
         if text.is_empty() {
             return;
         }
-        if self.library.is_none() {
+        if self.file().library.is_none() {
             self.error = Some("Please load a file first".to_owned());
             return;
         }
@@ -675,7 +718,8 @@ impl App {
         if self.refuse_stale() {
             return;
         }
-        let (Some(form), Some(library)) = (&mut self.editing, &self.library) else {
+        let (Some(form), Some(library)) = (&mut self.editing, &self.files[self.active].library)
+        else {
             self.editing = None;
             return;
         };
@@ -689,21 +733,22 @@ impl App {
             return;
         }
         self.editing = None;
-        self.edited = None;
+        self.file_mut().edited = None;
         self.apply(Change::Edit { original, edited });
     }
 
     /// Shows the delete confirmation with the number of sub-items the delete would take, counted by
     /// removing from a copy so it is exactly what `delete_item` will remove.
     fn ask_delete(&mut self) {
-        let (Some(form), Some(library)) = (&mut self.editing, &self.library) else {
+        let (Some(form), Some(library)) = (&mut self.editing, &self.files[self.active].library)
+        else {
             self.editing = None;
             return;
         };
         match library.clone().remove_item(form.index) {
             Some(removed) => {
                 form.confirm_delete = Some(removed.len() - 1);
-                self.deleting = Some(removed);
+                self.files[self.active].deleting = Some(removed);
             }
             None => self.editing = None,
         }
@@ -714,21 +759,20 @@ impl App {
         if self.refuse_stale() {
             return;
         }
-        let (Some(form), Some(library)) = (self.editing.take(), &self.library) else {
+        let (Some(form), Some(library)) = (self.editing.take(), &self.file().library) else {
             return;
         };
-        self.edited = None;
-        let Some(original) = library.items.get(form.index).cloned() else {
-            return;
-        };
-        if let Some(removing) = library.clone().remove_item(form.index) {
+        let original = library.items.get(form.index).cloned();
+        let removing = library.clone().remove_item(form.index);
+        self.file_mut().edited = None;
+        if let (Some(original), Some(removing)) = (original, removing) {
             self.apply(Change::Delete { original, removing });
         }
     }
 
-    /// The error line, the add row and the list. Returns what was clicked in the list.
+    /// The app and file lines, the add row and the list. Returns what was clicked in the list.
     fn content(&mut self, ui: &mut Ui, p: &Palette) -> Option<RowAction> {
-        if let Some(error) = &self.error {
+        for error in [&self.error, &self.file().error].into_iter().flatten() {
             ui.label(RichText::new(error).color(p.due));
             ui.add_space(8.0);
         }
@@ -740,7 +784,7 @@ impl App {
             .show(ui, |ui| {
                 // The list box fills the content area, as in the web app.
                 ui.set_min_size(ui.available_size());
-                let Some(library) = &self.library else {
+                let Some(library) = &self.file().library else {
                     empty_state(
                         ui,
                         p,
@@ -998,3 +1042,7 @@ mod sync_tests;
 #[cfg(test)]
 #[path = "tests/app_ui_tests.rs"]
 mod ui_tests;
+
+#[cfg(test)]
+#[path = "tests/app_error_tests.rs"]
+mod error_tests;

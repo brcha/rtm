@@ -8,13 +8,13 @@ fn completing_a_recurring_item_saves_it_and_the_next_occurrence() {
 
     app.toggle(0);
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     let lines = file_lines(&dir);
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert!(lines[0].starts_with("x ") && lines[0].contains("due:2026-11-01"));
     assert!(!lines[1].starts_with("x ") && lines[1].contains("due:2026-11-08"));
     // Re-read after completing, as in the Tauri app.
-    assert_eq!(app.library.as_ref().unwrap().item_count(), 2);
+    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 2);
     assert!(!dir.join("config.toml").exists());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -26,7 +26,7 @@ fn uncompleting_clears_the_completion_date_on_disk() {
 
     app.toggle(0);
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     let lines = file_lines(&dir);
     assert_eq!(lines.len(), 1);
     assert!(!lines[0].starts_with("x ") && !lines[0].contains("2026-10-20"));
@@ -41,7 +41,7 @@ fn toggling_an_index_past_the_end_changes_nothing() {
 
     app.toggle(1);
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert_eq!(file_lines(&dir), ["Only item"]);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -54,7 +54,7 @@ fn adding_saves_the_trimmed_item_with_a_creation_date() {
 
     app.add_item();
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert_eq!(app.new_item, "");
     let today = chrono::Local::now().date_naive().format("%Y-%m-%d");
     assert_eq!(
@@ -75,7 +75,7 @@ fn blank_input_adds_nothing() {
 
     app.add_item();
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert_eq!(
         std::fs::read_to_string(dir.join("todo.txt")).unwrap(),
         "First\n"
@@ -107,7 +107,7 @@ fn saving_an_edit_writes_the_item_and_keeps_the_others() {
 
     app.save_edit();
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert!(app.editing.is_none());
     assert_eq!(
         file_lines(&dir),
@@ -145,7 +145,7 @@ fn asking_to_delete_counts_the_sub_items() {
     let dir = temp_dir("ask-delete");
     let mut app = app_with(&dir, LINKED);
     // load() drops a line whose uuid does not parse; make sure none was.
-    assert_eq!(app.library.as_ref().unwrap().item_count(), 5);
+    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 5);
 
     open_editor(&mut app, 2);
     app.ask_delete();
@@ -155,7 +155,7 @@ fn asking_to_delete_counts_the_sub_items() {
     app.ask_delete();
     assert_eq!(app.editing.as_ref().unwrap().confirm_delete, Some(0));
     // Counting changes nothing.
-    assert_eq!(app.library.as_ref().unwrap().item_count(), 5);
+    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 5);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -163,12 +163,12 @@ fn asking_to_delete_counts_the_sub_items() {
 fn deleting_removes_the_item_and_its_sub_items() {
     let dir = temp_dir("delete");
     let mut app = app_with(&dir, LINKED);
-    assert_eq!(app.library.as_ref().unwrap().item_count(), 5);
+    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 5);
     open_editor(&mut app, 2);
 
     app.delete_item();
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert!(app.editing.is_none());
     assert_eq!(file_lines(&dir), ["First", "Last"]);
     let _ = std::fs::remove_dir_all(dir);
@@ -182,7 +182,7 @@ fn deleting_a_plain_item_removes_only_it() {
 
     app.delete_item();
 
-    assert_eq!(app.error, None);
+    assert_eq!(errors(&app), Vec::<&str>::new());
     assert!(app.editing.is_none());
     assert_eq!(file_lines(&dir), ["First", "Third"]);
     let _ = std::fs::remove_dir_all(dir);

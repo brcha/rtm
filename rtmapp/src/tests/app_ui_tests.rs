@@ -112,7 +112,7 @@ fn the_choice_of_a_file_named_through_a_detour_is_found_after_startup() {
     });
 
     let app = harness.state();
-    let file = app.library.as_ref().unwrap().file_name.clone();
+    let file = app.file().library.as_ref().unwrap().file_name.clone();
     assert_eq!(
         Path::new(&file),
         dir.join("todo.txt").canonicalize().unwrap()
@@ -122,6 +122,26 @@ fn the_choice_of_a_file_named_through_a_detour_is_found_after_startup() {
     assert_eq!(
         sync::chosen(&app.config, Path::new(&file)),
         Some(rtmsync::Vcs::Pijul)
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_app_line_and_the_file_line_are_both_shown() {
+    let dir = temp_dir("ui-errors");
+    let mut harness = harness(&dir, "First item\n", |_| {});
+
+    harness.state_mut().error = Some("Could not save the config: test".to_owned());
+    harness.state_mut().file_mut().error = Some("Not committed: test".to_owned());
+    harness.run();
+
+    let app_line = harness
+        .get_by_label("Could not save the config: test")
+        .rect();
+    let file_line = harness.get_by_label("Not committed: test").rect();
+    assert!(
+        app_line.bottom() <= file_line.top(),
+        "{app_line:?} {file_line:?}"
     );
     let _ = std::fs::remove_dir_all(dir);
 }
