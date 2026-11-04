@@ -85,10 +85,21 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   on `AppConfig`). The file is written after a successful file load (or creation) or a filter
   change, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
   default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
-  false turns off commits as well as pulls and pushes) and `vcs` (`"git"` or `"pijul"`, any case,
-  the answer when the file's directory has both; anything else means ask; cleared when another
-  file is opened).
+  false turns off commits as well as pulls and pushes) and, until RTM-124, a top-level `vcs`.
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
+  - **The file list (RTM-124, epic RTM-66):** `[[files]]` tables, the saved session, written last
+    (after the plain keys). Each has `path`, an optional `name` (the tab label, for RTM-127) and an
+    optional `vcs` (`"git"` or `"pijul"`, any case, the answer when the file's directory has both;
+    anything else means ask). `file_name` stays and names the active file, so an older rtmapp still
+    opens it. The app shows one file until RTM-127: opening another replaces the active entry,
+    and with it the old file's `vcs`; an entry the new file already has keeps its `name` and `vcs`.
+  - **Migration**, in `AppConfig::load`, in memory only (written with the next save): entries
+    without a `path` are dropped, `file_name` gets an entry when it has none, and a top-level `vcs`
+    moves into that entry (an older version wrote it for `file_name`, so it replaces the entry's
+    choice) and is never written again. An older rtmapp drops `[[files]]` when it saves; the
+    migration rebuilds the active entry from `file_name`. At startup, when the loaded file's
+    resolved path differs from `file_name` (a symlink, `..`), `file_name` and its entry take the
+    resolved path in memory, since entries are looked up by the loaded file's path.
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer

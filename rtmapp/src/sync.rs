@@ -44,9 +44,16 @@ pub enum Question {
     Untracked,
 }
 
-/// The VCS named in the config (`"git"`, `"pijul"`, any case). Anything else is no choice.
-pub fn chosen(config: &AppConfig) -> Option<Vcs> {
-    match config.vcs.as_deref()?.to_ascii_lowercase().as_str() {
+/// The VCS the config names for `file` (`"git"`, `"pijul"`, any case). Anything else is no
+/// choice.
+pub fn chosen(config: &AppConfig, file: &Path) -> Option<Vcs> {
+    match config
+        .entry(file)?
+        .vcs
+        .as_deref()?
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "git" => Some(Vcs::Git),
         "pijul" => Some(Vcs::Pijul),
         _ => None,
@@ -62,7 +69,7 @@ pub fn find(file: &Path, config: &AppConfig) -> Found {
     let vcs = match found.as_slice() {
         [] => return Found::NoSync,
         [only] => *only,
-        several => match chosen(config).filter(|vcs| several.contains(vcs)) {
+        several => match chosen(config, file).filter(|vcs| several.contains(vcs)) {
             Some(vcs) => vcs,
             None => return Found::Ambiguous(found),
         },

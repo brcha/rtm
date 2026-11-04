@@ -66,11 +66,16 @@ impl App {
     /// they never read or write the user's.
     fn with_config(cc: &eframe::CreationContext<'_>, config_path: PathBuf) -> Self {
         theme::install(&cc.egui_ctx);
-        let config = AppConfig::load(&config_path);
+        let mut config = AppConfig::load(&config_path);
         let mut error = None;
-        let library = match config.file_name.as_deref().map(Path::new) {
-            Some(path) if path.exists() => match load_library(path) {
-                Ok(library) => Some(library),
+        let library = match config.file_name.clone().map(PathBuf::from) {
+            Some(path) if path.exists() => match load_library(&path) {
+                Ok(library) => {
+                    // The file's entry is looked up by the resolved path from now on; written
+                    // with the next save, not now.
+                    config.rename_active(&library.file_name);
+                    Some(library)
+                }
                 Err(e) => {
                     error = Some(e);
                     None
@@ -383,7 +388,9 @@ impl App {
             None => {}
             Some("") => self.choose_vcs = None,
             Some(name) => {
-                self.config.vcs = Some(name.to_owned());
+                if let Some(library) = &self.library {
+                    self.config.set_vcs(&library.file_name, name);
+                }
                 self.save_config();
                 self.connect();
             }
@@ -511,11 +518,7 @@ impl App {
     fn open_file(&mut self, path: &Path) {
         match load_library(path) {
             Ok(library) => {
-                // The saved Git-or-Pijul choice belonged to the previous file.
-                if self.config.file_name.as_deref() != Some(library.file_name.as_str()) {
-                    self.config.vcs = None;
-                }
-                self.config.file_name = Some(library.file_name.clone());
+                self.config.set_active(&library.file_name);
                 self.library = Some(library);
                 self.save_config();
                 self.connect();
