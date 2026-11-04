@@ -84,6 +84,27 @@ fn a_picked_file_is_opened_when_the_dialog_returns() {
 }
 
 #[test]
+fn opening_another_file_replaces_its_entry_in_the_config() {
+    let dir = temp_dir("replace entry");
+    std::fs::write(dir.join("other.txt"), "Other item\n").unwrap();
+    let mut app = app_with(&dir, "First\n");
+    let first = app.library.as_ref().unwrap().file_name.clone();
+    app.config.set_active(&first);
+    app.config.set_vcs(&first, "git");
+
+    dialog_returned(&mut app, Some(dir.join("other.txt")), App::open_file);
+    app.dialog_result();
+
+    let config = AppConfig::load(&dir.join("config.toml"));
+    let other = dir.join("other.txt").canonicalize().unwrap();
+    assert_eq!(config.file_name.as_deref(), other.to_str());
+    assert_eq!(config.files.len(), 1);
+    assert_eq!(Path::new(&config.files[0].path), other);
+    assert_eq!(config.files[0].vcs, None);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn a_cancelled_dialog_changes_nothing() {
     let dir = temp_dir("dialog cancel");
     let mut app = app_with(&dir, "First\n");

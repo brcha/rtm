@@ -69,6 +69,64 @@ fn the_configured_file_opens_at_startup() {
 }
 
 #[test]
+fn a_config_from_before_the_file_list_is_migrated_on_the_next_save_only() {
+    let dir = temp_dir("ui-old-config");
+    let mut harness = harness(&dir, "First item\n", |config| {
+        config.vcs = Some("git".into());
+    });
+    let before = std::fs::read(dir.join("config.toml")).unwrap();
+    harness.run();
+
+    assert_eq!(rows(&harness), ["First item"]);
+    assert_eq!(std::fs::read(dir.join("config.toml")).unwrap(), before);
+    let text = String::from_utf8(before).unwrap();
+    assert!(
+        text.contains("vcs = \"git\"") && !text.contains("[[files]]"),
+        "{text}"
+    );
+
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Reverse sort order")
+        .click();
+    harness.run();
+
+    let text = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    let table: toml::Table = text.parse().unwrap();
+    let file = dir.join("todo.txt").canonicalize().unwrap();
+    assert_eq!(table["file_name"].as_str(), file.to_str());
+    assert!(!table.contains_key("vcs"), "{text}");
+    let files = table["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1, "{text}");
+    assert_eq!(files[0]["path"].as_str(), file.to_str());
+    assert_eq!(files[0]["vcs"].as_str(), Some("git"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_choice_of_a_file_named_through_a_detour_is_found_after_startup() {
+    let dir = temp_dir("ui-detour");
+    let harness = harness(&dir, "First item\n", |config| {
+        let detour = dir.join("sub").join("..").join("todo.txt");
+        config.file_name = Some(detour.to_string_lossy().into_owned());
+        config.vcs = Some("pijul".into());
+    });
+
+    let app = harness.state();
+    let file = app.library.as_ref().unwrap().file_name.clone();
+    assert_eq!(
+        Path::new(&file),
+        dir.join("todo.txt").canonicalize().unwrap()
+    );
+    assert_eq!(app.config.file_name.as_deref(), Some(file.as_str()));
+    assert_eq!(app.config.files.len(), 1);
+    assert_eq!(
+        sync::chosen(&app.config, Path::new(&file)),
+        Some(rtmsync::Vcs::Pijul)
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn a_file_chosen_in_the_dialog_opens_and_is_saved_in_the_config() {
     let dir = temp_dir("ui-open");
     let mut harness = harness(&dir, "", |config| config.file_name = None);

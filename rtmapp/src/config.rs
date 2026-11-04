@@ -16,10 +16,27 @@ pub struct AppConfig {
     pub reverse_sort: bool,
     /// Commit, pull and push the file through its repository (RTM-64). On unless set to false.
     pub sync: bool,
-    /// `"git"` or `"pijul"`: the user's choice when the file's directory belongs to both.
+    /// The Git-or-Pijul choice as versions before RTM-124 wrote it, for `file_name`. `load` moves
+    /// it into that file's entry, so it is never written again.
     pub vcs: Option<String>,
     /// Minutes between background syncs (RTM-20); 0 syncs only on open, on exit and on demand.
     pub sync_interval_minutes: u64,
+    /// The saved session (RTM-124): the todo.txt files the app keeps; `file_name` names the active
+    /// one and stays for older versions, which ignore this list. Last, so the plain keys are
+    /// written before the tables.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<FileEntry>,
+}
+
+/// One todo.txt of the saved session (`[[files]]`).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct FileEntry {
+    pub path: String,
+    /// The label of the file's tab (RTM-127); unused until then.
+    pub name: Option<String>,
+    /// `"git"` or `"pijul"`: the user's choice when the file's directory belongs to both.
+    pub vcs: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -33,6 +50,7 @@ impl Default for AppConfig {
             sync: true,
             vcs: None,
             sync_interval_minutes: 10,
+            files: Vec::new(),
         }
     }
 }
@@ -46,12 +64,105 @@ pub fn config_path() -> PathBuf {
 }
 
 impl AppConfig {
-    /// Reads the config. A missing or invalid file gives the defaults.
+    /// Reads the config. A missing or invalid file gives the defaults. Nothing is written: a
+    /// migrated config reaches the file on the next save.
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
+        let mut config: AppConfig = std::fs::read_to_string(path)
             .ok()
             .and_then(|text| toml::from_str(&text).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        config.migrate();
+        config
+    }
+
+    /// Brings a config from an older version (or edited by one) into the list of files: an entry
+    /// for `file_name` when it has none, and the top-level `vcs`, which an older version wrote for
+    /// `file_name`, moved into that entry. Entries without a path are dropped.
+    fn migrate(&mut self) {
+        self.files.retain(|entry| !entry.path.is_empty());
+        let Some(file) = self.file_name.clone() else {
+            self.vcs = None;
+            return;
+        };
+        if self.entry(Path::new(&file)).is_none() {
+            self.files.push(FileEntry {
+                path: file.clone(),
+                ..FileEntry::default()
+            });
+        }
+        if let Some(vcs) = self.vcs.take() {
+            self.set_vcs(&file, &vcs);
+        }
+    }
+
+    /// The entry of `file`. Paths are compared as given: the app keeps them canonical.
+    pub fn entry(&self, file: &Path) -> Option<&FileEntry> {
+        self.files
+            .iter()
+            .find(|entry| Path::new(&entry.path) == file)
+    }
+
+    fn entry_mut(&mut self, file: &Path) -> Option<&mut FileEntry> {
+        self.files
+            .iter_mut()
+            .find(|entry| Path::new(&entry.path) == file)
+    }
+
+    /// Stores the Git-or-Pijul choice for `file`, adding its entry if it has none.
+    pub fn set_vcs(&mut self, file: &str, vcs: &str) {
+        if self.entry(Path::new(file)).is_none() {
+            self.files.push(FileEntry {
+                path: file.to_owned(),
+                ..FileEntry::default()
+            });
+        }
+        if let Some(entry) = self.entry_mut(Path::new(file)) {
+            entry.vcs = Some(vcs.to_owned());
+        }
+    }
+
+    /// Makes `file` the active file, replacing the previous one's entry: the app shows one file.
+    /// An entry `file` already has keeps its name and choice.
+    pub fn set_active(&mut self, file: &str) {
+        if self.file_name.as_deref() == Some(file) {
+            return;
+        }
+        if let Some(old) = self.file_name.take() {
+            self.files
+                .retain(|entry| Path::new(&entry.path) != Path::new(&old));
+        }
+        if self.entry(Path::new(file)).is_none() {
+            self.files.push(FileEntry {
+                path: file.to_owned(),
+                ..FileEntry::default()
+            });
+        }
+        self.file_name = Some(file.to_owned());
+    }
+
+    /// Renames the active file's path to `file`, keeping its entry's name and choice: the path
+    /// the config gave, resolved (symlinks, `..`) when the file was loaded.
+    pub fn rename_active(&mut self, file: &str) {
+        let Some(old) = self.file_name.replace(file.to_owned()) else {
+            return;
+        };
+        if old == file {
+            return;
+        }
+        if self.entry(Path::new(file)).is_some() {
+            // Both spellings are listed: keep the resolved one, with the newer choice `migrate`
+            // gave the old spelling.
+            let vcs = self
+                .entry(Path::new(&old))
+                .and_then(|entry| entry.vcs.clone());
+            self.files
+                .retain(|entry| Path::new(&entry.path) != Path::new(&old));
+            if let Some(vcs) = vcs {
+                self.set_vcs(file, &vcs);
+            }
+        } else if let Some(entry) = self.entry_mut(Path::new(&old)) {
+            entry.path = file.to_owned();
+        }
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
