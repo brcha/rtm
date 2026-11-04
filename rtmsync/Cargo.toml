@@ -1,6 +1,6 @@
 [package]
 name = "rtmsync"
-version = "27.1.0"
+version = "26.2.0"
 edition = "2024"
 publish = false
 
