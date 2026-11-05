@@ -49,6 +49,7 @@ fn rtmcli(file: &Path, args: &[&str]) -> Output {
         .args(args)
         .env_remove("RTM_NO_SYNC")
         .env_remove("RTM_VCS")
+        .env_remove("RTM_UPDATE_URL")
         .env_remove("TODOTXT")
         .output()
         .unwrap()

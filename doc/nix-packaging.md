@@ -18,6 +18,11 @@
   `meta.license` (an SPDX ID; an unknown one fails evaluation) and `meta.homepage` (from
   `repository`) from each crate's `[package]`; only what Cargo has no field for (platforms,
   `mainProgram`, build flags) is written in Nix. The Cargo `description` is also the deb summary.
+- **No update check (RTM-137):** `rtmcli` is built with `buildNoDefaultFeatures = true`, which
+  leaves out its default `update-check` feature, so the package never makes a network request;
+  `rtmcli check-update` says to update through the package manager instead. Nix users update
+  through their flake inputs or nixpkgs. The flag applies to the check phase's tests too. `rtmapp`
+  follows in RTM-138.
 - **Tests in the build (RTM-71):** the check phase runs the sync tests, so `gitMinimal`, `pijul` and
   `openssh` (the Pijul sync test signs through a scratch `ssh-agent`) are `nativeCheckInputs`;
   `rtmcli` also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul tests cannot skip

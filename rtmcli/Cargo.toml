@@ -14,6 +14,13 @@ rtmsync = { path = "../rtmsync" }
 chrono = "0.4.31"
 clap = { version = "4.0", features = ["derive", "env"] }
 uuid = "1.18.1"
+rtmupdate = { path = "../rtmupdate", optional = true }
+
+[features]
+default = ["update-check"]
+# The check-update command's network check. The Nix package builds without it: Nix users update
+# through the flake.
+update-check = ["dep:rtmupdate"]
 
 # cargo-deb metadata -- RTM-8. name is pinned explicitly rather than left to derive from
 # [package].name, matching the load-bearing-invariant precedent set for rtmapp's Windows

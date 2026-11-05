@@ -19,10 +19,8 @@ fn test_cli_add_single_task() {
     fs::remove_file(&temp_file).ok();
 
     // Run add command
-    let output = Command::new("cargo")
-        .args([
-            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Buy milk",
-        ])
+    let output = Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "add", "Buy milk"])
         .output()
         .expect("Failed to run add command");
 
@@ -45,18 +43,14 @@ fn test_cli_add_multiple_tasks() {
     fs::remove_file(&temp_file).ok();
 
     // Add first task
-    Command::new("cargo")
-        .args([
-            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Buy milk",
-        ])
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "add", "Buy milk"])
         .output()
         .expect("Failed to add first task");
 
     // Add second task
-    Command::new("cargo")
-        .args([
-            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Call mom",
-        ])
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "add", "Call mom"])
         .output()
         .expect("Failed to add second task");
 
@@ -80,22 +74,18 @@ fn test_cli_list_tasks() {
     fs::remove_file(&temp_file).ok();
 
     // Add tasks
-    Command::new("cargo")
-        .args([
-            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Task 1",
-        ])
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "add", "Task 1"])
         .output()
         .unwrap();
-    Command::new("cargo")
-        .args([
-            "run", "--bin", "rtmcli", "--", "-f", file_path, "add", "Task 2",
-        ])
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "add", "Task 2"])
         .output()
         .unwrap();
 
     // List tasks
-    let output = Command::new("cargo")
-        .args(["run", "--bin", "rtmcli", "--", "-f", file_path, "list"])
+    let output = Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "list"])
         .output()
         .expect("Failed to run list");
 
@@ -117,25 +107,14 @@ fn test_cli_complete_task_by_index() {
     fs::remove_file(&temp_file).ok();
 
     // Add task
-    Command::new("cargo")
-        .args([
-            "run",
-            "--bin",
-            "rtmcli",
-            "--",
-            "-f",
-            file_path,
-            "add",
-            "Incomplete task",
-        ])
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "add", "Incomplete task"])
         .output()
         .unwrap();
 
     // Complete task by index
-    let output = Command::new("cargo")
-        .args([
-            "run", "--bin", "rtmcli", "--", "-f", file_path, "complete", "1",
-        ])
+    let output = Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "complete", "1"])
         .output()
         .expect("Failed to complete");
 
@@ -159,53 +138,24 @@ fn test_cli_list_completed_tasks() {
     fs::remove_file(&temp_file).ok();
 
     // Add and complete task
-    Command::new("cargo")
-        .args([
-            "run",
-            "--bin",
-            "rtmcli",
-            "--",
-            "-f",
-            file_path,
-            "add",
-            "Complete this",
-        ])
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "add", "Complete this"])
         .output()
         .unwrap();
-    Command::new("cargo")
-        .args([
-            "run", "--bin", "rtmcli", "--", "-f", file_path, "complete", "1",
-        ])
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "complete", "1"])
         .output()
         .unwrap();
 
     // Add another uncompleted
-    Command::new("cargo")
-        .args([
-            "run",
-            "--bin",
-            "rtmcli",
-            "--",
-            "-f",
-            file_path,
-            "add",
-            "Keep uncompleted",
-        ])
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "add", "Keep uncompleted"])
         .output()
         .unwrap();
 
     // List completed
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--bin",
-            "rtmcli",
-            "--",
-            "-f",
-            file_path,
-            "list",
-            "--completed",
-        ])
+    let output = Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .args(["-f", file_path, "list", "--completed"])
         .output()
         .expect("Failed to list completed");
 
@@ -223,17 +173,8 @@ fn test_cli_list_completed_tasks() {
 fn run_delete(name: &str, content: &str, args: &[&str], input: Option<&str>) -> (Output, String) {
     let temp_file = std::env::temp_dir().join(name);
     fs::write(&temp_file, content).unwrap();
-    let mut command = Command::new("cargo");
-    command
-        .args([
-            "run",
-            "--bin",
-            "rtmcli",
-            "--",
-            "-f",
-            temp_file.to_str().unwrap(),
-        ])
-        .args(args);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_rtmcli"));
+    command.args(["-f", temp_file.to_str().unwrap()]).args(args);
     let output = match input {
         None => command.output().unwrap(),
         Some(input) => {

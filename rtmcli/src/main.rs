@@ -71,6 +71,12 @@ enum Commands {
     },
     /// Pull and push the repository holding the file
     Sync,
+    /// Check whether a newer release of rtm exists (the only command that uses the network)
+    CheckUpdate {
+        /// Release channel: beta is also offered beta releases
+        #[arg(long, value_enum, default_value_t = UpdateChannel::Stable)]
+        channel: UpdateChannel,
+    },
 }
 
 #[derive(ValueEnum, Clone, Copy, PartialEq)]
@@ -86,6 +92,47 @@ impl VcsName {
             VcsName::Pijul => Vcs::Pijul,
         }
     }
+}
+
+#[derive(ValueEnum, Clone, Copy, PartialEq)]
+enum UpdateChannel {
+    Stable,
+    Beta,
+}
+
+#[cfg(feature = "update-check")]
+impl From<UpdateChannel> for rtmupdate::Channel {
+    fn from(channel: UpdateChannel) -> Self {
+        match channel {
+            UpdateChannel::Stable => rtmupdate::Channel::Stable,
+            UpdateChannel::Beta => rtmupdate::Channel::Beta,
+        }
+    }
+}
+
+/// Prints whether a newer release exists and exits: 0 with an answer, 1 when the check failed.
+#[cfg(feature = "update-check")]
+fn check_update(channel: UpdateChannel) -> ! {
+    let version = env!("CARGO_PKG_VERSION");
+    match rtmupdate::check(version, channel.into()) {
+        Ok(Some(release)) => println!("rtm {} is available: {}", release.version, release.url),
+        Ok(None) => println!("rtmcli {version} is up to date"),
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    }
+    std::process::exit(0);
+}
+
+/// Builds without the update check (the Nix package) keep the command, to say how to update.
+#[cfg(not(feature = "update-check"))]
+fn check_update(_channel: UpdateChannel) -> ! {
+    println!(
+        "This build of rtmcli has no update check; update it through the package manager that \
+         installed it (for Nix, the flake input)."
+    );
+    std::process::exit(0);
 }
 
 /// The repository a todo.txt is synced through: every change is committed, and pushed when the
@@ -280,6 +327,10 @@ fn parse_filter(s: &str) -> Option<Filter> {
 
 fn main() {
     let cli = Cli::parse();
+    // Before the file and its repository are looked at: the check reads no file and syncs nothing.
+    if let Commands::CheckUpdate { channel } = cli.command {
+        check_update(channel);
+    }
     let file_name = cli
         .file
         .unwrap_or_else(|| std::env::var("TODOTXT").unwrap_or_else(|_| "todo.txt".to_string()));
@@ -558,5 +609,6 @@ fn main() {
                 file_name
             ),
         },
+        Commands::CheckUpdate { .. } => unreachable!("handled before the file is resolved"),
     }
 }

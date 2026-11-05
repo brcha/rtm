@@ -103,10 +103,10 @@ one that had them.
     declares `#[path = "../tests/foo/bar_<topic>_tests.rs"]`.
   - Integration tests, which use only the public interface, live in each crate's top-level
     `tests/`, one test binary per file, named `<area>_<topic>_tests.rs` (`library_file_tests.rs`,
-    `cli_sync_tests.rs`). New `rtmcli` tests run the binary through `CARGO_BIN_EXE_rtmcli`
-    (`cli_commands_tests.rs` still goes through `cargo run`). `rtmapp` is a binary crate and has
-    none; its UI tests run in-process with `egui_kittest`, as unit tests (`app_ui_tests.rs`, see
-    `rtmapp/AGENTS.md`).
+    `cli_sync_tests.rs`). `rtmcli` tests run the binary through `CARGO_BIN_EXE_rtmcli`, never
+    `cargo run`, which would rebuild it with other features in the middle of a run (RTM-137).
+    `rtmapp` is a binary crate and has none; its UI tests run in-process with `egui_kittest`, as
+    unit tests (`app_ui_tests.rs`, see `rtmapp/AGENTS.md`).
   - Every test works in scratch directories under the system temp directory and never reads or
     writes the user's real `rtm/config.toml` or todo.txt. A new test that runs a program removes
     the environment variables that would change its result (`TODOTXT`, `RTM_NO_SYNC`, `RTM_VCS`,
