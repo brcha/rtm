@@ -1092,6 +1092,9 @@ fn a_move_within_one_repository_commits_the_target_first() {
     add_work_file(&dir, "Report\n");
     let (source, target) = (dir.join("a/todo.txt"), dir.join("a/work.txt"));
     let mut app = app_on(&dir, &[source.clone(), target.clone()]);
+    // Commit messages name the files by their tab labels.
+    app.files.first_mut().unwrap().name = "Personal".to_owned();
+    app.files.last_mut().unwrap().name = "Work".to_owned();
 
     move_to(&mut app, &source, 1, &target);
     wait(&mut app);
@@ -1104,7 +1107,7 @@ fn a_move_within_one_repository_commits_the_target_first() {
     );
     assert_eq!(
         subjects(&dir.join("a"), 2),
-        "rtm: move Bravo to work.txt\nrtm: move Bravo from todo.txt"
+        "rtm: move Bravo to Work\nrtm: move Bravo from Personal"
     );
     let _ = std::fs::remove_dir_all(dir);
 }

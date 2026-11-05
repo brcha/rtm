@@ -33,9 +33,8 @@ fn an_item_moves_to_the_other_file() {
 
     assert!(app.editing.is_none());
     assert_eq!(file_lines(&dir), ["Alpha"]);
-    let moved = lines(&work);
-    assert_eq!(moved.len(), 2, "{moved:?}");
-    assert!(moved[1].ends_with("Bravo"), "{moved:?}");
+    // As it was: no creation date added on the way.
+    assert_eq!(lines(&work), ["Report", "Bravo"]);
     assert!(app.delivered.is_empty());
     let _ = std::fs::remove_dir_all(dir);
 }

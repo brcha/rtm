@@ -287,9 +287,10 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     read the markers as items. Each keeps its place among the open files, and its error line counts
     the pending changes that could not be saved; the repository's worker stops.
   - **Moving an item (RTM-128)** is two linked changes with one id (`App::move_item`): the target
-    gets `Change::MoveIn` (the edited item and its sub-items, `rtm: move <description> from
-    <file>`), the source `Change::MoveOut` (the original item and its sub-items, removed as
-    `Delete` does, `rtm: move <description> to <file>`). The target is written first: a source
+    gets `Change::MoveIn` (the edited item and its sub-items, appended as they are, without the
+    creation date `add_item` would give them; `rtm: move <description> from <tab>`), the source
+    `Change::MoveOut` (the original item and its sub-items, removed as `Delete` does; `rtm: move
+    <description> to <tab>`). Both name the other file by its tab label. The target is written first: a source
     whose `MoveOut` is not yet in `App::delivered` (the moves written to their targets, kept on
     `App` so closing the target cannot lose them) is not written at all, and cannot be closed.
     `App::flush` repeats its pass when a target was written, so a source listed first is freed in

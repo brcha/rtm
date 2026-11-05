@@ -404,22 +404,25 @@ impl App {
             return;
         };
         let from = source.path.clone();
-        let target_loaded = self
+        // Commit messages name both files by their tab labels: two files may share a file name.
+        let from_name = source.name.clone();
+        let target_name = self
             .files
             .iter()
-            .any(|file| file.is(target) && file.library.is_some());
+            .find(|file| file.is(target) && file.library.is_some())
+            .map(|file| file.name.clone());
         let (Some(form), Some(library)) = (&mut self.editing, source.library.as_ref()) else {
             self.close_editor();
             return;
         };
-        if !target_loaded || from == target {
+        let Some(target_name) = target_name.filter(|_| from != target) else {
             form.error = Some(format!(
                 "{} is no longer open; choose another file.",
                 file_name_of(target)
             ));
             form.confirm_move = None;
             return;
-        }
+        };
         let Some(original) = library.items.get(form.index).cloned() else {
             self.close_editor();
             return;
@@ -442,7 +445,7 @@ impl App {
         self.close_editor();
         let arriving = Change::MoveIn {
             items,
-            from: file_name_of(&from),
+            from: from_name,
             id,
         };
         if let Some(file) = find_file(&mut self.files, Some(target))
@@ -456,7 +459,7 @@ impl App {
             original,
             edited,
             removing,
-            to: file_name_of(target),
+            to: target_name,
             id,
         });
     }
@@ -1764,15 +1767,15 @@ enum Change {
         original: TodoItem,
         removing: Vec<TodoItem>,
     },
-    /// The arriving half of move `id`: appends the moved items to the target, `from` names the
-    /// source file.
+    /// The arriving half of move `id`: appends the moved items, unchanged, to the target; `from` is
+    /// the source's tab label.
     MoveIn {
         items: Vec<TodoItem>,
         from: String,
         id: u64,
     },
     /// The leaving half of move `id`: removes the item and its sub-items from the source, as
-    /// `Delete` does; `to` names the target file. `edited` is the item with the edit dialog's
+    /// `Delete` does; `to` is the target's tab label. `edited` is the item with the edit dialog's
     /// fields, kept if the move fails.
     MoveOut {
         original: TodoItem,
@@ -1807,11 +1810,9 @@ impl Change {
                 };
                 library.items[index] = edited.clone();
             }
-            Change::MoveIn { items, .. } => {
-                for item in items {
-                    library.add_item(item.clone());
-                }
-            }
+            // Not through `add_item`, which gives an item without one a creation date: a moved
+            // item arrives as it was.
+            Change::MoveIn { items, .. } => library.items.extend(items.iter().cloned()),
             Change::Delete { original, removing }
             | Change::MoveOut {
                 original, removing, ..
@@ -1859,7 +1860,7 @@ impl Change {
     }
 }
 
-/// The file name of `path`, as commit messages name a move's other file.
+/// The file name of `path`, to name a file that is no longer open.
 fn file_name_of(path: &Path) -> String {
     path.file_name().map_or_else(
         || path.display().to_string(),
