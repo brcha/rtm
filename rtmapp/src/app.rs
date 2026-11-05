@@ -12,6 +12,7 @@ use todotxt::{TodoItem, TodoLibrary};
 use crate::config::{self, AppConfig};
 use crate::edit::{self, EditForm, Outcome};
 use crate::list::{self, RowAction};
+use crate::settings::{self, SettingsForm};
 use crate::sync::{self, Done, Found, Place, Question, Repo, RepoKey, Worker};
 use crate::theme::{self, Palette};
 
@@ -21,6 +22,16 @@ const SAVE_TIMEOUT: Duration = Duration::from_secs(125);
 
 /// What to do with the path a file dialog returned: `App::open_file` or `App::create_file`.
 type OnPath = fn(&mut App, &Path);
+
+/// The menu's shortcuts (RTM-134); `COMMAND` is Cmd on macOS and Ctrl elsewhere.
+const NEW_FILE: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::N);
+const LOAD_FILE: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O);
+const SETTINGS: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Comma);
+const QUIT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Q);
 
 pub struct App {
     config: AppConfig,
@@ -36,6 +47,10 @@ pub struct App {
     new_item: String,
     /// The open edit dialog, if any.
     editing: Option<EditForm>,
+    /// The open Settings dialog, if any.
+    settings: Option<SettingsForm>,
+    /// Settings changed `sync`: reconnect once no job is outstanding (`reconnect_when_idle`).
+    reconnect: bool,
     /// The repositories the open files sync through (RTM-64), one worker each (RTM-126).
     repos: Vec<RepoSync>,
     /// The open file dialog: its result, and what to do with a chosen path.
@@ -122,6 +137,8 @@ impl App {
             error: None,
             new_item: String::new(),
             editing: None,
+            settings: None,
+            reconnect: false,
             repos: Vec::new(),
             dialog: None,
             ctx: cc.egui_ctx.clone(),
@@ -619,6 +636,68 @@ impl App {
             .map(|e| format!("Could not save the config: {e}"));
     }
 
+    /// Saves the Settings dialog's fields. A new interval takes effect at once (`tick` reads it);
+    /// a change of `sync` reconnects once no repository has a job outstanding.
+    fn save_settings(&mut self) {
+        let Some(form) = self.settings.take() else {
+            return;
+        };
+        let sync = self.config.sync;
+        form.apply(&mut self.config);
+        self.save_config();
+        if self.config.sync != sync {
+            self.reconnect = true;
+        }
+    }
+
+    /// Starts or stops sync after Settings changed `sync`, once no job is outstanding: a running
+    /// job's result (a pull that changed the file, a conflict) must not be lost, and the pending
+    /// changes have been written by then.
+    fn reconnect_when_idle(&mut self) {
+        if self.reconnect && !self.busy() {
+            self.reconnect = false;
+            self.connect();
+        }
+    }
+
+    /// Whether a modal is open; the menu's shortcuts are inactive then.
+    fn modal_open(&self) -> bool {
+        let file = self.file();
+        self.editing.is_some()
+            || self.settings.is_some()
+            || file.choose_vcs.is_some()
+            || file.asking.is_some()
+    }
+
+    /// The menu entry the header's menu or a shortcut chose.
+    fn menu_action(&mut self, action: MenuAction, ctx: &egui::Context, frame: &eframe::Frame) {
+        match action {
+            MenuAction::NewFile => self.new_file(frame),
+            MenuAction::LoadFile => self.pick_file(frame),
+            MenuAction::Settings => self.settings = Some(SettingsForm::new(&self.config)),
+            // Through the normal close, so `on_exit` writes, commits and syncs.
+            MenuAction::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        }
+    }
+
+    /// The menu entry whose shortcut was pressed, unless a modal is open.
+    fn shortcut(&self, ctx: &egui::Context) -> Option<MenuAction> {
+        if self.modal_open() {
+            return None;
+        }
+        ctx.input_mut(|i| {
+            [
+                (NEW_FILE, MenuAction::NewFile),
+                (LOAD_FILE, MenuAction::LoadFile),
+                (SETTINGS, MenuAction::Settings),
+                (QUIT, MenuAction::Quit),
+            ]
+            .into_iter()
+            .find(|(shortcut, _)| i.consume_shortcut(shortcut))
+            .map(|(_, action)| action)
+        })
+    }
+
     /// The four view settings. A change is saved at once, as in the Tauri app.
     fn filters(&mut self, ui: &mut Ui, p: &Palette) {
         let mut changed = false;
@@ -651,24 +730,8 @@ impl App {
         }
     }
 
-    fn sidebar(&mut self, ui: &mut Ui, p: &Palette, frame: &eframe::Frame) {
+    fn sidebar(&mut self, ui: &mut Ui, p: &Palette) {
         ui.spacing_mut().item_spacing.y = 16.0;
-        let busy = self.busy() || self.dialog.is_some();
-        let (new, load) = ui
-            .add_enabled_ui(!busy, |ui| {
-                ui.horizontal(|ui| {
-                    let new = theme::secondary_button(ui, "New File").clicked();
-                    (new, theme::primary_button(ui, "Load File").clicked())
-                })
-                .inner
-            })
-            .inner;
-        if new {
-            self.new_file(frame);
-        }
-        if load {
-            self.pick_file(frame);
-        }
         Frame::new()
             .fill(p.info_bg)
             .corner_radius(6.0)
@@ -841,8 +904,8 @@ impl App {
                     empty_state(
                         ui,
                         p,
-                        "No file loaded. Use 'New File' to create a todo.txt file, or 'Load File' \
-                         to select one.",
+                        "No file loaded. Use New File or Load File in the menu at the left of the \
+                         title bar to create or select a todo.txt file.",
                     );
                     return None;
                 };
@@ -1054,6 +1117,7 @@ impl eframe::App for App {
     /// Runs before each `ui`, and also while the window is hidden (when a repaint was requested).
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.sync_results();
+        self.reconnect_when_idle();
         self.dialog_result();
         self.tick(Instant::now());
     }
@@ -1076,12 +1140,19 @@ impl eframe::App for App {
             .collect();
         let sync_button =
             (!remotes.is_empty()).then(|| !remotes.iter().all(|worker| worker.syncing()));
-        let sync_clicked = egui::Panel::top("header")
+        // New File and Load File: disabled during any job and while a file dialog is open.
+        let files_enabled = !self.busy() && self.dialog.is_none();
+        let clicked = egui::Panel::top("header")
             .frame(Frame::NONE)
-            .show(ui, |ui| header(ui, p, status.as_deref(), sync_button))
+            .show(ui, |ui| {
+                header(ui, p, status.as_deref(), sync_button, files_enabled)
+            })
             .inner;
-        if sync_clicked {
-            self.sync_now(Instant::now());
+        let ctx = ui.ctx().clone();
+        match clicked.or_else(|| self.shortcut(&ctx).map(HeaderAction::Menu)) {
+            Some(HeaderAction::Sync) => self.sync_now(Instant::now()),
+            Some(HeaderAction::Menu(action)) => self.menu_action(action, &ctx, frame),
+            None => {}
         }
         egui::Panel::left("sidebar")
             .exact_size(220.0)
@@ -1089,7 +1160,7 @@ impl eframe::App for App {
             .show_separator_line(false)
             .frame(Frame::new().fill(p.panel).inner_margin(16.0))
             .show(ui, |ui| {
-                self.sidebar(ui, p, frame);
+                self.sidebar(ui, p);
                 // Right border, drawn on the outer edge of the panel's margin.
                 let edge = ui.max_rect().expand(16.0);
                 ui.painter().vline(
@@ -1115,6 +1186,13 @@ impl eframe::App for App {
                 Some(Outcome::Cancel) => self.close_editor(),
                 Some(Outcome::AskDelete) => self.ask_delete(),
                 Some(Outcome::Delete) => self.delete_item(),
+                None => {}
+            }
+        }
+        if let Some(form) = &mut self.settings {
+            match settings::show(ui.ctx(), p, form) {
+                Some(settings::Outcome::Save) => self.save_settings(),
+                Some(settings::Outcome::Cancel) => self.settings = None,
                 None => {}
             }
         }
@@ -1216,10 +1294,31 @@ fn load_library(path: &Path) -> Result<TodoLibrary, String> {
     Ok(library)
 }
 
-/// The title bar, with the sync status and, when `sync_button` is set, a Sync now button enabled
-/// as it says. Returns whether the button was clicked.
-fn header(ui: &mut Ui, p: &Palette, status: Option<&str>, sync_button: Option<bool>) -> bool {
-    let mut clicked = false;
+/// What was clicked in the title bar.
+enum HeaderAction {
+    Sync,
+    Menu(MenuAction),
+}
+
+/// The entries of the title bar's menu (RTM-134), also reached by their shortcuts.
+#[derive(Clone, Copy)]
+enum MenuAction {
+    NewFile,
+    LoadFile,
+    Settings,
+    Quit,
+}
+
+/// The title bar: the menu, the title, the sync status and, when `sync_button` is set, a Sync now
+/// button enabled as it says. `files_enabled` enables the menu's New File and Load File.
+fn header(
+    ui: &mut Ui,
+    p: &Palette,
+    status: Option<&str>,
+    sync_button: Option<bool>,
+    files_enabled: bool,
+) -> Option<HeaderAction> {
+    let mut clicked = None;
     Frame::new()
         .fill(p.header)
         .inner_margin(Margin::symmetric(20, 12))
@@ -1228,6 +1327,9 @@ fn header(ui: &mut Ui, p: &Palette, status: Option<&str>, sync_button: Option<bo
             // CSS: h1 is 1.25rem with a 1.5 line height.
             ui.set_min_height(26.25);
             ui.horizontal(|ui| {
+                if let Some(action) = menu(ui, files_enabled) {
+                    clicked = Some(HeaderAction::Menu(action));
+                }
                 ui.label(
                     RichText::new("Rusty Todo.txt Manager")
                         .font(theme::bold(17.5))
@@ -1239,7 +1341,9 @@ fn header(ui: &mut Ui, p: &Palette, status: Option<&str>, sync_button: Option<bo
                             RichText::new("Sync now").size(12.6).color(Color32::WHITE),
                         )
                         .frame(false);
-                        clicked = ui.add_enabled(enabled, button).clicked();
+                        if ui.add_enabled(enabled, button).clicked() {
+                            clicked = Some(HeaderAction::Sync);
+                        }
                     }
                     if let Some(status) = status {
                         // git's errors run to several lines; the first fits, the rest on hover.
@@ -1251,6 +1355,47 @@ fn header(ui: &mut Ui, p: &Palette, status: Option<&str>, sync_button: Option<bo
             });
         });
     clicked
+}
+
+/// The menu button and its popup: New File, Load File, Settings and Quit, with their shortcuts.
+fn menu(ui: &mut Ui, files_enabled: bool) -> Option<MenuAction> {
+    let button = theme::menu_button(ui);
+    let mut chosen = None;
+    egui::Popup::menu(&button).show(|ui| {
+        let mut entry = |ui: &mut Ui, enabled: bool, text: &str, shortcut, action| {
+            let button = egui::Button::new(text).shortcut_text(shortcut_text(ui.ctx(), shortcut));
+            if ui.add_enabled(enabled, button).clicked() {
+                chosen = Some(action);
+            }
+        };
+        entry(
+            ui,
+            files_enabled,
+            "New File…",
+            &NEW_FILE,
+            MenuAction::NewFile,
+        );
+        entry(
+            ui,
+            files_enabled,
+            "Load File…",
+            &LOAD_FILE,
+            MenuAction::LoadFile,
+        );
+        ui.separator();
+        entry(ui, true, "Settings…", &SETTINGS, MenuAction::Settings);
+        ui.separator();
+        entry(ui, true, "Quit", &QUIT, MenuAction::Quit);
+    });
+    chosen
+}
+
+/// `shortcut` as the menu shows it. egui spells out a key after modifier names ("Ctrl+Comma");
+/// its symbol reads better ("Ctrl+,").
+fn shortcut_text(ctx: &egui::Context, shortcut: &egui::KeyboardShortcut) -> String {
+    let key = shortcut.logical_key;
+    ctx.format_shortcut(shortcut)
+        .replace(key.name(), key.symbol_or_name())
 }
 
 fn empty_state(ui: &mut Ui, p: &Palette, text: &str) {
@@ -1275,6 +1420,10 @@ mod edit_tests;
 #[cfg(test)]
 #[path = "tests/app_sync_tests.rs"]
 mod sync_tests;
+
+#[cfg(test)]
+#[path = "tests/app_settings_tests.rs"]
+mod settings_tests;
 
 #[cfg(test)]
 #[path = "tests/app_ui_tests.rs"]

@@ -775,3 +775,70 @@ fn a_change_during_the_check_of_an_untracked_file_is_written_but_not_committed()
     assert_eq!(git(&dir.join("a"), &["ls-files", "other.txt"]), "");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Turning sync on or off in Settings (RTM-134).
+
+/// Saves the Settings dialog with `sync` changed to `on`.
+fn set_sync(app: &mut App, on: bool) {
+    app.settings = Some(SettingsForm::new(&app.config));
+    app.settings.as_mut().unwrap().sync = on;
+    app.save_settings();
+}
+
+#[test]
+fn turning_sync_off_stops_the_worker_once_it_is_idle() {
+    let dir = remote_and_clones("settings sync off", "Alpha\n");
+    let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+    set_sync(&mut app, false);
+    app.reconnect_when_idle();
+    assert!(worker(&app).is_none());
+    assert!(!app.reconnect);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn turning_sync_off_waits_for_the_running_job() {
+    let dir = remote_and_clones("settings sync busy", "Alpha\n");
+    let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+    sync(&mut app);
+    set_sync(&mut app, false);
+    // Outstanding until its result is picked up, however fast the job itself is.
+    app.reconnect_when_idle();
+    assert!(worker(&app).is_some());
+    wait(&mut app);
+    app.reconnect_when_idle();
+    assert!(worker(&app).is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn turning_sync_on_starts_the_worker() {
+    let dir = remote_and_clones("settings sync on", "Alpha\n");
+    let mut app = bare_app(&dir, Some(load_library(&dir.join("a/todo.txt")).unwrap()));
+    app.config.sync = false;
+    app.connect();
+    assert!(worker(&app).is_none());
+    set_sync(&mut app, true);
+    app.reconnect_when_idle();
+    assert!(worker(&app).is_some());
+    // The remote is known once the check on open has run on the worker.
+    wait(&mut app);
+    assert!(worker(&app).is_some_and(Worker::has_remote));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_new_interval_keeps_the_worker() {
+    let dir = remote_and_clones("settings interval", "Alpha\n");
+    let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+    let last_sync = app.repos.first().unwrap().last_sync;
+    app.settings = Some(SettingsForm::new(&app.config));
+    app.settings.as_mut().unwrap().interval = 1;
+    app.save_settings();
+    assert!(!app.reconnect);
+    app.reconnect_when_idle();
+    assert!(worker(&app).is_some());
+    assert_eq!(app.repos.first().unwrap().last_sync, last_sync);
+    assert_eq!(app.config.sync_interval_minutes, 1);
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -1,7 +1,7 @@
 //! The app driven headless through its AccessKit tree with egui_kittest: real clicks and typing,
 //! then the todo.txt and config on disk are checked.
 
-use egui::{Key, accesskit::Role};
+use egui::{Key, Modifiers, accesskit::Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 
@@ -155,7 +155,7 @@ fn the_app_line_and_the_file_line_are_both_shown() {
 fn a_file_chosen_in_the_dialog_opens_and_is_saved_in_the_config() {
     let dir = temp_dir("ui-open");
     let mut harness = harness(&dir, "", |config| config.file_name = None);
-    harness.get_by_label_contains("No file loaded. Use 'New File'");
+    harness.get_by_label_contains("No file loaded. Use New File or Load File");
 
     let chosen = dir.join("sub").join("chosen.txt");
     std::fs::write(&chosen, "From the dialog\n").unwrap();
@@ -325,6 +325,165 @@ fn the_filter_and_sort_toggles_change_the_list_and_are_saved() {
     assert_eq!(
         std::fs::read_to_string(dir.join("todo.txt")).unwrap(),
         contents
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// The menu and the Settings dialog (RTM-134).
+
+/// Opens the title bar's menu.
+fn open_menu(harness: &mut Harness<'_, App>) {
+    harness.get_by_label("Menu").click();
+    harness.run();
+}
+
+/// The menu entry named `name`. Its accessible name ends in the shortcut, which differs between
+/// macOS and the others, so only the start is matched.
+fn entry<'h>(harness: &'h Harness<'_, App>, name: &'static str) -> egui_kittest::Node<'h> {
+    harness.get_by(move |node| {
+        node.role() == Role::Button && node.label().is_some_and(|label| label.starts_with(name))
+    })
+}
+
+#[test]
+fn the_menu_has_the_file_entries_settings_and_quit() {
+    let dir = temp_dir("ui-menu");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    // The sidebar no longer has the file buttons.
+    assert!(harness.query_by_label("New File").is_none());
+    assert!(harness.query_by_label("Load File").is_none());
+
+    open_menu(&mut harness);
+    for name in ["New File…", "Load File…", "Settings…", "Quit"] {
+        assert!(
+            !self::entry(&harness, name).accesskit_node().is_disabled(),
+            "{name}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_file_entries_are_disabled_while_a_file_dialog_is_open() {
+    let dir = temp_dir("ui-menu-dialog");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    // A dialog that has not returned yet.
+    let (_send, receive) = mpsc::channel();
+    harness.state_mut().dialog = Some((receive, App::open_file));
+    open_menu(&mut harness);
+    for name in ["New File…", "Load File…"] {
+        assert!(
+            self::entry(&harness, name).accesskit_node().is_disabled(),
+            "{name}"
+        );
+    }
+    assert!(!entry(&harness, "Settings…").accesskit_node().is_disabled());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn settings_saves_sync_and_the_interval() {
+    let dir = temp_dir("ui-settings");
+    let mut harness = harness(&dir, "Alpha\n", |config| config.sync = true);
+    open_menu(&mut harness);
+    entry(&harness, "Settings…").click();
+    harness.run();
+
+    let interval = harness.get_by_label("Sync every");
+    interval.focus();
+    harness.run();
+    harness.key_combination_modifiers(Modifiers::COMMAND, &[Key::A]);
+    harness.get_by_label("Sync every").type_text("25");
+    harness.key_press(Key::Enter);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Sync through the file's repository")
+        .click();
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+
+    assert!(harness.query_by_label("Settings").is_none());
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert!(!config.sync);
+    assert_eq!(config.sync_interval_minutes, 25);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn cancel_and_escape_leave_the_config_alone() {
+    let dir = temp_dir("ui-settings-cancel");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    let before = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    for close in [None, Some(Key::Escape)] {
+        open_menu(&mut harness);
+        entry(&harness, "Settings…").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::CheckBox, "Sync through the file's repository")
+            .click();
+        harness.run();
+        match close {
+            None => harness.get_by_label("Cancel").click(),
+            Some(key) => harness.key_press(key),
+        }
+        harness.run();
+        assert!(harness.state().settings.is_none());
+    }
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.toml")).unwrap(),
+        before
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_interval_above_the_field_range_survives_a_save() {
+    let dir = temp_dir("ui-settings-long");
+    let mut harness = harness(&dir, "Alpha\n", |config| {
+        config.sync_interval_minutes = 2880;
+    });
+    open_menu(&mut harness);
+    entry(&harness, "Settings…").click();
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert_eq!(config.sync_interval_minutes, 2880);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_settings_shortcut_opens_settings_but_not_over_the_edit_dialog() {
+    let dir = temp_dir("ui-settings-shortcut");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    assert!(harness.state().settings.is_some());
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(harness.state().settings.is_none());
+
+    harness.state_mut().open_editor(0);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    assert!(harness.state().settings.is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn quit_closes_the_window_through_the_normal_close() {
+    let dir = temp_dir("ui-quit");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    open_menu(&mut harness);
+    entry(&harness, "Quit").click();
+    // The frame that handles the click sends the command.
+    harness.step();
+    let commands = &harness.output().viewport_output[&egui::ViewportId::ROOT].commands;
+    assert!(
+        commands.contains(&egui::ViewportCommand::Close),
+        "{commands:?}"
     );
     let _ = std::fs::remove_dir_all(dir);
 }
