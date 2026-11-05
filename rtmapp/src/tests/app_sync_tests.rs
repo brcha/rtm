@@ -393,7 +393,8 @@ fn outside_changes_are_committed_and_pushed_when_the_user_says_yes() {
     let dir = remote_and_clones("ask modified yes", "Alpha\n");
     std::fs::write(dir.join("a/todo.txt"), "Alpha\nBy hand\n").unwrap();
     let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
-    assert!(worker(&app).is_none());
+    // Nothing is committed before the answer.
+    assert_eq!(subjects(&dir.join("a"), 1), "start");
     assert!(matches!(app.file().asking, Some((_, Question::Modified))));
 
     app.answer(true);
@@ -457,6 +458,7 @@ fn an_untracked_file_opens_without_sync_when_the_user_says_no() {
 
     // Asked again the next time the file opens.
     app.connect();
+    wait(&mut app);
     assert!(matches!(app.file().asking, Some((_, Question::Untracked))));
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -496,8 +498,10 @@ fn a_new_file_in_a_repository_is_asked_about_and_added() {
     let mut app = bare_app(&dir, None);
 
     app.create_file(&dir.join("a/new.txt"));
+    wait(&mut app);
 
-    assert!(app.file().library.is_some() && worker(&app).is_none());
+    assert!(app.file().library.is_some());
+    assert_eq!(subjects(&dir.join("a"), 1), "start");
     assert!(matches!(app.file().asking, Some((_, Question::Untracked))));
     app.answer(true);
     wait(&mut app);
@@ -510,8 +514,14 @@ fn a_new_file_in_a_repository_is_asked_about_and_added() {
 fn a_missing_tracked_file_is_never_asked_about() {
     let dir = remote_and_clones("ask missing", "Alpha\n");
     std::fs::remove_file(dir.join("a/todo.txt")).unwrap();
-    let found = sync::find(&dir.join("a/todo.txt"), &AppConfig::default());
-    assert!(matches!(found, Found::Repo(_)));
+    let file = dir.join("a/todo.txt");
+    let Place::Repo(key) = sync::place(&file, &AppConfig::default()) else {
+        panic!("the file is in a repository");
+    };
+    assert!(matches!(
+        sync::check(key.vcs, key.root, &file),
+        Found::Repo(_)
+    ));
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -692,4 +702,76 @@ fn a_conflict_closes_only_the_files_of_its_repository() {
     );
     let _ = std::fs::remove_dir_all(one);
     let _ = std::fs::remove_dir_all(two);
+}
+
+// The check on open runs on the repository's worker (RTM-126).
+
+#[test]
+fn a_change_made_during_the_check_on_open_waits_for_it() {
+    let dir = remote_and_clones("check holds changes", "Alpha\n");
+    let mut app = bare_app(&dir, Some(load_library(&dir.join("a/todo.txt")).unwrap()));
+    app.connect();
+    assert!(app.file().checking);
+
+    // The check's result is handled only by `sync_results`, so it is still running here.
+    app.new_item = "Call mom".to_owned();
+    app.add_item();
+    assert_eq!(file_lines(&dir.join("a")), ["Alpha"]);
+
+    wait(&mut app);
+    assert!(!app.file().checking);
+    let lines = file_lines(&dir.join("a"));
+    assert!(
+        lines.last().is_some_and(|l| l.ends_with("Call mom")),
+        "{lines:?}"
+    );
+    assert_eq!(subjects(&dir.join("a"), 1), "rtm: add Call mom");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_file_joining_after_a_sync_was_queued_reads_what_it_pulled() {
+    let dir = remote_and_clones("check rereads", "Alpha\n");
+    add_work_file(&dir, "Report\n");
+    let mut app = app_on(&dir, &[dir.join("a/todo.txt")]);
+    std::fs::write(dir.join("b/work.txt"), "Report\nFrom b\n").unwrap();
+    git(&dir.join("b"), &["commit", "--quiet", "-am", "work from b"]);
+    git(&dir.join("b"), &["push", "--quiet"]);
+
+    // A sync listing only todo.txt, then work.txt opens: its check waits behind that sync.
+    sync(&mut app);
+    app.files.push(OpenFile {
+        library: Some(load_library(&dir.join("a/work.txt")).unwrap()),
+        ..OpenFile::default()
+    });
+    app.active = 1;
+    app.connect();
+    app.new_item = "Mine".to_owned();
+    app.add_item();
+    wait(&mut app);
+
+    let work = app.file().library.as_ref().unwrap();
+    let items: Vec<_> = work.items.iter().map(|i| i.description.as_str()).collect();
+    assert_eq!(items, ["Report", "From b", "Mine"]);
+    let on_disk = std::fs::read_to_string(dir.join("a/work.txt")).unwrap();
+    assert!(on_disk.starts_with("Report\nFrom b\n"), "{on_disk}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_change_during_the_check_of_an_untracked_file_is_written_but_not_committed() {
+    let dir = remote_and_clones("check untracked change", "Alpha\n");
+    std::fs::write(dir.join("a/other.txt"), "Other\n").unwrap();
+    let mut app = bare_app(&dir, Some(load_library(&dir.join("a/other.txt")).unwrap()));
+    app.connect();
+    app.new_item = "Call mom".to_owned();
+    app.add_item();
+    wait(&mut app);
+
+    assert!(matches!(app.file().asking, Some((_, Question::Untracked))));
+    let on_disk = std::fs::read_to_string(dir.join("a/other.txt")).unwrap();
+    assert!(on_disk.contains("Call mom"), "{on_disk}");
+    assert_eq!(subjects(&dir.join("a"), 1), "start");
+    assert_eq!(git(&dir.join("a"), &["ls-files", "other.txt"]), "");
+    let _ = std::fs::remove_dir_all(dir);
 }

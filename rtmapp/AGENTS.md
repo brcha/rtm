@@ -16,7 +16,8 @@ AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and 
 through Git or Pijul (RTM-64), in the background since RTM-20, with the check for a dirty or
 untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do not block the UI
 (RTM-65); UI tests with `egui_kittest` (RTM-86); the list of files in the config (RTM-124) and the
-per-file state with its own error line (RTM-125), the first steps to several open files (RTM-66).
+per-file state with its own error line (RTM-125) and sync with one worker per repository, the
+check on open included (RTM-126), the first steps to several open files (RTM-66).
 
 ---
 
@@ -168,14 +169,23 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   Tauri app did, so no console window opens behind the GUI. The window opens centred at 900 × 650.
   Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
   uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
-- **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::find`): `sync = false`,
+- **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::place`, then `sync::check`): `sync = false`,
   no repository or an ignored file → no sync and no commits; both Git and Pijul → the Git-or-Pijul
   dialog (or "Don't sync", which asks again next time); a conflicted repository (`is_conflicted`) →
   the file is not opened and the file's error line says to resolve it by hand; a failed check (e.g. `git`
   missing) → "Not syncing: …" in the header; no remote → commit only.
-  - **The check on open (RTM-70)**, the RTM-57 table in `rtmsync/AGENTS.md`: `find` reads
-    `Vcs::state` and returns `Found::Ask(repo, question)` for a modified or untracked file; no worker
-    starts until `App::answer`. A modal (`sync_question`) asks. Modified: "Commit them" commits `rtm:
+  - **The check on open (RTM-70)**, the RTM-57 table in `rtmsync/AGENTS.md`, in two parts since
+    RTM-126. `place` runs no executables and stays on the UI thread: sync off or no repository →
+    no sync, both VCSs and no choice for the file → the Git-or-Pijul question, otherwise the
+    repository's directory and VCS. The file is then assigned to that repository (so its syncs list
+    it) and `check` runs as a `Check` job on the repository's worker, so it never meets a pull of
+    the same repository half-way and never blocks the window. Until its `Checked` result arrives the
+    file is `checking`: the header shows "Checking…", and changes stay in `pending`, unwritten, as a
+    write would look like an outside change. A sync queued before the file joined did not list it,
+    so the file is read again when the result arrives (`OpenFile::reload`, redoing its pending
+    changes). `check` reads `Vcs::state` and returns `Found::Ask(repo, question)` for a modified or
+    untracked file; nothing is committed until `App::answer`, and a change made meanwhile is written
+    but not committed. A modal (`sync_question`) asks. Modified: "Commit them" commits `rtm:
     commit outside changes` and syncs, "Don't open" closes the file with a "commit or revert by hand"
     error. Untracked: "Add it" commits `rtm: track <name>` (which adds it) and syncs, "Not now" opens
     it without sync, asked again next time. An untracked file in a conflicted repository opens
@@ -188,9 +198,10 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     job (`Done`), and `ctx.request_repaint()` after each, so results arrive without input. At most
     one `Sync` waits in the queue. A repository is keyed by its directory (`rtmsync::root`) and
     VCS: the Git-or-Pijul choice is per file (RTM-124), so two files in a directory holding both
-    may need two workers. A file joins its repository's worker once its check on open passes (a
-    worker starts for the first file of a repository) and leaves when another file replaces it or
-    its repository has a conflict; a repository no file uses any more stops.
+    may need two workers. A file is assigned to its repository when it opens (a worker starts for
+    the first file of a repository, its remote recorded by the first check that finds one) and
+    leaves when another file replaces it, its repository has a conflict, or its check or answer
+    means no sync; a repository no file uses any more stops.
   - **When it syncs:** after a file is opened (after the answer, when the check on open asks), every
     `sync_interval_minutes` since that repository's last sync was asked for, on the header's **Sync
     now** button (shown when a repository has a remote, disabled while all of those sync; it syncs

@@ -7,13 +7,12 @@ use eframe::egui::{
     self, Align, Color32, Frame, Layout, Margin, RichText, Stroke, Ui,
     text::{LayoutJob, TextFormat},
 };
-use rtmsync::Vcs;
 use todotxt::{TodoItem, TodoLibrary};
 
 use crate::config::{self, AppConfig};
 use crate::edit::{self, EditForm, Outcome};
 use crate::list::{self, RowAction};
-use crate::sync::{self, Done, Found, Question, Repo, Worker};
+use crate::sync::{self, Done, Found, Place, Question, Repo, RepoKey, Worker};
 use crate::theme::{self, Palette};
 
 /// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
@@ -44,10 +43,6 @@ pub struct App {
     ctx: egui::Context,
 }
 
-/// A repository's directory and VCS: one worker each, as two files in a directory holding both
-/// may choose differently.
-type RepoKey = (PathBuf, Vcs);
-
 /// One repository's sync: the worker that runs all its git or pijul calls, for every open file
 /// in it.
 struct RepoSync {
@@ -67,6 +62,8 @@ struct OpenFile {
     repo: Option<RepoKey>,
     /// Why it does not sync, for the header: a check that failed (for example `git` missing).
     not_syncing: Option<String>,
+    /// Its check on open is running on the repository's worker; its changes wait for it.
+    checking: bool,
     /// The file line, below the app's: what happened to this file (a failed load at startup, a
     /// conflict, outside changes, a failed write, commit or reload, changes a pull dropped). Shown
     /// until the next successful change or until a file is opened in its place.
@@ -148,17 +145,47 @@ impl App {
         self.repos.iter().find(|repo| &repo.key == key)
     }
 
-    /// Starts sync for the shown file, if it syncs, and syncs its repository once. A file it
-    /// replaced has left its repository first.
+    /// Starts sync for the shown file: its check on open runs on the repository's worker, and the
+    /// file syncs once that passes (`checked`). A file it replaced has left its repository first.
     fn connect(&mut self) {
         let Some(file) = self.files.get_mut(self.active) else {
             return;
         };
-        let joined = file.connect(&mut self.repos, &self.config, &self.ctx);
+        file.connect(&mut self.repos, &self.config, &self.ctx);
         self.prune();
-        if let Some(key) = joined {
-            self.sync_repo(&key, Instant::now());
+    }
+
+    /// The result of the check on open of the open file at `path`.
+    fn checked(&mut self, path: &Path, found: Found) {
+        let Some(file) = self
+            .files
+            .iter_mut()
+            .find(|file| file.checking && file.is(path))
+        else {
+            return;
+        };
+        file.checking = false;
+        match found {
+            Found::Repo(repo) => {
+                // A sync queued before the file joined did not list it; read what it pulled.
+                file.reload(self.editing.as_mut());
+                if let Some(joined) = find_repo(&mut self.repos, file.repo.as_ref()) {
+                    joined.worker.found_remote(repo.remote());
+                }
+                self.sync_repo(&repo.key(), Instant::now());
+            }
+            Found::Ask(repo, question) => {
+                file.reload(self.editing.as_mut());
+                file.asking = Some((repo, question));
+            }
+            Found::NoSync => file.repo = None,
+            Found::Conflicted => file.close_conflicted(),
+            Found::Unavailable(e) => {
+                file.repo = None;
+                file.not_syncing = Some(format!("Not syncing: {e}"));
+            }
         }
+        self.prune();
         if self.file().library.is_none() {
             // A conflicted repository closed the file.
             self.close_editor();
@@ -195,16 +222,21 @@ impl App {
         if yes {
             let message = repo.commit_message(question);
             let path = file.path();
-            if let Some(joined) = join(&mut self.repos, file, &repo, &self.ctx)
-                && let Some(path) = path
-            {
-                joined.worker.commit(path, message);
+            if let Some(joined) = find_repo(&mut self.repos, file.repo.as_ref()) {
+                joined.worker.found_remote(repo.remote());
+                if let Some(path) = path {
+                    joined.worker.commit(path, message);
+                }
             }
             self.sync_repo(&repo.key(), Instant::now());
         } else if question == Question::Modified {
             file.close_modified();
             self.close_editor();
+        } else {
+            // Opened without sync, asked again next time.
+            file.repo = None;
         }
+        self.prune();
     }
 
     /// Whether any repository has a job outstanding: New File and Load File wait for it.
@@ -296,6 +328,7 @@ impl App {
             return;
         };
         match done {
+            Done::Checked { file, found } => self.checked(&file, found),
             Done::Committed => {}
             Done::Synced { changed } => {
                 repo.status = None;
@@ -846,25 +879,21 @@ fn find_repo<'a>(repos: &'a mut [RepoSync], key: Option<&RepoKey>) -> Option<&'a
     repos.iter_mut().find(|repo| &repo.key == key)
 }
 
-/// Puts `file` into `repo`'s sync, starting a worker for the repository when no open file uses it
-/// yet, and returns that repository's sync.
-fn join<'a>(
+/// The sync of repository `key`, started with a worker when no open file uses it yet.
+fn ensure_repo<'a>(
     repos: &'a mut Vec<RepoSync>,
-    file: &mut OpenFile,
-    repo: &Repo,
+    key: &RepoKey,
     ctx: &egui::Context,
 ) -> Option<&'a mut RepoSync> {
-    let key = repo.key();
-    if !repos.iter().any(|known| known.key == key) {
+    if !repos.iter().any(|known| &known.key == key) {
         repos.push(RepoSync {
             key: key.clone(),
-            worker: Worker::start(repo, ctx.clone()),
+            worker: Worker::start(key.vcs, ctx.clone()),
             status: None,
             last_sync: Instant::now(),
         });
     }
-    file.repo = Some(key.clone());
-    find_repo(repos, Some(&key))
+    find_repo(repos, Some(key))
 }
 
 impl OpenFile {
@@ -882,38 +911,38 @@ impl OpenFile {
             .is_some_and(|library| Path::new(&library.file_name) == path)
     }
 
-    /// Runs the check on open and puts the file into its repository's sync when it passes.
-    /// Returns the repository joined, which the caller syncs once; the file has left any
+    /// Finds where the file syncs and, in a repository, assigns it there and queues its check on
+    /// open on the repository's worker, so syncs list it from now on. The file has left any
     /// repository it was in.
-    fn connect(
-        &mut self,
-        repos: &mut Vec<RepoSync>,
-        config: &AppConfig,
-        ctx: &egui::Context,
-    ) -> Option<RepoKey> {
+    fn connect(&mut self, repos: &mut Vec<RepoSync>, config: &AppConfig, ctx: &egui::Context) {
         self.repo = None;
         self.not_syncing = None;
         self.choose_vcs = None;
         self.asking = None;
-        let library = self.library.as_ref()?;
-        match sync::find(Path::new(&library.file_name), config) {
-            Found::NoSync => {}
-            Found::Repo(repo) => {
-                join(repos, self, &repo, ctx);
-                return Some(repo.key());
+        self.checking = false;
+        let Some(path) = self.path() else {
+            return;
+        };
+        match sync::place(&path, config) {
+            Place::NoSync => {}
+            Place::Ambiguous(found) => self.choose_vcs = Some(found),
+            Place::Repo(key) => {
+                if let Some(repo) = ensure_repo(repos, &key, ctx) {
+                    repo.worker.check(key.root.clone(), path);
+                    self.repo = Some(key);
+                    self.checking = true;
+                }
             }
-            Found::Ask(repo, question) => self.asking = Some((repo, question)),
-            Found::Ambiguous(found) => self.choose_vcs = Some(found),
-            Found::Conflicted => self.close_conflicted(),
-            Found::Unavailable(e) => self.not_syncing = Some(format!("Not syncing: {e}")),
         }
-        None
     }
 
     /// Closes the file: its repository has conflicts, which a reload would read as items. Pending
     /// changes cannot be written into it. It stays among the open files, with the reason.
     fn close_conflicted(&mut self) {
         self.repo = None;
+        self.checking = false;
+        // A file waiting for the outside-changes answer is in the repository's syncs too.
+        self.asking = None;
         let file = self.library.take().map(|library| library.file_name);
         let lost = match std::mem::take(&mut self.pending).len() {
             0 => String::new(),
@@ -929,6 +958,7 @@ impl OpenFile {
 
     /// Closes the file after the user declined to commit its outside changes.
     fn close_modified(&mut self) {
+        self.repo = None;
         let file = self.library.take().map(|library| library.file_name);
         self.error = Some(format!(
             "{} has changes rtm did not commit; commit or revert them by hand, then load the file \
@@ -941,7 +971,11 @@ impl OpenFile {
     /// unless it has a job outstanding: it may be a pull about to change the file, and the changes
     /// are redone on what it brings.
     fn flush(&mut self, repo: Option<&mut RepoSync>) {
-        if self.pending.is_empty() || repo.as_ref().is_some_and(|repo| repo.worker.busy()) {
+        // During the check on open a write would look like an outside change.
+        if self.pending.is_empty()
+            || self.checking
+            || repo.as_ref().is_some_and(|repo| repo.worker.busy())
+        {
             return;
         }
         let Some(library) = &mut self.library else {
@@ -957,7 +991,9 @@ impl OpenFile {
             self.error = Some(format!("{}: {e}", library.file_name));
             return;
         }
-        if let Some(repo) = repo {
+        // While the outside-changes question is open, a commit would take those changes (or add
+        // the untracked file) before the user answers; the write alone keeps the edit.
+        if let Some(repo) = repo.filter(|_| self.asking.is_none()) {
             let path = PathBuf::from(&library.file_name);
             repo.worker.commit(path, commit_message(&changes));
         }
@@ -1026,6 +1062,7 @@ impl eframe::App for App {
         let p = theme::palette(ui);
         // The status of the shown file's repository, or why the file does not sync.
         let status = match self.repo_of(self.file()) {
+            _ if self.file().checking => Some("Checking…".to_owned()),
             Some(repo) if repo.worker.syncing() => Some("Syncing…".to_owned()),
             Some(repo) => repo.status.clone(),
             None => self.file().not_syncing.clone(),
