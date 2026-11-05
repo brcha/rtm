@@ -1,0 +1,12 @@
+{#- The release metadata for the update check of rtmcli and rtmapp (RTM-130), served as
+    /releases.json: every release post, newest first, including betas and patches on older lines.
+    `version` is the post's file name, `channel` its [extra] channel ("stable" when unset), `url`
+    the post, which opens with that release's downloads. Clients ignore fields and channels they do
+    not know; `schema` changes only for an incompatible change. Written by the site build from
+    content/news; never edited by hand. -#}
+{%- import "macros.html" as downloads -%}
+{"schema": 1, "releases": [
+{%- for post in pages | filter(attribute="components.0", value="news") %}
+  {"version": {{ downloads::release_version(post=post) | trim | json_encode | safe }}, "channel": {{ post.extra.channel | default(value="stable") | json_encode | safe }}, "date": {{ post.date | date(format="%Y-%m-%d") | json_encode | safe }}, "url": {{ post.permalink | json_encode | safe }}}{% if not loop.last %},{% endif %}
+{%- endfor %}
+]}

@@ -36,13 +36,13 @@ jobs:
 
     - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
 
-    # zola and lychee from the pinned nixpkgs, without the rest of the dev shell.
+    # zola, lychee and jq from the pinned nixpkgs, without the rest of the dev shell.
     - name: Build the site and check its links
-      run: nix shell --inputs-from . nixpkgs#zola nixpkgs#lychee -c scripts/site/check.sh
+      run: nix shell --inputs-from . nixpkgs#zola nixpkgs#lychee nixpkgs#jq -c scripts/site/check.sh
 
     - name: Check external links
       if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
       env:
         # Read by lychee, against GitHub's rate limits for github.com links.
         GITHUB_TOKEN: ${{ github.token }}
-      run: nix shell --inputs-from . nixpkgs#zola nixpkgs#lychee -c scripts/site/check.sh --external
+      run: nix shell --inputs-from . nixpkgs#zola nixpkgs#lychee nixpkgs#jq -c scripts/site/check.sh --external

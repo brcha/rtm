@@ -42,13 +42,13 @@
 
   A new required check needs the same shape: a gate job that always runs, not a path filter.
 - **Website (RTM-89):** `site.yml` builds the site and checks its links with
-  `scripts/site/check.sh`: Zola's check and build, then lychee over the built pages offline, with
-  the absolute `base_url` mapped to the built files, so broken templates, links, anchors and asset
-  references fail. It is not a required check, so its trigger filters by `paths` (the site, its
+  `scripts/site/check.sh`: Zola's check and build, the shape of `releases.json` (`jq`), then
+  lychee over the built pages and `releases.json` offline, with the absolute `base_url` mapped to
+  the built files, so broken templates, links, anchors and asset references fail. It is not a required check, so its trigger filters by `paths` (the site, its
   scripts, the workflow, `flake.lock`, and the screenshots and icons it copies); pull requests
   without site changes never see it. External links are checked only weekly and on manual
   dispatch (`check.sh --external`, with `GITHUB_TOKEN`), so a remote outage never blocks a merge.
-  Zola and lychee come from the pinned nixpkgs through `nix shell`, not the full dev shell.
+  Zola, lychee and jq come from the pinned nixpkgs through `nix shell`, not the full dev shell.
   Publishing is not CI's job: Vercel's Git integration builds and deploys the site from
   `vercel.json` (RTM-90, see `site/AGENTS.md`); its preview status on pull requests is not a
   required check.

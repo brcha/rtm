@@ -7,7 +7,7 @@
 {% block content %}
 {%- set version = downloads::release_version(post=page) | trim %}
 <article class="page">
-  <h1>{{ page.title }}</h1>
+  <h1>{{ page.title }}{% if page.extra.channel | default(value="stable") != "stable" %} <span class="badge">Beta</span>{% endif %}</h1>
   {% if page.date %}<p class="date"><time datetime="{{ page.date }}">{{ page.date | date(format="%Y-%m-%d") }}</time></p>{% endif %}
   <section class="release-downloads" aria-labelledby="release-downloads">
     <h2 id="release-downloads">Download rtm {{ version }}</h2>

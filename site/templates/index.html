@@ -3,10 +3,14 @@
 
 {% block content %}
 <section class="hero">
-  {#- The newest post in content/news, so publishing a release's post updates the notice. #}
+  {#- The newest stable post in content/news, so publishing a release's post updates the notice;
+      a beta's post does not. #}
   {%- set news = get_section(path="news/_index.md") %}
-  {%- if news.pages %}
-  {%- set latest = news.pages | first %}
+  {%- set_global latest = false %}
+  {%- for post in news.pages %}
+    {%- if post.extra.channel | default(value="stable") == "stable" %}{% set_global latest = post %}{% break %}{% endif %}
+  {%- endfor %}
+  {%- if latest %}
   <a class="release-notice" href="{{ latest.permalink }}">
     <span class="label">Latest release</span>
     <span><strong>{{ latest.title }}</strong>{% if latest.description %} — {{ latest.description }}{% endif %}
@@ -52,6 +56,7 @@
 <section class="download" id="download">
   {%- set version = downloads::latest_version() | trim %}
   <h2>Download</h2>
+  {#- scripts/site/check.sh reads the version from this sentence; keep "Version X. The desktop app". #}
   <p>Version {{ version }}. The desktop app is <code>rtmapp</code>, the command line <code>rtmcli</code>.</p>
   {{ downloads::platforms(version=version) }}
   <p class="more">
