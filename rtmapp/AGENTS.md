@@ -15,7 +15,8 @@ package and dev shells (RTM-37); the cut-over (RTM-39); the app icon (RTM-46); t
 AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and dmg (RTM-11); sync
 through Git or Pijul (RTM-64), in the background since RTM-20, with the check for a dirty or
 untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do not block the UI
-(RTM-65); UI tests with `egui_kittest` (RTM-86).
+(RTM-65); UI tests with `egui_kittest` (RTM-86); the list of files in the config (RTM-124) and the
+per-file state with its own error line (RTM-125), the first steps to several open files (RTM-66).
 
 ---
 
@@ -33,8 +34,9 @@ rtmapp/
 │   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
-    ├── app.rs              ← App state, panels, New File and Load File, filters, quick-add,
-    │                         complete/uncomplete, saving an edit, deleting
+    ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, New
+    │                         File and Load File, filters, quick-add, complete/uncomplete,
+    │                         saving an edit, deleting
     ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
@@ -120,9 +122,20 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   is `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
   recurring item that has a due date) then `save`, then `load` once the save succeeded; delete is
   `remove_item` (which also removes the item's sub-items) then `save`. Errors go to
-  the error line above the list, not to a dialog; the quick-add input is cleared only after a
+  the error lines above the list, not to a dialog; the quick-add input is cleared only after a
   successful save. Every save rewrites the whole file, and recurrence goes through `Display`, so a
   count of 1 is written in its short form (`rec:+1m` becomes `rec:+m`); this is intended.
+- **Open files and error lines (RTM-125, epic RTM-66):** what belongs to one todo.txt lives in
+  `OpenFile` (its library, pending changes, the sync questions, the edit dialog's `edited`,
+  `deleting` and `stale`, and its error line); `App` holds `files` and the `active` index, one file
+  until tabs come (RTM-127). The worker, the sync status and the timer stay on `App` until sync
+  works per repository (RTM-126). Two error lines, the app's above the file's, each shown when set:
+  - **the file line** (`OpenFile::error`): the configured file failing to load at startup, a
+    conflict, "Don't open", a failed write, commit or reload, changes a pull dropped. Cleared by a
+    successful change or by opening a file in its place.
+  - **the app line** (`App::error`): a config save, a New File or Load File that failed, "Please
+    load a file first", an unparsable quick-add. Cleared by a successful config save or change.
+  So a file message stays when a filter changes, and a config or input error no longer hides it.
 - **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled as the Tauri app's
   `openEditDialog` did; Save (or Enter in a field) writes the fields as its `update_item` did, then
   `save`. Fields the dialog does not show (done, dates of completion and creation, `uuid`, `sub`) are
@@ -158,7 +171,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 - **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::find`): `sync = false`,
   no repository or an ignored file → no sync and no commits; both Git and Pijul → the Git-or-Pijul
   dialog (or "Don't sync", which asks again next time); a conflicted repository (`is_conflicted`) →
-  the file is not opened and the error line says to resolve it by hand; a failed check (e.g. `git`
+  the file is not opened and the file's error line says to resolve it by hand; a failed check (e.g. `git`
   missing) → "Not syncing: …" in the header; no remote → commit only.
   - **The check on open (RTM-70)**, the RTM-57 table in `rtmsync/AGENTS.md`: `find` reads
     `Vcs::state` and returns `Found::Ask(repo, question)` for a modified or untracked file; no worker
@@ -184,12 +197,12 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     now during a sync; nothing else.
   - **A pull that changed the file** (also one whose push then failed: `NotSynced { changed }`)
     reloads it and redoes `pending` on it, finding each item by equality (with two identical lines,
-    the first); a change whose item the pull changed or removed is dropped and named in the error
-    line. The edit dialog's item (kept in `edited`) is then found again; if it is gone, or what
+    the first); a change whose item the pull changed or removed is dropped and named in the file's
+    error line. The edit dialog's item (kept in `edited`) is then found again; if it is gone, or what
     deleting it would remove changed, `stale` makes Save and Delete refuse. The header shows
     "Syncing…", or "Not synced: …" (git's first line; the rest on hover) after a failed pull or push.
   - **A conflict from a job closes the file**, as on open: a reload would read the markers as items.
-    The error line counts the pending changes that could not be saved.
+    The file's error line counts the pending changes that could not be saved.
   - **On exit** (`on_exit`, eframe's wgpu build, `finish_jobs`): outstanding results are handled as
     in `logic`, pending changes are written and committed, and a last sync runs, within 5 s. When
     changes are waiting behind a running job, that job gets up to `SAVE_TIMEOUT` (125 s, a pull and
@@ -197,7 +210,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 - Tests are unit tests in `src/tests/`, one file per source file and topic (see Tests in the root
   `AGENTS.md`); rtmapp is a binary crate, so it has no integration tests, and its UI tests are
   unit tests too (see UI tests below). They use temp files and never open a window. `App` tests
-  build `App { .. }` directly with a temp `config_path` (see `app_with` and `bare_app` in
+  build `App { .. }` (with one `OpenFile`) directly with a temp `config_path` (see `app_with` and `bare_app` in
   `app_support_tests.rs`), never `config::config_path()`: a load or filter save would overwrite the
   user's real `rtm/config.toml`. They do not start sync; the sync tests call `connect` on scratch
   git remotes and clones (local paths, local config keeping the user's identity, signing, hooks and

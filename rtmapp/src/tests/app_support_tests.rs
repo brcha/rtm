@@ -21,22 +21,29 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
     App {
         config: AppConfig::default(),
         config_path: dir.join("config.toml"),
-        library,
+        files: vec![OpenFile {
+            library,
+            ..OpenFile::default()
+        }],
+        active: 0,
         error: None,
         new_item: String::new(),
         editing: None,
         worker: None,
-        pending: Vec::new(),
         sync_status: None,
         last_sync: Instant::now(),
-        choose_vcs: None,
-        asking: None,
-        edited: None,
-        deleting: None,
-        stale: false,
         dialog: None,
         ctx: egui::Context::default(),
     }
+}
+
+/// The error lines shown, the app's first.
+pub(super) fn errors(app: &App) -> Vec<&str> {
+    [&app.error, &app.file().error]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+        .collect()
 }
 
 pub(super) fn file_lines(dir: &Path) -> Vec<String> {
