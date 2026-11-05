@@ -628,3 +628,54 @@ fn a_tab_cannot_be_closed_while_the_edit_dialog_is_open() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Moving an item to another open file (RTM-128).
+
+/// Opens the edit dialog on the row `item`.
+fn edit_row(harness: &mut Harness<'_, App>, item: &str) {
+    harness.get_by_role_and_label(Role::Label, item).click();
+    harness.run();
+}
+
+#[test]
+fn move_to_is_hidden_with_a_single_file() {
+    let dir = temp_dir("ui-move-single");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+
+    edit_row(&mut harness, "Alpha");
+
+    assert!(harness.query_by_label("Move to…").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_item_moves_to_another_tab_after_asking() {
+    let dir = temp_dir("ui-move");
+    let mut harness = two_tabs(&dir, false);
+
+    edit_row(&mut harness, "Alpha");
+    harness.get_by_label("Move to…").click();
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, "Work").click();
+    harness.run();
+    harness.get_by_label("Move this item to Work?");
+    harness.get_by_role_and_label(Role::Button, "Keep").click();
+    harness.run();
+    assert!(harness.query_by_label("Move this item to Work?").is_none());
+
+    harness.get_by_label("Move to…").click();
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, "Work").click();
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, "Move").click();
+    harness.run();
+
+    assert!(harness.query_by_label("Edit Item").is_none());
+    assert_eq!(file_lines(&dir), Vec::<String>::new());
+    let work = std::fs::read_to_string(dir.join("work.txt")).unwrap();
+    assert!(
+        work.lines().nth(1).is_some_and(|l| l.ends_with("Alpha")),
+        "{work}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

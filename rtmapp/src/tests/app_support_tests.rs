@@ -36,6 +36,8 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         reconnect: false,
         repos: Vec::new(),
         closing: Vec::new(),
+        next_move: 0,
+        delivered: Vec::new(),
         dialog: None,
         ctx: egui::Context::default(),
     }

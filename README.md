@@ -187,7 +187,8 @@ closes it, after asking. The app reopens the same tabs at the next start and sho
 last clicked. They are saved in `rtm/config.toml` as `[[files]]` tables, one per tab, each with
 the file's `path`; add a `name = "Work"` line to one by hand to label its tab (the file name is
 shown otherwise). `file_name` names the shown file, so an older version of the app still opens
-that one. Each file syncs through its own repository.
+that one. Each file syncs through its own repository. To move an item, with its sub-items, to
+another open file, use **Move to…** in its edit dialog.
 
 ## Syncing through Git or Pijul
 

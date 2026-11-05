@@ -10,7 +10,7 @@ use eframe::egui::{
 use todotxt::{TodoItem, TodoLibrary};
 
 use crate::config::{self, AppConfig};
-use crate::edit::{self, EditForm, Outcome};
+use crate::edit::{self, ConfirmMove, EditForm, MoveTarget, Outcome};
 use crate::list::{self, RowAction};
 use crate::settings::{self, SettingsForm};
 use crate::sync::{self, Done, Found, Place, Question, Repo, RepoKey, Worker};
@@ -58,6 +58,11 @@ pub struct App {
     /// The workers of repositories whose last open file was closed, until their last commit and
     /// sync are done; exit waits for them too.
     closing: Vec<Worker>,
+    /// The id the next move of an item to another file gets (`Change::MoveIn`, `Change::MoveOut`).
+    next_move: u64,
+    /// Moves whose arriving half has been written to the target: their leaving half may now be
+    /// written to the source. Kept here, not on the target, so closing the target cannot lose it.
+    delivered: Vec<u64>,
     /// The open file dialog: its result, and what to do with a chosen path.
     dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
     ctx: egui::Context,
@@ -133,6 +138,8 @@ impl App {
             reconnect: false,
             repos: Vec::new(),
             closing: Vec::new(),
+            next_move: 0,
+            delivered: Vec::new(),
             dialog: None,
             ctx: cc.egui_ctx.clone(),
         };
@@ -256,6 +263,8 @@ impl App {
         } else if question == Question::Modified {
             file.close_modified();
             self.close_editor();
+            // A move into this file can no longer arrive (see `restore_lost_moves`).
+            self.flush();
         } else {
             // Opened without sync, asked again next time.
             file.repo = None;
@@ -284,12 +293,175 @@ impl App {
         }
     }
 
-    /// Writes every open file's pending changes whose repository is idle (see `OpenFile::flush`).
+    /// Writes every open file's pending changes whose repository is idle (see `OpenFile::flush`),
+    /// then puts back the items of moves whose arriving half was lost.
     fn flush(&mut self) {
-        for file in &mut self.files {
-            // A failed write is in the file's line.
-            let _ = file.flush(find_repo(&mut self.repos, file.repo.as_ref()));
+        loop {
+            let delivered = self.delivered.len();
+            for file in &mut self.files {
+                // A failed write is in the file's line.
+                let repo = find_repo(&mut self.repos, file.repo.as_ref());
+                let _ = file.flush(repo, &mut self.delivered);
+            }
+            // Again when a pass wrote a move's arriving half (its source may come before its
+            // target), or a failed move's item was put back (its edit is pending).
+            if self.delivered.len() == delivered && !self.restore_lost_moves() {
+                break;
+            }
         }
+    }
+
+    /// Puts an item back in its file when the arriving half of its move is lost: not written to the
+    /// target, and no longer pending in a loaded file (the target was closed by a conflict or "Don't
+    /// open", or its write failed). The leaving half is replaced with the edit dialog's changes, if
+    /// any, and the source read again, so the item is where it was, edited. The source's file line
+    /// names it. True when an item was put back.
+    fn restore_lost_moves(&mut self) -> bool {
+        let arriving = |id: u64| {
+            self.files.iter().any(|file| {
+                file.library.is_some()
+                    && file
+                        .pending
+                        .iter()
+                        .any(|change| matches!(change, Change::MoveIn { id: i, .. } if *i == id))
+            })
+        };
+        let lost: Vec<u64> = self
+            .files
+            .iter()
+            .flat_map(|file| &file.pending)
+            .filter_map(Change::move_out)
+            .filter(|id| !self.delivered.contains(id) && !arriving(*id))
+            .collect();
+        // A delivered move whose leaving half is gone (written, or dropped by a reload) is done.
+        let leaving: Vec<u64> = self
+            .files
+            .iter()
+            .flat_map(|file| &file.pending)
+            .filter_map(Change::move_out)
+            .collect();
+        self.delivered.retain(|id| leaving.contains(id));
+        if lost.is_empty() {
+            return false;
+        }
+        for file in &mut self.files {
+            // An unloaded target keeps its pending changes; its half must not arrive later.
+            file.pending
+                .retain(|change| !matches!(change, Change::MoveIn { id, .. } if lost.contains(id)));
+            let mut restored = Vec::new();
+            file.pending.retain_mut(|change| {
+                let Change::MoveOut {
+                    original,
+                    edited,
+                    id,
+                    ..
+                } = change
+                else {
+                    return true;
+                };
+                if !lost.contains(id) {
+                    return true;
+                }
+                restored.push(original.description.clone());
+                // The dialog's changes stay; without any, there is nothing to write.
+                if original == edited {
+                    return false;
+                }
+                let edit = Change::Edit {
+                    original: original.clone(),
+                    edited: edited.clone(),
+                };
+                *change = edit;
+                true
+            });
+            if !restored.is_empty() {
+                file.reload(self.editing.as_mut());
+                file.error = Some(format!(
+                    "Moving {} to another file failed, so it stays here.",
+                    restored.join("; ")
+                ));
+            }
+        }
+        true
+    }
+
+    /// Moves the edit dialog's item, with its sub-items, to the open file at `target`. The dialog's
+    /// fields are applied first, as Save does, and refused as Save refuses them. The target gets the
+    /// edited item and the sub-items (`Change::MoveIn`); the source loses the original item and its
+    /// sub-items (`Change::MoveOut`), written only once the target has been written.
+    fn move_item(&mut self, target: &Path) {
+        if self.refuse_stale() {
+            return;
+        }
+        // Through the fields, so the dialog's form can be borrowed beside the file.
+        let active = self.active.as_deref();
+        let Some(source) = self
+            .files
+            .iter()
+            .find(|file| active.is_some_and(|path| file.is(path)))
+        else {
+            self.close_editor();
+            return;
+        };
+        let from = source.path.clone();
+        // Commit messages name both files by their tab labels: two files may share a file name.
+        let from_name = source.name.clone();
+        let target_name = self
+            .files
+            .iter()
+            .find(|file| file.is(target) && file.library.is_some())
+            .map(|file| file.name.clone());
+        let (Some(form), Some(library)) = (&mut self.editing, source.library.as_ref()) else {
+            self.close_editor();
+            return;
+        };
+        let Some(target_name) = target_name.filter(|_| from != target) else {
+            form.error = Some(format!(
+                "{} is no longer open; choose another file.",
+                file_name_of(target)
+            ));
+            form.confirm_move = None;
+            return;
+        };
+        let Some(original) = library.items.get(form.index).cloned() else {
+            self.close_editor();
+            return;
+        };
+        let mut edited = original.clone();
+        if let Err(e) = form.apply(&mut edited) {
+            form.error = Some(e);
+            return;
+        }
+        let Some(removing) = library.clone().remove_item(form.index) else {
+            self.close_editor();
+            return;
+        };
+        let mut items = removing.clone();
+        if let Some(item) = items.iter_mut().find(|item| **item == original) {
+            *item = edited.clone();
+        }
+        let id = self.next_move;
+        self.next_move += 1;
+        self.close_editor();
+        let arriving = Change::MoveIn {
+            items,
+            from: from_name,
+            id,
+        };
+        if let Some(file) = find_file(&mut self.files, Some(target))
+            && let Some(library) = &mut file.library
+            && arriving.redo(library)
+        {
+            file.error = None;
+            file.pending.push(arriving);
+        }
+        self.apply(Change::MoveOut {
+            original,
+            edited,
+            removing,
+            to: target_name,
+            id,
+        });
     }
 
     /// Syncs every repository, as Sync now and exit do.
@@ -443,15 +615,28 @@ impl App {
         }
     }
 
-    /// Opens the edit dialog on the item at `index`.
+    /// Opens the edit dialog on the item at `index`, with the other open, loaded files to move it
+    /// to.
     fn open_editor(&mut self, index: usize) {
+        let active = self.active.as_deref();
+        let targets: Vec<_> = self
+            .files
+            .iter()
+            .filter(|file| file.library.is_some() && active.is_none_or(|path| !file.is(path)))
+            .map(|file| MoveTarget {
+                path: file.path.clone(),
+                name: file.name.clone(),
+            })
+            .collect();
         let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
             return;
         };
         let Some(item) = file.library.as_ref().and_then(|l| l.items.get(index)) else {
             return;
         };
-        self.editing = Some(EditForm::new(index, item));
+        let mut form = EditForm::new(index, item);
+        form.targets = targets;
+        self.editing = Some(form);
         file.edited = Some(item.clone());
         file.deleting = None;
         file.stale = false;
@@ -462,7 +647,7 @@ impl App {
         let stale = self.file().is_some_and(|file| file.stale);
         if stale && let Some(form) = &mut self.editing {
             form.error = Some(
-                "A sync changed this item, or what deleting it would remove; close the dialog and \
+                "A sync changed this item, or the sub-items that go with it; close the dialog and \
                  open the item again."
                     .to_owned(),
             );
@@ -709,7 +894,7 @@ impl App {
             return;
         };
         let mut repo = find_repo(&mut self.repos, file.repo.as_ref());
-        if !file.flush(repo.as_deref_mut()) {
+        if !file.flush(repo.as_deref_mut(), &mut self.delivered) {
             return;
         }
         let key = file.repo.clone();
@@ -750,14 +935,18 @@ impl App {
         }
         self.prune();
         self.save_config();
+        // An unloaded file's pending move can no longer arrive (see `restore_lost_moves`).
+        self.flush();
     }
 
     /// Whether `close` would close `file` now: not while the edit dialog is open, while its check
-    /// on open runs or while its repository has a job outstanding.
+    /// on open runs, while its repository has a job outstanding, or while an item moved out of it
+    /// waits for its target to be written.
     fn can_close(&self, file: &OpenFile) -> bool {
         self.editing.is_none()
             && !file.checking
             && self.repo_of(file).is_none_or(|repo| !repo.worker.busy())
+            && !file.waits_for_move(&self.delivered)
     }
 
     /// Asks before closing the tab of `confirm_close`, so a stray click on its close button does
@@ -1062,6 +1251,30 @@ impl App {
         match library.clone().remove_item(form.index) {
             Some(removed) => {
                 form.confirm_delete = Some(removed.len() - 1);
+                form.confirm_move = None;
+                file.deleting = Some(removed);
+            }
+            None => self.close_editor(),
+        }
+    }
+
+    /// Shows the move confirmation for `target`, with the number of sub-items the move would take,
+    /// counted as `ask_delete` counts them; a pull that changes them makes the dialog stale.
+    fn ask_move(&mut self, target: MoveTarget) {
+        let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
+            return;
+        };
+        let (Some(form), Some(library)) = (&mut self.editing, &file.library) else {
+            self.close_editor();
+            return;
+        };
+        match library.clone().remove_item(form.index) {
+            Some(removed) => {
+                form.confirm_move = Some(ConfirmMove {
+                    target,
+                    sub_items: removed.len() - 1,
+                });
+                form.confirm_delete = None;
                 file.deleting = Some(removed);
             }
             None => self.close_editor(),
@@ -1324,14 +1537,25 @@ impl OpenFile {
         ));
     }
 
+    /// Whether an item moved out of this file waits for its target to be written (`delivered`).
+    fn waits_for_move(&self, delivered: &[u64]) -> bool {
+        self.pending
+            .iter()
+            .filter_map(Change::move_out)
+            .any(|id| !delivered.contains(&id))
+    }
+
     /// Writes the pending changes and queues their commit on `repo`, the file's repository,
     /// unless it has a job outstanding: it may be a pull about to change the file, and the changes
-    /// are redone on what it brings. False when the write failed.
-    fn flush(&mut self, repo: Option<&mut RepoSync>) -> bool {
+    /// are redone on what it brings. An item moved out of the file is removed from it on disk only
+    /// after its target was written: the move's id is in `delivered`, to which this file's arriving
+    /// moves are added once written. False when the write failed.
+    fn flush(&mut self, repo: Option<&mut RepoSync>, delivered: &mut Vec<u64>) -> bool {
         // During the check on open a write would look like an outside change.
         if self.pending.is_empty()
             || self.checking
             || repo.as_ref().is_some_and(|repo| repo.worker.busy())
+            || self.waits_for_move(delivered)
         {
             return true;
         }
@@ -1348,6 +1572,10 @@ impl OpenFile {
             self.error = Some(format!("{}: {e}", library.file_name));
             return false;
         }
+        delivered.extend(changes.iter().filter_map(|change| match change {
+            Change::MoveIn { id, .. } => Some(*id),
+            _ => None,
+        }));
         // While the outside-changes question is open, a commit would take those changes (or add
         // the untracked file) before the user answers; the write alone keeps the edit.
         if let Some(repo) = repo.filter(|_| self.asking.is_none()) {
@@ -1391,7 +1619,7 @@ impl OpenFile {
             return;
         };
         form.index = index;
-        if form.confirm_delete.is_some()
+        if (form.confirm_delete.is_some() || form.confirm_move.is_some())
             && let Some(removing) = &self.deleting
             && library.clone().remove_item(index).as_ref() != Some(removing)
         {
@@ -1503,6 +1731,13 @@ impl eframe::App for App {
                 Some(Outcome::Cancel) => self.close_editor(),
                 Some(Outcome::AskDelete) => self.ask_delete(),
                 Some(Outcome::Delete) => self.delete_item(),
+                Some(Outcome::AskMove(target)) => self.ask_move(target),
+                Some(Outcome::Move) => {
+                    let target = form.confirm_move.as_ref().map(|q| q.target.path.clone());
+                    if let Some(target) = target {
+                        self.move_item(&target);
+                    }
+                }
                 None => {}
             }
         }
@@ -1532,6 +1767,23 @@ enum Change {
         original: TodoItem,
         removing: Vec<TodoItem>,
     },
+    /// The arriving half of move `id`: appends the moved items, unchanged, to the target; `from` is
+    /// the source's tab label.
+    MoveIn {
+        items: Vec<TodoItem>,
+        from: String,
+        id: u64,
+    },
+    /// The leaving half of move `id`: removes the item and its sub-items from the source, as
+    /// `Delete` does; `to` is the target's tab label. `edited` is the item with the edit dialog's
+    /// fields, kept if the move fails.
+    MoveOut {
+        original: TodoItem,
+        edited: TodoItem,
+        removing: Vec<TodoItem>,
+        to: String,
+        id: u64,
+    },
 }
 
 impl Change {
@@ -1558,7 +1810,13 @@ impl Change {
                 };
                 library.items[index] = edited.clone();
             }
-            Change::Delete { original, removing } => {
+            // Not through `add_item`, which gives an item without one a creation date: a moved
+            // item arrives as it was.
+            Change::MoveIn { items, .. } => library.items.extend(items.iter().cloned()),
+            Change::Delete { original, removing }
+            | Change::MoveOut {
+                original, removing, ..
+            } => {
                 let Some(index) = find(library, original) else {
                     return false;
                 };
@@ -1575,6 +1833,14 @@ impl Change {
         matches!(self, Change::Toggle(item) if !item.done)
     }
 
+    /// The id of a move's leaving half.
+    fn move_out(&self) -> Option<u64> {
+        match self {
+            Change::MoveOut { id, .. } => Some(*id),
+            _ => None,
+        }
+    }
+
     /// The commit message: what was done and the item's description, without dates or tags.
     fn describe(&self) -> String {
         match self {
@@ -1583,8 +1849,23 @@ impl Change {
             Change::Toggle(item) => format!("rtm: complete {}", item.description),
             Change::Edit { original, .. } => format!("rtm: edit {}", original.description),
             Change::Delete { original, .. } => format!("rtm: delete {}", original.description),
+            Change::MoveIn { items, from, .. } => {
+                let description = items.first().map_or("", |item| item.description.as_str());
+                format!("rtm: move {description} from {from}")
+            }
+            Change::MoveOut { original, to, .. } => {
+                format!("rtm: move {} to {to}", original.description)
+            }
         }
     }
+}
+
+/// The file name of `path`, to name a file that is no longer open.
+fn file_name_of(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 /// One change's own message, or a count with one line per change.
@@ -1920,3 +2201,7 @@ mod error_tests;
 #[cfg(test)]
 #[path = "tests/app_tabs_tests.rs"]
 mod tabs_tests;
+
+#[cfg(test)]
+#[path = "tests/app_move_tests.rs"]
+mod move_tests;
