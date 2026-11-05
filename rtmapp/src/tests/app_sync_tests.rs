@@ -918,3 +918,214 @@ fn a_question_in_a_background_tab_brings_it_to_front_without_writing_the_config(
     assert!(!dir.join("config.toml").exists());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Moving an item to another open file (RTM-128).
+
+/// The repository key of the open file at `file`.
+fn key_of(app: &App, file: &Path) -> RepoKey {
+    let file = file.canonicalize().unwrap();
+    let open = app.files.iter().find(|open| open.is(&file)).unwrap();
+    open.repo.clone().unwrap()
+}
+
+/// Shows the open file at `file` and moves its item at `index` to the open file at `target`.
+fn move_to(app: &mut App, file: &Path, index: usize, target: &Path) {
+    app.active = Some(file.canonicalize().unwrap());
+    open_editor(app, index);
+    app.move_item(&target.canonicalize().unwrap());
+}
+
+#[test]
+fn a_moved_item_leaves_its_file_only_after_the_busy_target_is_written() {
+    let one = remote_and_clones("move busy one", "Alpha\nBravo\n");
+    let two = remote_and_clones("move busy two", "Report\n");
+    let (source, target) = (one.join("a/todo.txt"), two.join("a/todo.txt"));
+    let mut app = app_on(&one, &[source.clone(), target.clone()]);
+    app.sync_repo(&key_of(&app, &target), Instant::now());
+
+    move_to(&mut app, &source, 1, &target);
+    assert_eq!(file_lines(&one.join("a")), ["Alpha", "Bravo"]);
+    assert_eq!(file_lines(&two.join("a")), ["Report"]);
+
+    wait(&mut app);
+    assert_eq!(file_lines(&one.join("a")), ["Alpha"]);
+    let moved = file_lines(&two.join("a"));
+    assert!(moved[1].ends_with("Bravo"), "{moved:?}");
+    assert_eq!(subjects(&one.join("a"), 1), "rtm: move Bravo to todo.txt");
+    assert_eq!(subjects(&two.join("a"), 1), "rtm: move Bravo from todo.txt");
+    let _ = std::fs::remove_dir_all(one);
+    let _ = std::fs::remove_dir_all(two);
+}
+
+#[test]
+fn a_conflict_in_the_target_puts_the_moved_item_back() {
+    let one = remote_and_clones("move conflict one", "Alpha\nBravo\n");
+    let two = remote_and_clones("move conflict two", "Report\n");
+    let (source, target) = (one.join("a/todo.txt"), two.join("a/todo.txt"));
+    let mut app = app_on(&one, &[source.clone(), target.clone()]);
+    push_from_b(&two, "Report from b\n");
+    app.active = Some(target.canonicalize().unwrap());
+    open_editor(&mut app, 0).description = "Report from a".to_owned();
+    app.save_edit();
+    wait(&mut app);
+    // The pull conflicts; the move's arriving half waits behind it.
+    app.sync_repo(&key_of(&app, &target), Instant::now());
+
+    app.active = Some(source.canonicalize().unwrap());
+    open_editor(&mut app, 1).description = "Bravo, renamed".to_owned();
+    app.move_item(&target.canonicalize().unwrap());
+    wait(&mut app);
+
+    let source_file = app.files.first().unwrap();
+    let items: Vec<_> = source_file
+        .library
+        .as_ref()
+        .unwrap()
+        .items
+        .iter()
+        .map(|i| i.description.as_str())
+        .collect();
+    assert_eq!(items, ["Alpha", "Bravo, renamed"]);
+    let error = source_file.error.as_deref().unwrap();
+    assert!(
+        error.contains("Bravo") && error.contains("stays here"),
+        "{error}"
+    );
+    // Written with the edit kept, and committed as an edit.
+    assert_eq!(file_lines(&one.join("a")), ["Alpha", "Bravo, renamed"]);
+    assert_eq!(subjects(&one.join("a"), 1), "rtm: edit Bravo");
+    assert!(app.files.last().unwrap().library.is_none());
+    let _ = std::fs::remove_dir_all(one);
+    let _ = std::fs::remove_dir_all(two);
+}
+
+#[test]
+fn closing_the_target_after_its_write_still_lets_the_source_write() {
+    let one = remote_and_clones("move close target", "Alpha\nBravo\n");
+    let plain = temp_dir("move close target plain");
+    std::fs::write(plain.join("work.txt"), "Report\n").unwrap();
+    let (source, target) = (one.join("a/todo.txt"), plain.join("work.txt"));
+    let mut app = app_on(&one, &[source.clone(), target.clone()]);
+    // The source's repository is busy, so its half waits; the target, outside any, is written.
+    app.sync_repo(&key_of(&app, &source), Instant::now());
+
+    move_to(&mut app, &source, 1, &target);
+    assert!(std::fs::read_to_string(&target).unwrap().contains("Bravo"));
+    app.close(&target.canonicalize().unwrap());
+    assert_eq!(app.files.len(), 1);
+    wait(&mut app);
+
+    assert_eq!(file_lines(&one.join("a")), ["Alpha"]);
+    assert!(std::fs::read_to_string(&target).unwrap().contains("Bravo"));
+    let _ = std::fs::remove_dir_all(one);
+    let _ = std::fs::remove_dir_all(plain);
+}
+
+#[test]
+fn exit_during_a_move_writes_both_files() {
+    let one = remote_and_clones("move exit one", "Alpha\nBravo\n");
+    let two = remote_and_clones("move exit two", "Report\n");
+    let (source, target) = (one.join("a/todo.txt"), two.join("a/todo.txt"));
+    let mut app = app_on(&one, &[source.clone(), target.clone()]);
+    app.sync_repo(&key_of(&app, &target), Instant::now());
+
+    move_to(&mut app, &source, 1, &target);
+    eframe::App::on_exit(&mut app);
+
+    assert_eq!(file_lines(&one.join("a")), ["Alpha"]);
+    assert!(file_lines(&two.join("a"))[1].ends_with("Bravo"));
+    assert_eq!(
+        subjects(&one.join("remote"), 1),
+        "rtm: move Bravo to todo.txt"
+    );
+    assert_eq!(
+        subjects(&two.join("remote"), 1),
+        "rtm: move Bravo from todo.txt"
+    );
+    let _ = std::fs::remove_dir_all(one);
+    let _ = std::fs::remove_dir_all(two);
+}
+
+#[test]
+fn dont_open_on_the_target_puts_the_moved_item_back() {
+    let one = remote_and_clones("move dont open one", "Alpha\nBravo\n");
+    let two = remote_and_clones("move dont open two", "Report\n");
+    // An outside change: the target asks before it syncs.
+    std::fs::write(two.join("a/todo.txt"), "Report\nBy hand\n").unwrap();
+    let (source, target) = (one.join("a/todo.txt"), two.join("a/todo.txt"));
+    let mut app = app_on(&one, &[source.clone(), target.clone()]);
+    assert!(matches!(
+        app.files.last().unwrap().asking,
+        Some((_, Question::Modified))
+    ));
+    // A job keeps the target's repository busy, so the move's arriving half waits. (No sync runs
+    // before the answer: the remote is not known yet.)
+    let key = key_of(&app, &target);
+    let repo = find_repo(&mut app.repos, Some(&key)).unwrap();
+    repo.worker
+        .check(key.root.clone(), target.canonicalize().unwrap());
+
+    move_to(&mut app, &source, 1, &target);
+    app.active = Some(target.canonicalize().unwrap());
+    app.answer(false);
+    wait(&mut app);
+
+    let source_file = app.files.first().unwrap();
+    let items: Vec<_> = source_file
+        .library
+        .as_ref()
+        .unwrap()
+        .items
+        .iter()
+        .map(|i| i.description.as_str())
+        .collect();
+    assert_eq!(items, ["Alpha", "Bravo"]);
+    assert_eq!(file_lines(&one.join("a")), ["Alpha", "Bravo"]);
+    assert_eq!(file_lines(&two.join("a")), ["Report", "By hand"]);
+    let _ = std::fs::remove_dir_all(one);
+    let _ = std::fs::remove_dir_all(two);
+}
+
+#[test]
+fn a_move_within_one_repository_commits_the_target_first() {
+    let dir = remote_and_clones("move same repo", "Alpha\nBravo\n");
+    add_work_file(&dir, "Report\n");
+    let (source, target) = (dir.join("a/todo.txt"), dir.join("a/work.txt"));
+    let mut app = app_on(&dir, &[source.clone(), target.clone()]);
+
+    move_to(&mut app, &source, 1, &target);
+    wait(&mut app);
+
+    assert_eq!(file_lines(&dir.join("a")), ["Alpha"]);
+    let moved = std::fs::read_to_string(&target).unwrap();
+    assert!(
+        moved.lines().nth(1).is_some_and(|l| l.ends_with("Bravo")),
+        "{moved}"
+    );
+    assert_eq!(
+        subjects(&dir.join("a"), 2),
+        "rtm: move Bravo to work.txt\nrtm: move Bravo from todo.txt"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_source_cannot_be_closed_until_its_moved_item_reached_the_target() {
+    let one = remote_and_clones("move close source one", "Alpha\nBravo\n");
+    let two = remote_and_clones("move close source two", "Report\n");
+    let (source, target) = (one.join("a/todo.txt"), two.join("a/todo.txt"));
+    let mut app = app_on(&one, &[source.clone(), target.clone()]);
+    app.sync_repo(&key_of(&app, &target), Instant::now());
+    let source = source.canonicalize().unwrap();
+
+    move_to(&mut app, &source, 1, &target);
+    app.close(&source);
+    assert_eq!(app.files.len(), 2, "the move still waits for the target");
+
+    wait(&mut app);
+    app.close(&source);
+    assert_eq!(app.files.len(), 1);
+    assert_eq!(file_lines(&one.join("a")), ["Alpha"]);
+    let _ = std::fs::remove_dir_all(one);
+    let _ = std::fs::remove_dir_all(two);
+}
