@@ -7,6 +7,7 @@ members = [
 	"rtmcli",
 	"rtmapp",
 	"rtmsync",
+	"rtmupdate",
 ]
 
 [profile.release]
