@@ -19,6 +19,7 @@ fn rtmcli(dir: &Path) -> Command {
         .current_dir(dir)
         .env_remove("RTM_NO_SYNC")
         .env_remove("RTM_VCS")
+        .env_remove("RTM_UPDATE_URL")
         .env_remove("TODOTXT");
     command
 }

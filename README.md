@@ -222,6 +222,14 @@ title bar), or set it to 0 to sync only on open, on close and on demand; it is s
   never asks for a password. For an HTTPS remote, set up a git credential helper (Git Credential
   Manager, `osxkeychain`, `libsecret`, ...); otherwise use an SSH remote with `ssh-agent`.
 
+## Checking for updates
+
+`rtmcli check-update` tells you whether a newer release exists, with a link to its notes;
+`rtmcli check-update --channel beta` also reports beta releases. It is the only command that uses
+the network: it sends one request for `https://rtm.brcha.com/releases.json`, with no version or
+identifier, so the website sees only your IP address. The Nix packages have no update check;
+update them through your flake inputs.
+
 ## General plan
 
 - [x] Implement basic functionality of the Todo.txt manager with CLI and desktop GUI (for GNU/Linux, Mac OS X and Windows, since I use all of those).

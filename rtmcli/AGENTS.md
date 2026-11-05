@@ -17,20 +17,22 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ├── cli_commands_tests.rs  ← add, list, complete, delete
 ├── cli_filter_tests.rs    ← The due-date filters of list and complete
 ├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
-└── cli_sync_tests.rs      ← Sync through git
+├── cli_sync_tests.rs      ← Sync through git
+└── cli_update_tests.rs    ← check-update against a local HTTP server
 ```
 
 ---
 
 ## Commands
 
-| Command    | Description                                              |
-|------------|----------------------------------------------------------|
-| `list`     | List items, optionally filtered by completion and date   |
-| `add`      | Add a new item in Todo.txt format                        |
-| `complete` | Complete items by filter, index, or UUID                 |
-| `delete`   | Delete an item and its sub-items, after confirmation     |
-| `sync`     | Pull and push the repository holding the file            |
+| Command        | Description                                              |
+|----------------|----------------------------------------------------------|
+| `list`         | List items, optionally filtered by completion and date   |
+| `add`          | Add a new item in Todo.txt format                        |
+| `complete`     | Complete items by filter, index, or UUID                 |
+| `delete`       | Delete an item and its sub-items, after confirmation     |
+| `sync`         | Pull and push the repository holding the file            |
+| `check-update` | Check whether a newer release of rtm exists              |
 
 ---
 
@@ -46,6 +48,23 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   anything but `y`/`yes`, including no input, exits 0 without writing. `-y`/`--yes` skips the
   prompt.
 - No config file — stateless, all options via CLI args/env.
+
+## Update check (RTM-137)
+
+- `check-update [--channel stable|beta]` asks `rtmupdate` (see `rtmupdate/AGENTS.md`) whether a
+  newer release exists on the channel (default `stable`; `beta` is also offered betas):
+  - a newer release: `rtm <version> is available: <url>`, exit 0;
+  - none: `rtmcli <version> is up to date`, exit 0;
+  - a failed check (offline, an HTTP error, an unreadable or unknown file): `Error: ...` on stderr,
+    exit 1.
+- It is handled first in `main()`, before the file name is resolved and `Repo::find` runs: it
+  reads no file, detects no repository and syncs nothing. It is the only command that uses the
+  network; no other command checks for updates.
+- `RTM_UPDATE_URL` replaces the release list's URL (the tests point it at a local server).
+- The default cargo feature `update-check` pulls in `rtmupdate`. The Nix package builds without
+  it (`buildNoDefaultFeatures`, see `doc/nix-packaging.md`); there `check-update` says the build
+  has no update check and to update through the package manager, exit 0. `cli_update_tests.rs`
+  covers both builds (`cargo test -p rtmcli --no-default-features`).
 
 ## Sync (RTM-21, RTM-63)
 
