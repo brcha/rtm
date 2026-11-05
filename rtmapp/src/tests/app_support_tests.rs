@@ -29,6 +29,8 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         error: None,
         new_item: String::new(),
         editing: None,
+        settings: None,
+        reconnect: false,
         worker: None,
         sync_status: None,
         last_sync: Instant::now(),

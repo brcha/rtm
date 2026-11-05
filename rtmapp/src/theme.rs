@@ -186,6 +186,25 @@ pub fn trash_button(ui: &mut Ui, p: &Palette) -> egui::Response {
     response
 }
 
+/// The header's menu button: three painted white bars (☰ is missing from Inter), named "Menu".
+pub fn menu_button(ui: &mut Ui) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Menu"));
+    let response = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Menu");
+    let painter = ui.painter();
+    if response.hovered() || response.has_focus() {
+        painter.rect_filled(rect, 4.0, Color32::from_white_alpha(38));
+    }
+    let stroke = Stroke::new(2.0, Color32::WHITE);
+    for y in [-5.0, 0.0, 5.0] {
+        let c = rect.center() + egui::vec2(0.0, y);
+        painter.line_segment([c - egui::vec2(7.0, 0.0), c + egui::vec2(7.0, 0.0)], stroke);
+    }
+    response
+}
+
 /// A single-line input like the CSS ones: 1 px border, 6 px corners, 12 px side padding and
 /// `pad_y` above and below, and when focused a `focus` border with a soft 3 px glow.
 pub fn text_input(
