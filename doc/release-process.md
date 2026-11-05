@@ -254,8 +254,9 @@
   pull a commit pushed from a second clone (which also shows `HOME` reached the app), commits a marker
   in the clone outside the app, sends the quit Apple event (`tell application id "com.brcha.rtm" to
   quit`) and passes only if the app exits within 15 s and the marker reached the remote. Exit status
-  1 is a failure, 2 inconclusive (the startup sync pushed the marker before the quit). The step is
-  non-blocking: a failure shows as a warning.
+  1 is a failure, 2 inconclusive (the startup sync pushed the marker before the quit); either fails
+  the job. The runner lets `osascript` send the event without a permission prompt (first run in the
+  pull request of RTM-140).
   - **By hand on a Mac:** quit any running rtmapp, install the app, then run
     `scripts/check-macos-quit.sh [<app>]` (default `/Applications/Rusty Todo.txt Manager.app`). The
     first run may ask to let the terminal control the app (Automation). `--keystroke` sends a real

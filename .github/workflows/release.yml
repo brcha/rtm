@@ -1198,12 +1198,11 @@ jobs:
           exit "$status"
 
       # Quits the installed app through NSApplication terminate: (the quit Apple event, as Cmd+Q
-      # does) and checks that its exit sync pushed a commit to a scratch remote. Non-blocking until a
-      # run shows the runner sends the event without a permission prompt. A failure shows as a warning.
+      # does) and checks that its exit sync pushed a commit to a scratch remote. The runner lets
+      # osascript send the event without a permission prompt.
       - name: Check that quitting runs the exit sync
-        continue-on-error: true
         timeout-minutes: 5
-        run: scripts/check-macos-quit.sh || { echo '::warning::The macOS quit check failed (see the log).'; exit 1; }
+        run: scripts/check-macos-quit.sh
 
       - name: Upload macos artifacts
         uses: actions/upload-artifact@v7
