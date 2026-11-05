@@ -65,7 +65,8 @@
   branch a dry run: builds and uploads to the Actions run, publishes nothing) and pull requests
   against `main` or `releases/**` (`pr-title.yml` checks those too); on those it builds and tests the packages (publishes nothing)
   only when they touch the crates (`rtmsync` included since RTM-21), `Cargo.toml`/`Cargo.lock`,
-  `LICENSE`, `scripts/build-appimage.sh`, `scripts/build-macos.sh` or the workflow, Markdown
+  `LICENSE`, `scripts/build-appimage.sh`, `scripts/build-macos.sh`,
+  `scripts/check-macos-quit.sh` or the workflow, Markdown
   excluded (its `changes` job, see "Which changes start which build" in [CI](ci.md)). It has no
   `v*` tag trigger (RTM-102): publishing a draft creates its tag, and a run started by that tag
   would rebuild the packages and publish them over the release, which could turn it back into a
@@ -245,5 +246,21 @@
   config path, expected running after 5 s. It proves only that the process stays up: there is no window
   check (`osascript` would need Accessibility permission), and `open --stderr` captured no log in the
   first run.
+- **Quit check (RTM-140):** `scripts/check-macos-quit.sh` then proves that quitting the app through
+  NSApplication `terminate:`, the path of Cmd+Q and the app menu's Quit, runs eframe's `on_exit`
+  and with it the exit sync. In a scratch directory it makes a bare remote and a clone with a tracked
+  `todo.txt`, starts the app with `open -n -a … --env HOME=<scratch>/home` (its config and git's
+  global config are then scratch files, `sync_interval_minutes = 0`), waits for the startup sync to
+  pull a commit pushed from a second clone (which also shows `HOME` reached the app), commits a marker
+  in the clone outside the app, sends the quit Apple event (`tell application id "com.brcha.rtm" to
+  quit`) and passes only if the app exits within 15 s and the marker reached the remote. Exit status
+  1 is a failure, 2 inconclusive (the startup sync pushed the marker before the quit). The step is
+  non-blocking: a failure shows as a warning.
+  - **By hand on a Mac:** quit any running rtmapp, install the app, then run
+    `scripts/check-macos-quit.sh [<app>]` (default `/Applications/Rusty Todo.txt Manager.app`). The
+    first run may ask to let the terminal control the app (Automation). `--keystroke` sends a real
+    Cmd+Q through System Events instead of the Apple event, the exact menu path; it needs
+    Accessibility permission for the terminal. The user's real config, git config and todo.txt are
+    never touched.
 - **No upgrade test:** replacing a `.app` carries no installer state, unlike the MSI and the debs.
 - `rust.yml` also runs the test suite on `macos-latest`.

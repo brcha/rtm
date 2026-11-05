@@ -49,7 +49,7 @@ jobs:
           # HEAD is the pull request's merge commit, HEAD^1 the base it merges into. --no-renames
           # lists both paths of a rename, so renaming a source file to .md still counts as code.
           files=$(git diff --name-only --no-renames HEAD^1 HEAD)
-          inputs='^(rtmapp|rtmcli|rtmsync|todotxt)/|^(Cargo\.toml|Cargo\.lock|LICENSE|scripts/build-appimage\.sh|scripts/build-macos\.sh|\.github/workflows/release\.yml)$'
+          inputs='^(rtmapp|rtmcli|rtmsync|todotxt)/|^(Cargo\.toml|Cargo\.lock|LICENSE|scripts/build-appimage\.sh|scripts/build-macos\.sh|scripts/check-macos-quit\.sh|\.github/workflows/release\.yml)$'
           # No -q at the end: grep -q exits early, and pipefail would read the first grep's
           # SIGPIPE as "no code".
           if grep -E "$inputs" <<< "$files" | grep -v '\.md$' > /dev/null; then
@@ -1196,6 +1196,14 @@ jobs:
           fi
           cat "$smoke/stderr.log" 2> /dev/null || true
           exit "$status"
+
+      # Quits the installed app through NSApplication terminate: (the quit Apple event, as Cmd+Q
+      # does) and checks that its exit sync pushed a commit to a scratch remote. Non-blocking until a
+      # run shows the runner sends the event without a permission prompt. A failure shows as a warning.
+      - name: Check that quitting runs the exit sync
+        continue-on-error: true
+        timeout-minutes: 5
+        run: scripts/check-macos-quit.sh || { echo '::warning::The macOS quit check failed (see the log).'; exit 1; }
 
       - name: Upload macos artifacts
         uses: actions/upload-artifact@v7
