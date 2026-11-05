@@ -115,6 +115,11 @@ one that had them.
 
 - **Nix shell:** `shell.nix` (or `nix develop`) provides the toolchain and the libraries `rtmapp` loads
   at run time. Use it before running `cargo build` on NixOS.
+- **Vercel bot comments** (RTM-141): `vercel[bot]` comments on every pull request with the
+  website's preview deployment status, whatever the PR changes. It is a status notice, not a
+  review: do not treat it as feedback or reply to it. It matters only for a PR that changes the
+  website (`site/`, `scripts/site/`, `vercel.json`, the site workflow), and there only when the
+  deployment failed.
 - **Native dependency sync:** When adding a new system/native library dependency to any crate in
   the workspace, register it in **both** of the following locations to keep CI and the Nix builds
   in sync:
