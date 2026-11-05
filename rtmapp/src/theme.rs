@@ -205,11 +205,15 @@ pub fn menu_button(ui: &mut Ui) -> egui::Response {
     response
 }
 
-/// A tab's close button: a painted grey cross (red when hovered or focused), named `name`.
-pub fn close_button(ui: &mut Ui, p: &Palette, name: &str) -> egui::Response {
+/// A tab's close button: a painted cross, named `name`, drawn only while `shown` (the pointer
+/// is over its tab) or while it is focused, so it stays out of the way; red under the pointer.
+pub fn close_button(ui: &mut Ui, p: &Palette, name: &str, shown: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
     let response = response.on_hover_text(name);
+    if !shown && !response.has_focus() {
+        return response;
+    }
     let color = if !ui.is_enabled() {
         p.border
     } else if response.hovered() || response.has_focus() {
@@ -217,15 +221,18 @@ pub fn close_button(ui: &mut Ui, p: &Palette, name: &str) -> egui::Response {
     } else {
         p.muted
     };
+    let painter = ui.painter();
+    if ui.is_enabled() && response.hovered() {
+        painter.rect_filled(rect, 3.0, p.border.gamma_multiply(0.5));
+    }
     let stroke = Stroke::new(1.5, color);
     let c = rect.center();
-    let painter = ui.painter();
     painter.line_segment(
-        [c + egui::vec2(-4.0, -4.0), c + egui::vec2(4.0, 4.0)],
+        [c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)],
         stroke,
     );
     painter.line_segment(
-        [c + egui::vec2(-4.0, 4.0), c + egui::vec2(4.0, -4.0)],
+        [c + egui::vec2(-3.5, 3.5), c + egui::vec2(3.5, -3.5)],
         stroke,
     );
     response

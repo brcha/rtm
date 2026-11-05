@@ -150,18 +150,23 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   synced (`loaded_path`). `App::active` is that path (`Option<PathBuf>`, none when no file is open),
   never an index, so removing a tab cannot shift it onto another file; tab actions carry the path
   too (`TabAction`).
-  - **The strip** (`App::tab_strip`, at the top of the content area, scrolling sideways when full):
-    one tab per file, the shown one drawn like the list's panel, a name in the error colour while
-    its file line is set, the path (and error) on hover, and a painted close cross
-    (`theme::close_button`, named "Close <name>"). At its end a painted `+`
-    (`theme::add_button`, "Open a file") opens New File… and Load File…, the menu's entries.
+  - **The strip** (`App::tab_strip`, scrolling sideways when full, and to the shown tab when
+    another file is shown: `scroll_to_once`) stands on the page of the shown file
+    (`App::tabs_and_page`: a bordered panel holding the error lines, the add row and the list).
+    Each tab is painted (`tab`, AccessKit role `Tab`, selected when shown): the shown one has the
+    page's fill and border, and the page's top border is covered under it, so it opens into the
+    page; the others have a faint fill, stronger under the pointer. The name is bold on the shown
+    tab and in the error colour while the file line is set; the path (and error) shows on hover.
+    The close cross (`theme::close_button`, named "Close <name>") is drawn only while the pointer
+    is over its tab or it has focus. At the end a painted `+` (`theme::add_button`, "Open a file")
+    opens New File… and Load File…, the menu's entries.
   - **Opening** (`open_file`): a file already open shows its tab; one whose tab is not loaded (it
     failed at startup, or a conflict or "Don't open" closed it) is loaded into that tab, which is
     the "load the file again" the file lines ask for; any other file gets a new tab and entry.
-  - **Closing** (`close`): disabled while the edit dialog is open, while the file's check on open
-    runs and while its repository has a job outstanding; pending changes are written and committed
-    first (a failed write keeps the tab). The tab to its right is shown next, else the one to its
-    left; closing the last tab leaves no file open and the empty state.
+  - **Closing** (`close`) is disabled (`can_close`) while the edit dialog is open, while the file's
+    check on open runs and while its repository has a job outstanding. Pending changes are
+    written and committed first (a failed write keeps the tab). The tab to its right is shown next,
+    else the one to its left; closing the last tab leaves no file open and the empty state.
   - **Switching** (`switch`, a click on a tab) saves the file as `file_name`. A file in the
     background with a Git-or-Pijul or outside-changes question is brought to the front
     (`show_question`, in `logic`, one at a time in tab order, while no modal is open), without

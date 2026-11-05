@@ -514,8 +514,15 @@ fn two_tabs(dir: &Path, work_active: bool) -> Harness<'static, App> {
     })
 }
 
-fn tab_button<'h>(harness: &'h Harness<'_, App>, name: &'h str) -> egui_kittest::Node<'h> {
-    harness.get_by_role_and_label(Role::Button, name)
+fn tab<'h>(harness: &'h Harness<'_, App>, name: &'h str) -> egui_kittest::Node<'h> {
+    harness.get_by_role_and_label(Role::Tab, name)
+}
+
+/// Clicks the close button of the tab `name`.
+fn close_tab(harness: &mut Harness<'_, App>, name: &str) {
+    let close = format!("Close {name}");
+    harness.get_by_role_and_label(Role::Button, &close).click();
+    harness.run();
 }
 
 #[test]
@@ -523,8 +530,16 @@ fn every_saved_file_has_a_tab_and_the_saved_one_is_shown() {
     let dir = temp_dir("ui-tabs-startup");
     let harness = two_tabs(&dir, true);
 
-    tab_button(&harness, "todo.txt");
-    tab_button(&harness, "Work");
+    assert!(
+        !tab(&harness, "todo.txt")
+            .accesskit_node()
+            .is_selected()
+            .unwrap_or(false)
+    );
+    assert_eq!(
+        tab(&harness, "Work").accesskit_node().is_selected(),
+        Some(true)
+    );
     assert_eq!(rows(&harness), ["Report"]);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -535,7 +550,7 @@ fn clicking_a_tab_shows_its_file_and_quick_add_goes_there() {
     let mut harness = two_tabs(&dir, false);
     assert_eq!(rows(&harness), ["Alpha"]);
 
-    tab_button(&harness, "Work").click();
+    tab(&harness, "Work").click();
     harness.run();
     assert_eq!(rows(&harness), ["Report"]);
     let input = harness.get_by_role(Role::TextInput);
@@ -558,10 +573,9 @@ fn closing_a_tab_removes_it_and_its_entry() {
     let dir = temp_dir("ui-tabs-close");
     let mut harness = two_tabs(&dir, true);
 
-    tab_button(&harness, "Close Work").click();
-    harness.run();
+    close_tab(&mut harness, "Work");
 
-    assert!(harness.query_by_label("Work").is_none());
+    assert!(harness.query_by_role_and_label(Role::Tab, "Work").is_none());
     assert_eq!(rows(&harness), ["Alpha"]);
     let config = AppConfig::load(&dir.join("config.toml"));
     let [entry] = config.files.as_slice() else {
@@ -570,8 +584,7 @@ fn closing_a_tab_removes_it_and_its_entry() {
     assert!(entry.path.ends_with("todo.txt"), "{entry:?}");
     assert_eq!(config.file_name.as_ref(), Some(&entry.path));
 
-    tab_button(&harness, "Close todo.txt").click();
-    harness.run();
+    close_tab(&mut harness, "todo.txt");
     harness.get_by_label_contains("No file loaded. Use New File or Load File");
     assert_eq!(AppConfig::load(&dir.join("config.toml")).files, []);
     let _ = std::fs::remove_dir_all(dir);
@@ -603,7 +616,8 @@ fn a_tab_cannot_be_closed_while_the_edit_dialog_is_open() {
     harness.run();
 
     assert!(
-        tab_button(&harness, "Close Work")
+        harness
+            .get_by_role_and_label(Role::Button, "Close Work")
             .accesskit_node()
             .is_disabled()
     );

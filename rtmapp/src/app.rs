@@ -687,16 +687,17 @@ impl App {
     /// Closing the last open file of a repository syncs it once more, so its commits reach the
     /// remote.
     fn close(&mut self, path: &Path) {
-        if self.editing.is_some() {
+        if !self
+            .files
+            .iter()
+            .any(|file| file.is(path) && self.can_close(file))
+        {
             return;
         }
         let Some(file) = self.files.iter_mut().find(|file| file.is(path)) else {
             return;
         };
         let mut repo = find_repo(&mut self.repos, file.repo.as_ref());
-        if file.checking || repo.as_ref().is_some_and(|repo| repo.worker.busy()) {
-            return;
-        }
         if !file.flush(repo.as_deref_mut()) {
             return;
         }
@@ -738,6 +739,14 @@ impl App {
         }
         self.prune();
         self.save_config();
+    }
+
+    /// Whether `close` would close `file` now: not while the edit dialog is open, while its check
+    /// on open runs or while its repository has a job outstanding.
+    fn can_close(&self, file: &OpenFile) -> bool {
+        self.editing.is_none()
+            && !file.checking
+            && self.repo_of(file).is_none_or(|repo| !repo.worker.busy())
     }
 
     /// Shows the open file at `path`, a click on its tab; it is shown at the next start too.
@@ -1021,24 +1030,27 @@ impl App {
         }
     }
 
-    /// One tab per open file, in order, then a `+` with New File and Load File. A tab's close
-    /// button is enabled as `close` allows.
-    fn tab_strip(&self, ui: &mut Ui, p: &Palette, files_enabled: bool) -> Option<TabAction> {
+    /// One tab per open file, in order, then a `+` with New File and Load File.
+    fn tab_strip(&self, ui: &mut Ui, p: &Palette, files_enabled: bool) -> TabStrip {
         let mut clicked = None;
-        egui::ScrollArea::horizontal()
+        let mut shown = None;
+        let strip = egui::ScrollArea::horizontal()
             .id_salt("tabs")
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
+                    // Clear of the page's rounded corner.
+                    ui.add_space(6.0);
+                    ui.spacing_mut().item_spacing.x = 4.0;
                     for file in &self.files {
-                        let active = self.file().is_some_and(|shown| shown.is(&file.path));
-                        let closable = self.editing.is_none()
-                            && !file.checking
-                            && self.repo_of(file).is_none_or(|repo| !repo.worker.busy());
-                        let tab = tab(ui, p, file, active, closable);
-                        if tab.is_some() {
-                            clicked = tab;
+                        let active = self.file().is_some_and(|open| open.is(&file.path));
+                        let tab = tab(ui, p, file, active, self.can_close(file));
+                        clicked = clicked.take().or(tab.inner);
+                        if active {
+                            scroll_to_once(ui, &tab.response, &file.path);
+                            shown = Some(tab.response.rect);
                         }
                     }
+                    ui.add_space(6.0);
                     let button = theme::add_button(ui, p);
                     egui::Popup::menu(&button).show(|ui| {
                         let mut chosen = None;
@@ -1049,8 +1061,35 @@ impl App {
                     });
                 });
             });
-        ui.add_space(8.0);
-        clicked
+        // A tab scrolled out of sight is not joined.
+        let shown = shown.map(|rect| rect.intersect(strip.inner_rect));
+        TabStrip {
+            clicked,
+            shown: shown.filter(|rect| rect.is_positive()),
+        }
+    }
+
+    /// The tab strip above the page of the shown file: its lines, the add row and the list.
+    fn tabs_and_page(&mut self, ui: &mut Ui, p: &Palette, files_enabled: bool) -> Option<Clicked> {
+        let strip = self.tab_strip(ui, p, files_enabled);
+        // The tabs stand on the page's top border.
+        ui.add_space(-ui.spacing().item_spacing.y - 1.0);
+        let row = Frame::new()
+            .fill(p.panel)
+            .stroke(Stroke::new(1.0, p.border))
+            .corner_radius(6.0)
+            .inner_margin(16.0)
+            .show(ui, |ui| self.content(ui, p))
+            .inner;
+        if let Some(shown) = strip.shown {
+            // The shown tab opens into the page: its part of the border is covered.
+            let gap = egui::Rect::from_min_max(
+                egui::pos2(shown.left() + 1.0, shown.bottom() - 1.0),
+                egui::pos2(shown.right() - 1.0, shown.bottom() + 1.0),
+            );
+            ui.painter().rect_filled(gap, 0.0, p.panel);
+        }
+        strip.clicked.map(Clicked::Tab).or(row.map(Clicked::Row))
     }
 
     /// The app and file lines, the add row and the list. Returns what was clicked in the list.
@@ -1388,21 +1427,16 @@ impl eframe::App for App {
                     Stroke::new(1.0, p.border),
                 );
             });
-        let (tab, clicked) = egui::CentralPanel::default()
+        let clicked = egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg).inner_margin(16.0))
-            .show(ui, |ui| {
-                (self.tab_strip(ui, p, files_enabled), self.content(ui, p))
-            })
+            .show(ui, |ui| self.tabs_and_page(ui, p, files_enabled))
             .inner;
-        match tab {
-            Some(TabAction::Switch(path)) => self.switch(&path),
-            Some(TabAction::Close(path)) => self.close(&path),
-            Some(TabAction::Menu(action)) => self.menu_action(action, &ctx, frame),
-            None => {}
-        }
         match clicked {
-            Some(RowAction::Toggle(index)) => self.toggle(index),
-            Some(RowAction::Edit(index)) => self.open_editor(index),
+            Some(Clicked::Tab(TabAction::Switch(path))) => self.switch(&path),
+            Some(Clicked::Tab(TabAction::Close(path))) => self.close(&path),
+            Some(Clicked::Tab(TabAction::Menu(action))) => self.menu_action(action, &ctx, frame),
+            Some(Clicked::Row(RowAction::Toggle(index))) => self.toggle(index),
+            Some(Clicked::Row(RowAction::Edit(index))) => self.open_editor(index),
             None => {}
         }
         self.vcs_question(&ui.ctx().clone(), p);
@@ -1662,59 +1696,119 @@ enum TabAction {
     Menu(MenuAction),
 }
 
-/// The tab of `file`: its name (red while it has a file line), the full path on hover, and a
-/// close button. The shown tab is drawn like the list's panel, the others plain.
+/// What the tab strip reports: what was clicked, and where the shown tab is, to join it to the
+/// page below.
+struct TabStrip {
+    clicked: Option<TabAction>,
+    shown: Option<egui::Rect>,
+}
+
+/// What was clicked in the content area: in the tab strip, or in the list.
+enum Clicked {
+    Tab(TabAction),
+    Row(RowAction),
+}
+
+/// The tab of `file`, painted: its name (red while it has a file line), the full path on hover,
+/// and a close button shown while the pointer is over the tab. The shown tab has the page's fill
+/// and border, the others a faint fill, stronger under the pointer. Returns what was clicked, with
+/// the tab's response.
 fn tab(
     ui: &mut Ui,
     p: &Palette,
     file: &OpenFile,
     active: bool,
     closable: bool,
-) -> Option<TabAction> {
-    let mut clicked = None;
-    let border = if active {
-        p.border
+) -> egui::InnerResponse<Option<TabAction>> {
+    let color = if file.error.is_some() {
+        p.due
+    } else if active {
+        p.text
     } else {
-        Color32::TRANSPARENT
+        p.muted
     };
-    let fill = if active {
-        p.panel
+    let font = if active {
+        theme::bold(12.6)
     } else {
-        Color32::TRANSPARENT
+        egui::FontId::proportional(12.6)
     };
-    Frame::new()
-        .fill(fill)
-        .stroke(Stroke::new(1.0, border))
-        .corner_radius(6.0)
-        .inner_margin(Margin::symmetric(10, 4))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            let color = if file.error.is_some() {
-                p.due
-            } else if active {
-                p.text
-            } else {
-                p.muted
-            };
-            let label =
-                egui::Button::new(RichText::new(&file.name).size(12.6).color(color)).frame(false);
-            let hover = match &file.error {
-                Some(error) => format!("{}\n{error}", file.path.display()),
-                None => file.path.display().to_string(),
-            };
-            if ui.add(label).on_hover_text(hover).clicked() {
-                clicked = Some(TabAction::Switch(file.path.clone()));
-            }
-            let name = format!("Close {}", file.name);
-            if ui
-                .add_enabled_ui(closable, |ui| theme::close_button(ui, p, &name))
-                .inner
-                .clicked()
-            {
-                clicked = Some(TabAction::Close(file.path.clone()));
-            }
-        });
-    clicked
+    let galley = ui.painter().layout_no_wrap(file.name.clone(), font, color);
+    // 12 px before the name, 6 px to the close button (16 px), 8 px after it.
+    let size = egui::vec2(12.0 + galley.size().x + 6.0 + 16.0 + 8.0, 32.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::Tab, true, &file.name));
+    // egui reports `selected` as toggled; a tab is selected.
+    ui.ctx()
+        .accesskit_node_builder(response.id, |node| node.set_selected(active));
+    // The load errors start with the path already.
+    let path = file.path.display().to_string();
+    let hover = match &file.error {
+        Some(error) if error.contains(&path) => error.clone(),
+        Some(error) => format!("{path}\n{error}"),
+        None => path,
+    };
+    let response = response.on_hover_text(hover);
+    let pointer = response.contains_pointer();
+    let corners = egui::CornerRadius {
+        nw: 6,
+        ne: 6,
+        sw: 0,
+        se: 0,
+    };
+    if active {
+        ui.painter().rect(
+            rect,
+            corners,
+            p.panel,
+            Stroke::new(1.0, p.border),
+            egui::StrokeKind::Inside,
+        );
+    } else {
+        // A faint fill makes each tab a unit; stronger under the pointer.
+        let fill = p.border.gamma_multiply(if pointer { 0.7 } else { 0.35 });
+        ui.painter().rect_filled(rect, corners, fill);
+    }
+    let text_at = egui::pos2(rect.left() + 12.0, rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(text_at, galley, color);
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect.shrink(2.0),
+            4.0,
+            Stroke::new(1.0, p.focus),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let close_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - 16.0, rect.center().y),
+        egui::vec2(16.0, 16.0),
+    );
+    let name = format!("Close {}", file.name);
+    // A child of its own, so the parent's cursor stays after the tab.
+    let mut close_ui = ui.new_child(egui::UiBuilder::new().max_rect(close_rect));
+    if !closable {
+        close_ui.disable();
+    }
+    let close = theme::close_button(&mut close_ui, p, &name, pointer);
+    let clicked = if close.clicked() {
+        Some(TabAction::Close(file.path.clone()))
+    } else if response.clicked() {
+        Some(TabAction::Switch(file.path.clone()))
+    } else {
+        None
+    };
+    egui::InnerResponse::new(clicked, response)
+}
+
+/// Scrolls the tab strip to the shown tab when it becomes the shown one (at startup, on a click, on
+/// opening a file), and leaves the strip where the user scrolled it otherwise.
+fn scroll_to_once(ui: &Ui, tab: &egui::Response, path: &Path) {
+    let id = egui::Id::unique("tabs-scrolled-to");
+    let path = path.to_owned();
+    if ui.data(|data| data.get_temp::<PathBuf>(id)).as_ref() != Some(&path) {
+        tab.scroll_to_me(None);
+        ui.data_mut(|data| data.insert_temp(id, path));
+    }
 }
 
 /// `shortcut` as the menu shows it. egui spells out a key after modifier names ("Ctrl+Comma");
