@@ -4,7 +4,10 @@
 //! or recurrence are refused instead of being silently dropped, tag names with whitespace are
 //! refused instead of being written as typed, and a typed `+` or `@` in front of a tag name is
 //! dropped. The date fields have a calendar popup (`calendar`). A trash button at the left of the
-//! button row deletes the item and its sub-items after an inline confirmation.
+//! button row deletes the item and its sub-items after an inline confirmation; beside it, Move to
+//! moves them to another open file, after an inline confirmation too.
+
+use std::path::PathBuf;
 
 use chrono::NaiveDate;
 use eframe::egui::{self, Align, Color32, Key, Layout, Modal, RichText, Stroke, Ui};
@@ -30,6 +33,24 @@ pub struct EditForm {
     pub error: Option<String>,
     /// While the delete confirmation is shown: how many sub-items go with the item.
     pub confirm_delete: Option<usize>,
+    /// The other open files the item can be moved to; Move to is hidden without any.
+    pub targets: Vec<MoveTarget>,
+    /// While the move confirmation is shown: where to, and how many sub-items go with the item.
+    pub confirm_move: Option<ConfirmMove>,
+}
+
+/// An open file the edit dialog's item can be moved to.
+#[derive(Clone)]
+pub struct MoveTarget {
+    pub path: PathBuf,
+    /// Its tab's label.
+    pub name: String,
+}
+
+/// The move confirmation: the target, and how many sub-items go with the item.
+pub struct ConfirmMove {
+    pub target: MoveTarget,
+    pub sub_items: usize,
 }
 
 pub enum Outcome {
@@ -39,6 +60,10 @@ pub enum Outcome {
     AskDelete,
     /// Delete confirmed.
     Delete,
+    /// A file picked under Move to: ask before moving there.
+    AskMove(MoveTarget),
+    /// Move confirmed.
+    Move,
 }
 
 impl EditForm {
@@ -60,6 +85,8 @@ impl EditForm {
             contexts: join(item.contexts.iter().map(|c| c.name.as_str())),
             error: None,
             confirm_delete: None,
+            targets: Vec::new(),
+            confirm_move: None,
         }
     }
 
@@ -158,6 +185,15 @@ fn priority_label(priority: Option<u8>) -> String {
 }
 
 /// The delete confirmation, naming the sub-items that go with the item.
+fn move_question(question: &ConfirmMove) -> String {
+    let name = &question.target.name;
+    match question.sub_items {
+        0 => format!("Move this item to {name}?"),
+        1 => format!("Move this item and 1 sub-item to {name}?"),
+        n => format!("Move this item and {n} sub-items to {name}?"),
+    }
+}
+
 fn delete_question(sub_items: usize) -> String {
     match sub_items {
         0 => "Delete this item?".to_owned(),
@@ -168,7 +204,8 @@ fn delete_question(sub_items: usize) -> String {
 
 /// The modal. Returns `Save` on the Save button or Enter in a field, `Cancel` on the Cancel
 /// button, Escape or a click outside the dialog (the Tauri app closed only on its buttons),
-/// `AskDelete` on the trash button and `Delete` once the deletion is confirmed.
+/// `AskDelete` on the trash button and `Delete` once the deletion is confirmed, `AskMove` on a file
+/// picked under Move to and `Move` once the move is confirmed.
 pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     // CSS: 500 px wide with 24 px padding, 8 px corners and a soft shadow; dark adds a border.
     let frame = theme::dialog_frame(p);
@@ -243,6 +280,9 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     if let Some(sub_items) = form.confirm_delete {
         ui.label(RichText::new(delete_question(sub_items)).color(p.text));
     }
+    if let Some(question) = &form.confirm_move {
+        ui.label(RichText::new(move_question(question)).color(p.text));
+    }
     ui.add_space(4.0);
     let mut outcome = None;
     // Top-aligned: a centred cross axis would stretch the row over all the height below it.
@@ -254,9 +294,19 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
         if theme::secondary_button(ui, "Cancel").clicked() {
             outcome = Some(Outcome::Cancel);
         }
-        // The rest of the row, from the far left: the trash button, or Delete and Keep.
+        // The rest of the row, from the far left: the trash button and Move to, or the answers to
+        // their questions.
         ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-            if form.confirm_delete.is_some() {
+            if form.confirm_move.is_some() {
+                // As for Delete: the second click of a double-click must not confirm.
+                let confirm = theme::primary_button(ui, "Move");
+                if confirm.clicked() && !confirm.double_clicked() {
+                    outcome = Some(Outcome::Move);
+                }
+                if theme::secondary_button(ui, "Keep").clicked() {
+                    form.confirm_move = None;
+                }
+            } else if form.confirm_delete.is_some() {
                 // The question line shifts Delete under where the trash button was, so the second
                 // click of a double-click on the trash button must not confirm.
                 let delete = theme::danger_button(ui, "Delete");
@@ -266,8 +316,13 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
                 if theme::secondary_button(ui, "Keep").clicked() {
                     form.confirm_delete = None;
                 }
-            } else if theme::trash_button(ui, p).clicked() {
-                outcome = Some(Outcome::AskDelete);
+            } else {
+                if theme::trash_button(ui, p).clicked() {
+                    outcome = Some(Outcome::AskDelete);
+                }
+                if let Some(target) = move_to(ui, &form.targets) {
+                    outcome = Some(Outcome::AskMove(target));
+                }
             }
         });
     });
@@ -275,6 +330,29 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
         outcome = Some(Outcome::Save);
     }
     outcome
+}
+
+/// The Move to button and its list of the other open files; nothing without any. Returns the file
+/// picked.
+fn move_to(ui: &mut Ui, targets: &[MoveTarget]) -> Option<MoveTarget> {
+    if targets.is_empty() {
+        return None;
+    }
+    let button = theme::secondary_button(ui, "Move to…");
+    let mut picked = None;
+    let shown = egui::Popup::menu(&button).show(|ui| {
+        for target in targets {
+            if ui.button(&target.name).clicked() {
+                picked = Some(target.clone());
+            }
+        }
+    });
+    // A click in the dialog moves its layer to the top; as a sublayer the list stays above it.
+    if let Some(shown) = &shown {
+        ui.ctx()
+            .set_sublayer(ui.layer_id(), shown.response.layer_id);
+    }
+    picked
 }
 
 /// A label with its control 6 px below; `add` gets the label's id, to name the control by it.

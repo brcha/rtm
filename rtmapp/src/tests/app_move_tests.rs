@@ -104,3 +104,73 @@ fn a_stale_item_refuses_the_move() {
     assert_eq!(lines(&work), ["Report"]);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn the_move_is_refused_when_a_pull_changed_a_sub_item_meanwhile() {
+    let dir = temp_dir("move stale sub-item");
+    let todo = format!("Plan the trip uuid:{PARENT}\nBook the hotel uuid:{CHILD} sub:{PARENT}\n");
+    let (mut app, work) = two_files(&dir, &todo, "Report\n");
+    open_editor(&mut app, 0);
+    app.ask_move(MoveTarget {
+        path: work.clone(),
+        name: "work.txt".to_owned(),
+    });
+    assert_eq!(
+        app.editing
+            .as_ref()
+            .unwrap()
+            .confirm_move
+            .as_ref()
+            .unwrap()
+            .sub_items,
+        1
+    );
+
+    // What a pull that changed the sub-item does.
+    let changed =
+        format!("Plan the trip uuid:{PARENT}\nBook a cheaper hotel uuid:{CHILD} sub:{PARENT}\n");
+    std::fs::write(dir.join("todo.txt"), &changed).unwrap();
+    let source = app.file().unwrap().path.clone();
+    app.reload(&[source]);
+    app.move_item(&work);
+
+    let error = app.editing.as_ref().unwrap().error.as_deref().unwrap();
+    assert!(error.contains("A sync changed this item"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("todo.txt")).unwrap(),
+        changed
+    );
+    assert_eq!(lines(&work), ["Report"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_dialog_offers_the_other_loaded_files() {
+    let dir = temp_dir("move targets");
+    let (mut app, work) = two_files(&dir, "Alpha\n", "Report\n");
+    app.files.push(OpenFile {
+        error: Some("missing".to_owned()),
+        ..OpenFile::new(dir.join("missing.txt"), None)
+    });
+
+    let form = open_editor(&mut app, 0);
+
+    let targets: Vec<_> = form.targets.iter().map(|target| &target.path).collect();
+    assert_eq!(targets, [&work]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_target_that_is_no_longer_loaded_is_named() {
+    let dir = temp_dir("move gone");
+    let (mut app, work) = two_files(&dir, "Alpha\n", "Report\n");
+    open_editor(&mut app, 0);
+    app.files.last_mut().unwrap().library = None;
+
+    app.move_item(&work);
+
+    let error = app.editing.as_ref().unwrap().error.as_deref().unwrap();
+    assert!(error.contains("work.txt is no longer open"), "{error}");
+    assert_eq!(file_lines(&dir), ["Alpha"]);
+    let _ = std::fs::remove_dir_all(dir);
+}

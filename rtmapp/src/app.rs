@@ -10,7 +10,7 @@ use eframe::egui::{
 use todotxt::{TodoItem, TodoLibrary};
 
 use crate::config::{self, AppConfig};
-use crate::edit::{self, EditForm, Outcome};
+use crate::edit::{self, ConfirmMove, EditForm, MoveTarget, Outcome};
 use crate::list::{self, RowAction};
 use crate::settings::{self, SettingsForm};
 use crate::sync::{self, Done, Found, Place, Question, Repo, RepoKey, Worker};
@@ -389,7 +389,6 @@ impl App {
     /// fields are applied first, as Save does, and refused as Save refuses them. The target gets the
     /// edited item and the sub-items (`Change::MoveIn`); the source loses the original item and its
     /// sub-items (`Change::MoveOut`), written only once the target has been written.
-    #[cfg_attr(not(test), expect(dead_code, reason = "not reachable from the UI yet"))]
     fn move_item(&mut self, target: &Path) {
         if self.refuse_stale() {
             return;
@@ -414,6 +413,11 @@ impl App {
             return;
         };
         if !target_loaded || from == target {
+            form.error = Some(format!(
+                "{} is no longer open; choose another file.",
+                file_name_of(target)
+            ));
+            form.confirm_move = None;
             return;
         }
         let Some(original) = library.items.get(form.index).cloned() else {
@@ -608,15 +612,28 @@ impl App {
         }
     }
 
-    /// Opens the edit dialog on the item at `index`.
+    /// Opens the edit dialog on the item at `index`, with the other open, loaded files to move it
+    /// to.
     fn open_editor(&mut self, index: usize) {
+        let active = self.active.as_deref();
+        let targets: Vec<_> = self
+            .files
+            .iter()
+            .filter(|file| file.library.is_some() && active.is_none_or(|path| !file.is(path)))
+            .map(|file| MoveTarget {
+                path: file.path.clone(),
+                name: file.name.clone(),
+            })
+            .collect();
         let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
             return;
         };
         let Some(item) = file.library.as_ref().and_then(|l| l.items.get(index)) else {
             return;
         };
-        self.editing = Some(EditForm::new(index, item));
+        let mut form = EditForm::new(index, item);
+        form.targets = targets;
+        self.editing = Some(form);
         file.edited = Some(item.clone());
         file.deleting = None;
         file.stale = false;
@@ -627,7 +644,7 @@ impl App {
         let stale = self.file().is_some_and(|file| file.stale);
         if stale && let Some(form) = &mut self.editing {
             form.error = Some(
-                "A sync changed this item, or what deleting it would remove; close the dialog and \
+                "A sync changed this item, or the sub-items that go with it; close the dialog and \
                  open the item again."
                     .to_owned(),
             );
@@ -1231,6 +1248,30 @@ impl App {
         match library.clone().remove_item(form.index) {
             Some(removed) => {
                 form.confirm_delete = Some(removed.len() - 1);
+                form.confirm_move = None;
+                file.deleting = Some(removed);
+            }
+            None => self.close_editor(),
+        }
+    }
+
+    /// Shows the move confirmation for `target`, with the number of sub-items the move would take,
+    /// counted as `ask_delete` counts them; a pull that changes them makes the dialog stale.
+    fn ask_move(&mut self, target: MoveTarget) {
+        let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
+            return;
+        };
+        let (Some(form), Some(library)) = (&mut self.editing, &file.library) else {
+            self.close_editor();
+            return;
+        };
+        match library.clone().remove_item(form.index) {
+            Some(removed) => {
+                form.confirm_move = Some(ConfirmMove {
+                    target,
+                    sub_items: removed.len() - 1,
+                });
+                form.confirm_delete = None;
                 file.deleting = Some(removed);
             }
             None => self.close_editor(),
@@ -1575,7 +1616,7 @@ impl OpenFile {
             return;
         };
         form.index = index;
-        if form.confirm_delete.is_some()
+        if (form.confirm_delete.is_some() || form.confirm_move.is_some())
             && let Some(removing) = &self.deleting
             && library.clone().remove_item(index).as_ref() != Some(removing)
         {
@@ -1687,6 +1728,13 @@ impl eframe::App for App {
                 Some(Outcome::Cancel) => self.close_editor(),
                 Some(Outcome::AskDelete) => self.ask_delete(),
                 Some(Outcome::Delete) => self.delete_item(),
+                Some(Outcome::AskMove(target)) => self.ask_move(target),
+                Some(Outcome::Move) => {
+                    let target = form.confirm_move.as_ref().map(|q| q.target.path.clone());
+                    if let Some(target) = target {
+                        self.move_item(&target);
+                    }
+                }
                 None => {}
             }
         }

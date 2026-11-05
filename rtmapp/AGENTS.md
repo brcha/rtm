@@ -17,9 +17,9 @@ through Git or Pijul (RTM-64), in the background since RTM-20, with the check fo
 untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do not block the UI
 (RTM-65); UI tests with `egui_kittest` (RTM-86); the list of files in the config (RTM-124) and the
 per-file state with its own error line (RTM-125) and sync with one worker per repository, the
-check on open included (RTM-126) and the open files as tabs (RTM-127), for several open files
-(RTM-66); the title bar's
-menu and the Settings dialog (RTM-134).
+check on open included (RTM-126), the open files as tabs (RTM-127) and moving an item to another
+open file (RTM-128), for several open files (RTM-66); the title bar's menu and the Settings dialog
+(RTM-134).
 
 ---
 
@@ -203,7 +203,11 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   left of the button row, opposite Cancel/Save, asks inline. The question gets its own line above
   the row ("Delete this item?", or "… and N sub-items?" with the count from `remove_item` on a copy
   of the library, since `uuid`/`sub` are not shown anywhere), and Delete (red) and Keep replace the
-  trash button; Keep goes back, Escape or the backdrop cancel the whole dialog.
+  trash button; Keep goes back, Escape or the backdrop cancel the whole dialog. **Move to**
+  (RTM-128), beside the trash button and shown only when another file is open and loaded, lists
+  those files by tab name (a `Popup` made a sublayer of the dialog); picking one asks inline the
+  same way ("Move this item to Work?", or "… and N sub-items to Work?"), with Move and Keep. Move
+  applies the dialog's fields as Save does, then moves the item (see "Moving an item" under Sync).
 - **Calendar** (`calendar.rs`): Due Date and Threshold are text fields (typing still works, as
   flatpickr's `allowInput` did) with a popup drawn at the sizes of the flatpickr popup the Tauri app
   used (`rtmapp/src/assets/flatpickr.min.css` at `5076649`). It opens on a click or focus and closes on
@@ -276,12 +280,25 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     reloads each of them and redoes its `pending` on it, finding each item by equality (with two identical lines,
     the first); a change whose item the pull changed or removed is dropped and named in the file's
     error line. The edit dialog's item (kept in `edited`) is then found again; if it is gone, or what
-    deleting it would remove changed, `stale` makes Save and Delete refuse. The header shows the
-    shown file's repository: "Syncing…", or "Not synced: …" (git's first line; the rest on hover)
-    after a failed pull or push; for a file outside any repository, why it does not sync.
+    deleting or moving it would take changed, `stale` makes Save, Delete and Move refuse. The header
+    shows the shown file's repository: "Syncing…", or "Not synced: …" (git's first line; the rest
+    on hover) after a failed pull or push; for a file outside any repository, why it does not sync.
   - **A conflict from a job closes every open file of that repository**, as on open: a reload would
     read the markers as items. Each keeps its place among the open files, and its error line counts
     the pending changes that could not be saved; the repository's worker stops.
+  - **Moving an item (RTM-128)** is two linked changes with one id (`App::move_item`): the target
+    gets `Change::MoveIn` (the edited item and its sub-items, `rtm: move <description> from
+    <file>`), the source `Change::MoveOut` (the original item and its sub-items, removed as
+    `Delete` does, `rtm: move <description> to <file>`). The target is written first: a source
+    whose `MoveOut` is not yet in `App::delivered` (the moves written to their targets, kept on
+    `App` so closing the target cannot lose them) is not written at all, and cannot be closed.
+    `App::flush` repeats its pass when a target was written, so a source listed first is freed in
+    the same flush. When the target's half is lost (a conflict or "Don't open" closes the target,
+    or its write fails), `restore_lost_moves` turns the `MoveOut` into an edit with the dialog's
+    changes and reads the source again: the item stays, edited, and the file line says the move
+    failed. A pull that changes the item before the source is written leaves it in both files: a
+    duplicate, never a loss. A pull that changes it, or what moves with it, while the move question
+    is open makes Move refuse, as for Delete. Comments (RTM-4) do not move yet.
   - **On exit** (`on_exit`, eframe's wgpu build, `finish_jobs`): outstanding results are handled as
     in `logic`, pending changes are written and committed, and a last sync of every repository runs,
     within 5 s. When changes are waiting behind a running job, the repositories get up to
