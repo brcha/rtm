@@ -207,6 +207,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     in `logic`, pending changes are written and committed, and a last sync runs, within 5 s. When
     changes are waiting behind a running job, that job gets up to `SAVE_TIMEOUT` (125 s, a pull and
     a push timeout), so they are not lost.
+    On macOS, `scripts/check-macos-quit.sh` checks that quitting through `terminate:` (Cmd+Q, the
+    quit Apple event) reaches `on_exit` and pushes (RTM-140; see "macOS" in
+    [`doc/release-process.md`](../doc/release-process.md)).
 - Tests are unit tests in `src/tests/`, one file per source file and topic (see Tests in the root
   `AGENTS.md`); rtmapp is a binary crate, so it has no integration tests, and its UI tests are
   unit tests too (see UI tests below). They use temp files and never open a window. `App` tests
