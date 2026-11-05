@@ -1,7 +1,7 @@
 //! The Settings dialog (RTM-134), opened from the header's menu: the app-wide sync settings. The
 //! Git-or-Pijul choice is per file (RTM-124) and stays the question asked on open.
 
-use eframe::egui::{self, Align, Color32, Frame, Layout, Modal, RichText, Stroke, Ui};
+use eframe::egui::{self, Align, Color32, Layout, Modal, RichText, Ui};
 
 use crate::config::AppConfig;
 use crate::theme::{self, Palette};
@@ -38,17 +38,7 @@ impl SettingsForm {
 
 /// The modal, framed like the edit dialog. Escape and a click on the backdrop cancel.
 pub fn show(ctx: &egui::Context, p: &Palette, form: &mut SettingsForm) -> Option<Outcome> {
-    let frame = Frame::new()
-        .fill(p.dialog_bg)
-        .stroke(Stroke::new(1.0, p.dialog_border))
-        .corner_radius(8.0)
-        .inner_margin(24.0)
-        .shadow(egui::Shadow {
-            offset: [0, 4],
-            blur: 20,
-            spread: 0,
-            color: Color32::from_black_alpha(51),
-        });
+    let frame = theme::dialog_frame(p);
     let mut outcome = None;
     let modal = Modal::new(egui::Id::unique("settings-dialog"))
         .frame(frame)

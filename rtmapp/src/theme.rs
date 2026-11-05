@@ -205,6 +205,109 @@ pub fn menu_button(ui: &mut Ui) -> egui::Response {
     response
 }
 
+/// A tab's close button: a painted cross, named `name`, drawn only while `shown` (the pointer
+/// is over its tab) or while it is focused, so it stays out of the way; red under the pointer.
+pub fn close_button(ui: &mut Ui, p: &Palette, name: &str, shown: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
+    let response = response.on_hover_text(name);
+    if !shown && !response.has_focus() {
+        return response;
+    }
+    let color = if !ui.is_enabled() {
+        p.border
+    } else if response.hovered() || response.has_focus() {
+        p.due
+    } else {
+        p.muted
+    };
+    let painter = ui.painter();
+    if ui.is_enabled() && response.hovered() {
+        painter.rect_filled(rect, 3.0, p.border.gamma_multiply(0.5));
+    }
+    let stroke = Stroke::new(1.5, color);
+    let c = rect.center();
+    painter.line_segment(
+        [c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)],
+        stroke,
+    );
+    painter.line_segment(
+        [c + egui::vec2(-3.5, 3.5), c + egui::vec2(3.5, -3.5)],
+        stroke,
+    );
+    response
+}
+
+/// The tab strip's `+` button, painted like `close_button`, named "Open a file".
+pub fn add_button(ui: &mut Ui, p: &Palette) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Open a file")
+    });
+    let response = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("New File or Load File");
+    let painter = ui.painter();
+    if response.hovered() || response.has_focus() {
+        painter.rect_filled(rect, 4.0, p.info_bg);
+    }
+    let stroke = Stroke::new(1.5, p.muted);
+    let c = rect.center();
+    painter.line_segment(
+        [c + egui::vec2(-6.0, 0.0), c + egui::vec2(6.0, 0.0)],
+        stroke,
+    );
+    painter.line_segment(
+        [c + egui::vec2(0.0, -6.0), c + egui::vec2(0.0, 6.0)],
+        stroke,
+    );
+    response
+}
+
+/// The frame of the app's dialogs, from the Tauri app's CSS: 24 px padding, 8 px corners and a
+/// soft shadow; the dark theme adds a border.
+pub fn dialog_frame(p: &Palette) -> egui::Frame {
+    egui::Frame::new()
+        .fill(p.dialog_bg)
+        .stroke(Stroke::new(1.0, p.dialog_border))
+        .corner_radius(8.0)
+        .inner_margin(24.0)
+        .shadow(egui::Shadow {
+            offset: [0, 4],
+            blur: 20,
+            spread: 0,
+            color: Color32::from_black_alpha(51),
+        })
+}
+
+/// A question in the dialog frame: `title` in bold, `text` below it, then the buttons `buttons`
+/// adds, laid out from the right, so the main answer goes first. Returns whether Escape or a click
+/// on the backdrop asked to close it.
+pub fn question(
+    ctx: &egui::Context,
+    p: &Palette,
+    id: &'static str,
+    title: &str,
+    text: &str,
+    buttons: impl FnOnce(&mut Ui),
+) -> bool {
+    egui::Modal::new(egui::Id::unique(id))
+        .frame(dialog_frame(p))
+        .backdrop_color(Color32::from_black_alpha(128))
+        .show(ctx, |ui| {
+            ui.set_width(360.0);
+            ui.spacing_mut().item_spacing.y = 8.0;
+            ui.label(egui::RichText::new(title).font(bold(17.5)).color(p.text));
+            ui.label(egui::RichText::new(text).size(13.3).color(p.muted));
+            ui.add_space(16.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                buttons(ui);
+            });
+        })
+        .should_close()
+}
+
 /// A single-line input like the CSS ones: 1 px border, 6 px corners, 12 px side padding and
 /// `pad_y` above and below, and when focused a `focus` border with a soft 3 px glow.
 pub fn text_input(

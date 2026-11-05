@@ -33,7 +33,7 @@ pub struct AppConfig {
 #[serde(default)]
 pub struct FileEntry {
     pub path: String,
-    /// The label of the file's tab (RTM-127); unused until then.
+    /// The label of the file's tab (RTM-127), set by hand; without it the tab shows the file name.
     pub name: Option<String>,
     /// `"git"` or `"pijul"`: the user's choice when the file's directory belongs to both.
     pub vcs: Option<String>,
@@ -121,46 +121,51 @@ impl AppConfig {
         }
     }
 
-    /// Makes `file` the active file, replacing the previous one's entry: the app shows one file.
-    /// An entry `file` already has keeps its name and choice.
-    pub fn set_active(&mut self, file: &str) {
-        if self.file_name.as_deref() == Some(file) {
-            return;
-        }
-        if let Some(old) = self.file_name.take() {
-            self.files
-                .retain(|entry| Path::new(&entry.path) != Path::new(&old));
-        }
+    /// Adds `file` to the saved session, unless it is listed already.
+    pub fn add_file(&mut self, file: &str) {
         if self.entry(Path::new(file)).is_none() {
             self.files.push(FileEntry {
                 path: file.to_owned(),
                 ..FileEntry::default()
             });
         }
+    }
+
+    /// Removes `file` from the saved session; `file_name` is cleared when it named it.
+    pub fn remove_file(&mut self, file: &str) {
+        self.files
+            .retain(|entry| Path::new(&entry.path) != Path::new(file));
+        if self.file_name.as_deref() == Some(file) {
+            self.file_name = None;
+        }
+    }
+
+    /// Makes `file` the active file, the one shown at the next start.
+    pub fn set_active(&mut self, file: &str) {
         self.file_name = Some(file.to_owned());
     }
 
-    /// Renames the active file's path to `file`, keeping its entry's name and choice: the path
-    /// the config gave, resolved (symlinks, `..`) when the file was loaded.
-    pub fn rename_active(&mut self, file: &str) {
-        let Some(old) = self.file_name.replace(file.to_owned()) else {
-            return;
-        };
+    /// Renames the entry of `old` to `file`, keeping its name and choice: the path the config
+    /// gave, resolved (symlinks, `..`) when the file was loaded. `file_name` follows.
+    pub fn rename(&mut self, old: &str, file: &str) {
         if old == file {
             return;
+        }
+        if self.file_name.as_deref() == Some(old) {
+            self.file_name = Some(file.to_owned());
         }
         if self.entry(Path::new(file)).is_some() {
             // Both spellings are listed: keep the resolved one, with the newer choice `migrate`
             // gave the old spelling.
             let vcs = self
-                .entry(Path::new(&old))
+                .entry(Path::new(old))
                 .and_then(|entry| entry.vcs.clone());
             self.files
-                .retain(|entry| Path::new(&entry.path) != Path::new(&old));
+                .retain(|entry| Path::new(&entry.path) != Path::new(old));
             if let Some(vcs) = vcs {
                 self.set_vcs(file, &vcs);
             }
-        } else if let Some(entry) = self.entry_mut(Path::new(&old)) {
+        } else if let Some(entry) = self.entry_mut(Path::new(old)) {
             entry.path = file.to_owned();
         }
     }

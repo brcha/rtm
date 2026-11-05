@@ -7,11 +7,11 @@ fn a_conflict_message_stays_after_a_config_save() {
     let dir = temp_dir("error conflict save");
     let mut app = app_with(&dir, "First\n");
 
-    app.file_mut().close_conflicted();
+    app.file_mut().unwrap().close_conflicted();
     app.save_config();
 
     assert_eq!(app.error, None);
-    let error = app.file().error.as_deref().unwrap();
+    let error = app.file().unwrap().error.as_deref().unwrap();
     assert!(error.contains("resolve them by hand"), "{error}");
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -23,7 +23,7 @@ fn a_failed_config_save_and_a_file_message_are_both_shown() {
     // A regular file where the config's folder would be: creating the folder fails everywhere.
     app.config_path = dir.join("todo.txt").join("config.toml");
 
-    app.file_mut().close_conflicted();
+    app.file_mut().unwrap().close_conflicted();
     app.save_config();
 
     let errors = errors(&app);
@@ -41,7 +41,7 @@ fn a_successful_change_clears_both_lines() {
     let dir = temp_dir("error cleared");
     let mut app = app_with(&dir, "First\n");
     app.error = Some("Could not parse the item".to_owned());
-    app.file_mut().error = Some("Not committed".to_owned());
+    app.file_mut().unwrap().error = Some("Not committed".to_owned());
 
     app.new_item = "Second".to_owned();
     app.add_item();
@@ -56,13 +56,13 @@ fn opening_another_file_clears_the_old_file_message() {
     let dir = temp_dir("error other file");
     std::fs::write(dir.join("other.txt"), "Other\n").unwrap();
     let mut app = app_with(&dir, "First\n");
-    app.file_mut().error = Some("Not committed".to_owned());
+    app.file_mut().unwrap().error = Some("Not committed".to_owned());
 
     app.open_file(&dir.join("other.txt"));
 
-    assert_eq!(app.file().error, None);
+    assert_eq!(app.file().unwrap().error, None);
     assert_eq!(
-        app.file().library.as_ref().unwrap().items[0].description,
+        app.file().unwrap().library.as_ref().unwrap().items[0].description,
         "Other"
     );
     let _ = std::fs::remove_dir_all(dir);

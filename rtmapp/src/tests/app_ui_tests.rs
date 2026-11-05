@@ -117,7 +117,14 @@ fn the_choice_of_a_file_named_through_a_detour_is_found_after_startup() {
     });
 
     let app = harness.state();
-    let file = app.file().library.as_ref().unwrap().file_name.clone();
+    let file = app
+        .file()
+        .unwrap()
+        .library
+        .as_ref()
+        .unwrap()
+        .file_name
+        .clone();
     assert_eq!(
         Path::new(&file),
         dir.join("todo.txt").canonicalize().unwrap()
@@ -137,7 +144,7 @@ fn the_app_line_and_the_file_line_are_both_shown() {
     let mut harness = harness(&dir, "First item\n", |_| {});
 
     harness.state_mut().error = Some("Could not save the config: test".to_owned());
-    harness.state_mut().file_mut().error = Some("Not committed: test".to_owned());
+    harness.state_mut().file_mut().unwrap().error = Some("Not committed: test".to_owned());
     harness.run();
 
     let app_line = harness
@@ -484,6 +491,140 @@ fn quit_closes_the_window_through_the_normal_close() {
     assert!(
         commands.contains(&egui::ViewportCommand::Close),
         "{commands:?}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// Tabs (RTM-127).
+
+/// The harness on `todo.txt` and `work.txt` ("Report"), both in the session, `work.txt` shown
+/// when `work_active`, labelled "Work".
+fn two_tabs(dir: &Path, work_active: bool) -> Harness<'static, App> {
+    let work = dir.join("work.txt");
+    std::fs::write(&work, "Report\n").unwrap();
+    harness(dir, "Alpha\n", |config| {
+        let todo = config.file_name.clone().unwrap();
+        let work = work.to_string_lossy().into_owned();
+        config.add_file(&todo);
+        config.add_file(&work);
+        config.files.last_mut().unwrap().name = Some("Work".into());
+        if work_active {
+            config.set_active(&work);
+        }
+    })
+}
+
+fn tab<'h>(harness: &'h Harness<'_, App>, name: &'h str) -> egui_kittest::Node<'h> {
+    harness.get_by_role_and_label(Role::Tab, name)
+}
+
+/// Clicks the close button of the tab `name`, then answers the question with `answer`.
+fn close_tab(harness: &mut Harness<'_, App>, name: &str, answer: &str) {
+    let close = format!("Close {name}");
+    harness.get_by_role_and_label(Role::Button, &close).click();
+    harness.run();
+    harness.get_by_label(&format!("Close {name}?"));
+    harness.get_by_role_and_label(Role::Button, answer).click();
+    harness.run();
+}
+
+#[test]
+fn every_saved_file_has_a_tab_and_the_saved_one_is_shown() {
+    let dir = temp_dir("ui-tabs-startup");
+    let harness = two_tabs(&dir, true);
+
+    assert!(
+        !tab(&harness, "todo.txt")
+            .accesskit_node()
+            .is_selected()
+            .unwrap_or(false)
+    );
+    assert_eq!(
+        tab(&harness, "Work").accesskit_node().is_selected(),
+        Some(true)
+    );
+    assert_eq!(rows(&harness), ["Report"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn clicking_a_tab_shows_its_file_and_quick_add_goes_there() {
+    let dir = temp_dir("ui-tabs-switch");
+    let mut harness = two_tabs(&dir, false);
+    assert_eq!(rows(&harness), ["Alpha"]);
+
+    tab(&harness, "Work").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Report"]);
+    let input = harness.get_by_role(Role::TextInput);
+    input.focus();
+    input.type_text("Send invoice");
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    let work = std::fs::read_to_string(dir.join("work.txt")).unwrap();
+    assert!(work.contains("Send invoice"), "{work}");
+    assert_eq!(file_lines(&dir), ["Alpha"]);
+    let config = AppConfig::load(&dir.join("config.toml"));
+    let canonical = dir.join("work.txt").canonicalize().unwrap();
+    assert_eq!(config.file_name.as_deref(), canonical.to_str());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn closing_a_tab_removes_it_and_its_entry() {
+    let dir = temp_dir("ui-tabs-close");
+    let mut harness = two_tabs(&dir, true);
+
+    close_tab(&mut harness, "Work", "Cancel");
+    tab(&harness, "Work");
+    close_tab(&mut harness, "Work", "Close tab");
+
+    assert!(harness.query_by_role_and_label(Role::Tab, "Work").is_none());
+    assert_eq!(rows(&harness), ["Alpha"]);
+    let config = AppConfig::load(&dir.join("config.toml"));
+    let [entry] = config.files.as_slice() else {
+        panic!("one entry: {:?}", config.files);
+    };
+    assert!(entry.path.ends_with("todo.txt"), "{entry:?}");
+    assert_eq!(config.file_name.as_ref(), Some(&entry.path));
+
+    close_tab(&mut harness, "todo.txt", "Close tab");
+    harness.get_by_label_contains("No file loaded. Use New File or Load File");
+    assert_eq!(AppConfig::load(&dir.join("config.toml")).files, []);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_add_button_offers_new_file_and_load_file() {
+    let dir = temp_dir("ui-tabs-add");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+
+    harness.get_by_label("Open a file").click();
+    harness.run();
+
+    for name in ["New File…", "Load File…"] {
+        assert!(
+            !self::entry(&harness, name).accesskit_node().is_disabled(),
+            "{name}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_tab_cannot_be_closed_while_the_edit_dialog_is_open() {
+    let dir = temp_dir("ui-tabs-editing");
+    let mut harness = two_tabs(&dir, true);
+
+    harness.get_by_role_and_label(Role::Label, "Report").click();
+    harness.run();
+
+    assert!(
+        harness
+            .get_by_role_and_label(Role::Button, "Close Work")
+            .accesskit_node()
+            .is_disabled()
     );
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -7,7 +7,7 @@
 //! button row deletes the item and its sub-items after an inline confirmation.
 
 use chrono::NaiveDate;
-use eframe::egui::{self, Align, Color32, Frame, Key, Layout, Modal, RichText, Stroke, Ui};
+use eframe::egui::{self, Align, Color32, Key, Layout, Modal, RichText, Stroke, Ui};
 use todotxt::todo_recurrence::TodoRecurrence;
 use todotxt::{TodoContext, TodoItem, TodoPriority, TodoProject};
 
@@ -171,17 +171,7 @@ fn delete_question(sub_items: usize) -> String {
 /// `AskDelete` on the trash button and `Delete` once the deletion is confirmed.
 pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     // CSS: 500 px wide with 24 px padding, 8 px corners and a soft shadow; dark adds a border.
-    let frame = Frame::new()
-        .fill(p.dialog_bg)
-        .stroke(Stroke::new(1.0, p.dialog_border))
-        .corner_radius(8.0)
-        .inner_margin(24.0)
-        .shadow(egui::Shadow {
-            offset: [0, 4],
-            blur: 20,
-            spread: 0,
-            color: Color32::from_black_alpha(51),
-        });
+    let frame = theme::dialog_frame(p);
     let mut outcome = None;
     let modal = Modal::new(egui::Id::unique("edit-dialog"))
         .frame(frame)

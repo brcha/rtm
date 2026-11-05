@@ -17,7 +17,8 @@ through Git or Pijul (RTM-64), in the background since RTM-20, with the check fo
 untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do not block the UI
 (RTM-65); UI tests with `egui_kittest` (RTM-86); the list of files in the config (RTM-124) and the
 per-file state with its own error line (RTM-125) and sync with one worker per repository, the
-check on open included (RTM-126), the first steps to several open files (RTM-66); the title bar's
+check on open included (RTM-126) and the open files as tabs (RTM-127), for several open files
+(RTM-66); the title bar's
 menu and the Settings dialog (RTM-134).
 
 ---
@@ -37,7 +38,8 @@ rtmapp/
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
     ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, the
-    │                         title bar's menu and shortcuts, New File and Load File, filters,
+    │                         title bar's menu and shortcuts, the tab strip, New File and Load
+    │                         File, closing and switching files, filters,
     │                         quick-add, complete/uncomplete, saving an edit, deleting
     ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
@@ -87,24 +89,25 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   otherwise). Keep them all in agreement.
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one the Tauri app wrote,
   so existing users' settings carry over: do not rename fields or change defaults (`#[serde(default)]`
-  on `AppConfig`). The file is written after a successful file load (or creation), a filter
-  change or Save in the Settings dialog, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
+  on `AppConfig`). The file is written after a successful file load (or creation), a tab
+  closed or clicked, a filter change or Save in the Settings dialog, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
   default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
   false turns off commits as well as pulls and pushes) and, until RTM-124, a top-level `vcs`.
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
   - **The file list (RTM-124, epic RTM-66):** `[[files]]` tables, the saved session, written last
-    (after the plain keys). Each has `path`, an optional `name` (the tab label, for RTM-127) and an
+    (after the plain keys). Each has `path`, an optional `name` (the tab label, set by hand) and an
     optional `vcs` (`"git"` or `"pijul"`, any case, the answer when the file's directory has both;
     anything else means ask). `file_name` stays and names the active file, so an older rtmapp still
-    opens it. The app shows one file until RTM-127: opening another replaces the active entry,
-    and with it the old file's `vcs`; an entry the new file already has keeps its `name` and `vcs`.
+    opens it. Opening a file adds its entry (`add_file`), closing its tab removes it
+    (`remove_file`), and clicking a tab makes it `file_name` (`set_active`).
   - **Migration**, in `AppConfig::load`, in memory only (written with the next save): entries
     without a `path` are dropped, `file_name` gets an entry when it has none, and a top-level `vcs`
     moves into that entry (an older version wrote it for `file_name`, so it replaces the entry's
     choice) and is never written again. An older rtmapp drops `[[files]]` when it saves; the
-    migration rebuilds the active entry from `file_name`. At startup, when the loaded file's
-    resolved path differs from `file_name` (a symlink, `..`), `file_name` and its entry take the
-    resolved path in memory, since entries are looked up by the loaded file's path.
+    migration rebuilds the active entry from `file_name`. At startup, when a loaded file's
+    resolved path differs from its entry's (a symlink, `..`), the entry, and `file_name` when it
+    names it, take the resolved path in memory (`rename`), since entries are looked up by the
+    loaded file's path.
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
@@ -129,21 +132,53 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   successful save. Every save rewrites the whole file, and recurrence goes through `Display`, so a
   count of 1 is written in its short form (`rec:+1m` becomes `rec:+m`); this is intended.
 - **Open files and error lines (RTM-125, epic RTM-66):** what belongs to one todo.txt lives in
-  `OpenFile` (its library, pending changes, the sync questions, the edit dialog's `edited`,
-  `deleting` and `stale`, and its error line); `App` holds `files` and the `active` index, one file
-  until tabs come (RTM-127). Each file also keeps the repository it syncs through (`repo`) and why
+  `OpenFile` (its path and tab name, its library, pending changes, the sync questions, the edit
+  dialog's `edited`, `deleting` and `stale`, and its error line); `App` holds `files` and `active`,
+  the path of the file shown (see Tabs). Each file also keeps the repository it syncs through (`repo`) and why
   it does not sync (`not_syncing`). Two error lines, the app's above the file's, each shown when set:
   - **the file line** (`OpenFile::error`): the configured file failing to load at startup, a
     conflict, "Don't open", a failed write, commit or reload, changes a pull dropped. Cleared by a
-    successful change or by opening a file in its place.
+    successful change or by loading the file again.
   - **the app line** (`App::error`): a config save, a New File or Load File that failed, "Please
     load a file first", an unparsable quick-add. Cleared by a successful config save or change.
   So a file message stays when a filter changes, and a config or input error no longer hides it.
+- **Tabs (RTM-127, epic RTM-66):** every `[[files]]` entry opens at startup (`open_session`), in
+  order, and the one `file_name` names is shown, else the first. A file that fails to load (missing,
+  unreadable) keeps its tab with the error in its file line; two entries resolving to one file open
+  it once. Each `OpenFile` keeps its entry's `path` (canonical once loaded) and `name` (the entry's,
+  else the file name), so an unloaded file keeps its tab; only loaded files are placed, checked or
+  synced (`loaded_path`). `App::active` is that path (`Option<PathBuf>`, none when no file is open),
+  never an index, so removing a tab cannot shift it onto another file; tab actions carry the path
+  too (`TabAction`).
+  - **The strip** (`App::tab_strip`, scrolling sideways when full, and to the shown tab when
+    another file is shown: `scroll_to_once`) stands on the page of the shown file
+    (`App::tabs_and_page`: a bordered panel holding the error lines, the add row and the list).
+    Each tab is painted (`tab`, AccessKit role `Tab`, selected when shown): the shown one has the
+    page's fill and border, and the page's top border is covered under it, so it opens into the
+    page; the others have a faint fill, stronger under the pointer. The name is bold on the shown
+    tab and in the error colour while the file line is set; the path (and error) shows on hover.
+    The close cross (`theme::close_button`, named "Close <name>") is drawn only while the pointer
+    is over its tab or it has focus. At the end a painted `+` (`theme::add_button`, "Open a file")
+    opens New File… and Load File…, the menu's entries.
+  - **Opening** (`open_file`): a file already open shows its tab; one whose tab is not loaded (it
+    failed at startup, or a conflict or "Don't open" closed it) is loaded into that tab, which is
+    the "load the file again" the file lines ask for; any other file gets a new tab and entry.
+  - **Closing** (`close`) asks first (`close_question`, a modal: "Close tab" or Cancel; Escape and
+    the backdrop cancel), since a stray click on the cross closed a tab. It is disabled
+    (`can_close`) while the edit dialog is open, while the file's check on open runs and while its
+    repository has a job outstanding, and so is the question's Close tab. Pending changes are
+    written and committed first (a failed write keeps the tab). The tab to its right is shown next,
+    else the one to its left; closing the last tab leaves no file open and the empty state.
+  - **Switching** (`switch`, a click on a tab) saves the file as `file_name`. A file in the
+    background with a Git-or-Pijul or outside-changes question is brought to the front
+    (`show_question`, in `logic`, one at a time in tab order, while no modal is open), without
+    writing the config: checks finish a few frames after startup.
+  - Settings' change of `sync` reconnects every open file (`connect_all`).
 - **Menu and shortcuts (RTM-134):** a painted ☰ button (`theme::menu_button`, accessible name
   "Menu"; Inter has no such glyph) at the left of the title bar opens an `egui::Popup::menu` with
   New File…, Load File…, Settings… and Quit, each showing its shortcut: Ctrl+N, Ctrl+O, Ctrl+, and
   Ctrl+Q (Cmd on macOS, `Modifiers::COMMAND`). The shortcuts are inactive while a modal is open
-  (`App::modal_open`). New File and Load File keep the rules of the sidebar buttons they replaced.
+  (`App::modal_open`). New File and Load File are disabled while a file dialog is open.
   Quit sends `ViewportCommand::Close`, so `on_exit` runs as when the window is closed. On macOS,
   winit's own app menu also has Quit (Cmd+Q) through `terminate:`; RTM-140 checks that it reaches
   `on_exit` too. A menu entry's accessible name ends in its shortcut text, which differs on macOS,
@@ -219,8 +254,10 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     VCS: the Git-or-Pijul choice is per file (RTM-124), so two files in a directory holding both
     may need two workers. A file is assigned to its repository when it opens (a worker starts for
     the first file of a repository, its remote recorded by the first check that finds one) and
-    leaves when another file replaces it, its repository has a conflict, or its check or answer
-    means no sync; a repository no file uses any more stops.
+    leaves when its tab is closed, its repository has a conflict, or its check or answer means no
+    sync; a repository no file uses any more stops. Closing the last tab of a repository with a
+    remote queues one more sync; the worker moves to `App::closing` until it is done, and exit
+    waits for it as for the open repositories.
   - **When it syncs:** after a file is opened (after the answer, when the check on open asks), every
     `sync_interval_minutes` since that repository's last sync was asked for, on the header's **Sync
     now** button (shown when a repository has a remote, disabled while all of those sync; it syncs
@@ -231,9 +268,10 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     `Commit` only while its repository's worker is idle (`Worker::busy`: jobs sent whose result was
     not handled yet, so a pull whose reload has not happened still counts); changes made during a
     job wait in memory and make one commit (`rtm: N changes`, one line each). Messages name the
-    item's description only (`rtm: complete Pay bill`). The menu's New File and Load File are
-    disabled during any repository's job and while a file dialog is open, Sync now while every
-    repository with a remote syncs; nothing else.
+    item's description only (`rtm: complete Pay bill`). Sync now is disabled while every
+    repository with a remote syncs, a tab's close button while its file's repository has a job
+    outstanding; nothing else. New File and Load File no longer wait for jobs (until RTM-127 they
+    replaced the shown file); adding a tab leaves the other files alone.
   - **A pull that changed files** (also one whose push then failed: `NotSynced { changed }`)
     reloads each of them and redoes its `pending` on it, finding each item by equality (with two identical lines,
     the first); a change whose item the pull changed or removed is dropped and named in the file's
@@ -255,7 +293,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 - Tests are unit tests in `src/tests/`, one file per source file and topic (see Tests in the root
   `AGENTS.md`); rtmapp is a binary crate, so it has no integration tests, and its UI tests are
   unit tests too (see UI tests below). They use temp files and never open a window. `App` tests
-  build `App { .. }` (with one `OpenFile`) directly with a temp `config_path` (see `app_with` and `bare_app` in
+  build `App { .. }` (with one `OpenFile`, or several for the sync and tab tests) directly with a temp `config_path` (see `app_with` and `bare_app` in
   `app_support_tests.rs`), never `config::config_path()`: a load or filter save would overwrite the
   user's real `rtm/config.toml`. They do not start sync; the sync tests call `connect` on scratch
   git remotes and clones (local paths, local config keeping the user's identity, signing, hooks and
@@ -302,6 +340,9 @@ app's `rtmapp/src/styles.css` (at `5076649`), in both themes. The theme follows 
   `window.__TAURI__`, against screenshots of an egui prototype with the same sample items. Chromium is
   not the WebKitGTK webview the Tauri app used, so small text-rendering differences were expected.
 - **Focus ring:** a 3 px translucent stroke painted outside the input's border.
+- **Dialogs** share `theme::dialog_frame` (the edit dialog's CSS frame). The questions (Git or
+  Pijul, outside changes, untracked, closing a tab) go through `theme::question`: a bold title, a
+  muted explanation, and the buttons on the right with the main answer rightmost.
 - **Item text:** one `LayoutJob` per row (`list::row_job`), with per-span font, colour and
   strikethrough.
 - **Known differences from the Tauri look:**
@@ -384,9 +425,9 @@ window from repainting until it closed, so it looked hung. Now `pick_file` and `
 the path (or `None`) over a channel and calls `request_repaint`. The future must be created on the UI
 thread: on macOS rfd runs the AppKit panel there, which the sync dialog on a worker thread cannot do.
 `dialog_result`, called from `logic`, applies the result with `open_file` or `create_file`, but only
-while no job runs and no item is being edited: on Linux the window still takes input behind the
-portal dialog, so a sync may start or the edit dialog open meanwhile. Until then the result waits in
-the channel; when the worker is idle its pending changes have been written to the old file. A
+while no item is being edited: on Linux the window still takes input behind the portal dialog, so
+the edit dialog may open meanwhile, and opening a file shows its tab. Until then the result waits in
+the channel. A
 cancel, a failure (logged by rfd, as before) or a dialog thread that died clears the dialog and
 changes nothing. The menu's New File and Load File are disabled while a dialog is open. Closing the app with a
 dialog open leaves the thread to end with the process; it writes nothing.
@@ -395,9 +436,11 @@ dialog open leaves the thread to end with the process; it writes nothing.
 empty (`File::create`) and opens it through the same path as "Load File" (`open_file`: config, check
 on open). An existing file chosen there is **replaced** with an empty one: every backend `rfd` uses
 asks before returning it (the portal's backends, gtk3, `zenity --confirm-overwrite`, the Windows and
-macOS save panels). A new file inside a repository is untracked, so the check on open asks "Add it";
-replacing a tracked file leaves it modified, so it asks "Commit them" (which commits and syncs the
-empty file) or "Don't open" (the old items stay only in the file's history).
+macOS save panels). A file open in a tab is not replaced: its tab would keep the old items and
+write them back, so the app line asks to close its tab first. A new file inside a repository is
+untracked, so the check on open asks "Add it"; replacing a tracked file leaves it modified, so it
+asks "Commit them" (which commits and syncs the empty file) or "Don't open" (the old items stay
+only in the file's history).
 
 ---
 
