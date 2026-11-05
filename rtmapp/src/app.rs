@@ -49,6 +49,8 @@ pub struct App {
     editing: Option<EditForm>,
     /// The open Settings dialog, if any.
     settings: Option<SettingsForm>,
+    /// The file whose tab's close button was clicked, while the app asks before closing it.
+    confirm_close: Option<PathBuf>,
     /// Settings changed `sync`: reconnect once no job is outstanding (`reconnect_when_idle`).
     reconnect: bool,
     /// The repositories the open files sync through (RTM-64), one worker each (RTM-126).
@@ -127,6 +129,7 @@ impl App {
             new_item: String::new(),
             editing: None,
             settings: None,
+            confirm_close: None,
             reconnect: false,
             repos: Vec::new(),
             closing: Vec::new(),
@@ -749,6 +752,49 @@ impl App {
             && self.repo_of(file).is_none_or(|repo| !repo.worker.busy())
     }
 
+    /// Asks before closing the tab of `confirm_close`, so a stray click on its close button does
+    /// not close it. Close tab waits, disabled, while `close` would refuse.
+    fn close_question(&mut self, ctx: &egui::Context, p: &Palette) {
+        let Some(path) = self.confirm_close.clone() else {
+            return;
+        };
+        let Some(file) = self.files.iter().find(|file| file.is(&path)) else {
+            self.confirm_close = None;
+            return;
+        };
+        let closable = self.can_close(file);
+        let mut answer = None;
+        let cancel = theme::question(
+            ctx,
+            p,
+            "close-question",
+            &format!("Close {}?", file.name),
+            "The tab closes and the app no longer opens the file at start. The file itself stays \
+             where it is; Load File opens it again.",
+            |ui| {
+                if ui
+                    .add_enabled_ui(closable, |ui| theme::primary_button(ui, "Close tab"))
+                    .inner
+                    .clicked()
+                {
+                    answer = Some(true);
+                }
+                if theme::secondary_button(ui, "Cancel").clicked() {
+                    answer = Some(false);
+                }
+            },
+        );
+        if cancel {
+            answer = Some(false);
+        }
+        if let Some(yes) = answer {
+            self.confirm_close = None;
+            if yes {
+                self.close(&path);
+            }
+        }
+    }
+
     /// Shows the open file at `path`, a click on its tab; it is shown at the next start too.
     fn switch(&mut self, path: &Path) {
         if self.editing.is_some() {
@@ -812,6 +858,7 @@ impl App {
     fn modal_open(&self) -> bool {
         self.editing.is_some()
             || self.settings.is_some()
+            || self.confirm_close.is_some()
             || self
                 .file()
                 .is_some_and(|file| file.choose_vcs.is_some() || file.asking.is_some())
@@ -1433,7 +1480,7 @@ impl eframe::App for App {
             .inner;
         match clicked {
             Some(Clicked::Tab(TabAction::Switch(path))) => self.switch(&path),
-            Some(Clicked::Tab(TabAction::Close(path))) => self.close(&path),
+            Some(Clicked::Tab(TabAction::Close(path))) => self.confirm_close = Some(path),
             Some(Clicked::Tab(TabAction::Menu(action))) => self.menu_action(action, &ctx, frame),
             Some(Clicked::Row(RowAction::Toggle(index))) => self.toggle(index),
             Some(Clicked::Row(RowAction::Edit(index))) => self.open_editor(index),
@@ -1441,6 +1488,7 @@ impl eframe::App for App {
         }
         self.vcs_question(&ui.ctx().clone(), p);
         self.sync_question(&ui.ctx().clone(), p);
+        self.close_question(&ui.ctx().clone(), p);
         if let Some(form) = &mut self.editing {
             match edit::show(ui.ctx(), p, form) {
                 Some(Outcome::Save) => self.save_edit(),

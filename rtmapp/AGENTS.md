@@ -163,8 +163,10 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   - **Opening** (`open_file`): a file already open shows its tab; one whose tab is not loaded (it
     failed at startup, or a conflict or "Don't open" closed it) is loaded into that tab, which is
     the "load the file again" the file lines ask for; any other file gets a new tab and entry.
-  - **Closing** (`close`) is disabled (`can_close`) while the edit dialog is open, while the file's
-    check on open runs and while its repository has a job outstanding. Pending changes are
+  - **Closing** (`close`) asks first (`close_question`, a modal: "Close tab" or Cancel; Escape and
+    the backdrop cancel), since a stray click on the cross closed a tab. It is disabled
+    (`can_close`) while the edit dialog is open, while the file's check on open runs and while its
+    repository has a job outstanding, and so is the question's Close tab. Pending changes are
     written and committed first (a failed write keeps the tab). The tab to its right is shown next,
     else the one to its left; closing the last tab leaves no file open and the empty state.
   - **Switching** (`switch`, a click on a tab) saves the file as `file_name`. A file in the
@@ -338,6 +340,9 @@ app's `rtmapp/src/styles.css` (at `5076649`), in both themes. The theme follows 
   `window.__TAURI__`, against screenshots of an egui prototype with the same sample items. Chromium is
   not the WebKitGTK webview the Tauri app used, so small text-rendering differences were expected.
 - **Focus ring:** a 3 px translucent stroke painted outside the input's border.
+- **Dialogs** share `theme::dialog_frame` (the edit dialog's CSS frame). The question before
+  closing a tab goes through `theme::question`: a bold title, a muted explanation, and the
+  buttons on the right with the main answer rightmost.
 - **Item text:** one `LayoutJob` per row (`list::row_job`), with per-span font, colour and
   strikethrough.
 - **Known differences from the Tauri look:**

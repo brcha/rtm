@@ -518,10 +518,13 @@ fn tab<'h>(harness: &'h Harness<'_, App>, name: &'h str) -> egui_kittest::Node<'
     harness.get_by_role_and_label(Role::Tab, name)
 }
 
-/// Clicks the close button of the tab `name`.
-fn close_tab(harness: &mut Harness<'_, App>, name: &str) {
+/// Clicks the close button of the tab `name`, then answers the question with `answer`.
+fn close_tab(harness: &mut Harness<'_, App>, name: &str, answer: &str) {
     let close = format!("Close {name}");
     harness.get_by_role_and_label(Role::Button, &close).click();
+    harness.run();
+    harness.get_by_label(&format!("Close {name}?"));
+    harness.get_by_role_and_label(Role::Button, answer).click();
     harness.run();
 }
 
@@ -573,7 +576,9 @@ fn closing_a_tab_removes_it_and_its_entry() {
     let dir = temp_dir("ui-tabs-close");
     let mut harness = two_tabs(&dir, true);
 
-    close_tab(&mut harness, "Work");
+    close_tab(&mut harness, "Work", "Cancel");
+    tab(&harness, "Work");
+    close_tab(&mut harness, "Work", "Close tab");
 
     assert!(harness.query_by_role_and_label(Role::Tab, "Work").is_none());
     assert_eq!(rows(&harness), ["Alpha"]);
@@ -584,7 +589,7 @@ fn closing_a_tab_removes_it_and_its_entry() {
     assert!(entry.path.ends_with("todo.txt"), "{entry:?}");
     assert_eq!(config.file_name.as_ref(), Some(&entry.path));
 
-    close_tab(&mut harness, "todo.txt");
+    close_tab(&mut harness, "todo.txt", "Close tab");
     harness.get_by_label_contains("No file loaded. Use New File or Load File");
     assert_eq!(AppConfig::load(&dir.join("config.toml")).files, []);
     let _ = std::fs::remove_dir_all(dir);

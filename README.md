@@ -183,7 +183,7 @@ ARM64 and 32-bit Windows builds are not currently produced.
 The desktop app keeps several todo.txt files open, one tab each above the list. **New File** and
 **Load File** (in the menu at the left of the title bar, or under the **+** after the tabs) add a
 tab, or show the file's tab when it is already open. The × that appears on a tab under the pointer
-closes it. The app reopens the same tabs at the next start and shows the one you
+closes it, after asking. The app reopens the same tabs at the next start and shows the one you
 last clicked. They are saved in `rtm/config.toml` as `[[files]]` tables, one per tab, each with
 the file's `path`; add a `name = "Work"` line to one by hand to label its tab (the file name is
 shown otherwise). `file_name` names the shown file, so an older version of the app still opens
