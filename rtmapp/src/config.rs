@@ -33,7 +33,7 @@ pub struct AppConfig {
 #[serde(default)]
 pub struct FileEntry {
     pub path: String,
-    /// The label of the file's tab (RTM-127); unused until then.
+    /// The label of the file's tab (RTM-127), set by hand; without it the tab shows the file name.
     pub name: Option<String>,
     /// `"git"` or `"pijul"`: the user's choice when the file's directory belongs to both.
     pub vcs: Option<String>,

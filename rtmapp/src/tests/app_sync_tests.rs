@@ -593,7 +593,7 @@ fn app_on(dir: &Path, files: &[PathBuf]) -> App {
     let mut app = bare_app(dir, None);
     app.files = files
         .iter()
-        .map(|file| OpenFile::loaded(load_library(file).unwrap()))
+        .map(|file| OpenFile::loaded(load_library(file).unwrap(), None))
         .collect();
     app.connect_all();
     app.active = app.files.first().map(|file| file.path.clone());
@@ -758,7 +758,7 @@ fn a_file_joining_after_a_sync_was_queued_reads_what_it_pulled() {
 
     // A sync listing only todo.txt, then work.txt opens: its check waits behind that sync.
     sync(&mut app);
-    let work = OpenFile::loaded(load_library(&dir.join("a/work.txt")).unwrap());
+    let work = OpenFile::loaded(load_library(&dir.join("a/work.txt")).unwrap(), None);
     app.active = Some(work.path.clone());
     app.files.push(work);
     app.connect();

@@ -205,6 +205,58 @@ pub fn menu_button(ui: &mut Ui) -> egui::Response {
     response
 }
 
+/// A tab's close button: a painted grey cross (red when hovered or focused), named `name`.
+pub fn close_button(ui: &mut Ui, p: &Palette, name: &str) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
+    let response = response.on_hover_text(name);
+    let color = if !ui.is_enabled() {
+        p.border
+    } else if response.hovered() || response.has_focus() {
+        p.due
+    } else {
+        p.muted
+    };
+    let stroke = Stroke::new(1.5, color);
+    let c = rect.center();
+    let painter = ui.painter();
+    painter.line_segment(
+        [c + egui::vec2(-4.0, -4.0), c + egui::vec2(4.0, 4.0)],
+        stroke,
+    );
+    painter.line_segment(
+        [c + egui::vec2(-4.0, 4.0), c + egui::vec2(4.0, -4.0)],
+        stroke,
+    );
+    response
+}
+
+/// The tab strip's `+` button, painted like `close_button`, named "Open a file".
+pub fn add_button(ui: &mut Ui, p: &Palette) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Open a file")
+    });
+    let response = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("New File or Load File");
+    let painter = ui.painter();
+    if response.hovered() || response.has_focus() {
+        painter.rect_filled(rect, 4.0, p.info_bg);
+    }
+    let stroke = Stroke::new(1.5, p.muted);
+    let c = rect.center();
+    painter.line_segment(
+        [c + egui::vec2(-6.0, 0.0), c + egui::vec2(6.0, 0.0)],
+        stroke,
+    );
+    painter.line_segment(
+        [c + egui::vec2(0.0, -6.0), c + egui::vec2(0.0, 6.0)],
+        stroke,
+    );
+    response
+}
+
 /// A single-line input like the CSS ones: 1 px border, 6 px corners, 12 px side padding and
 /// `pad_y` above and below, and when focused a `focus` border with a soft 3 px glow.
 pub fn text_input(

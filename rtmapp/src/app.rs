@@ -78,6 +78,8 @@ struct OpenFile {
     /// Its entry's path: canonical once loaded, as the config gave it until then. It names the
     /// file while it is not loaded (missing, failed, closed by a conflict or "Don't open").
     path: PathBuf,
+    /// The tab's label: its entry's `name`, else the file name.
+    name: String,
     library: Option<TodoLibrary>,
     /// The repository it syncs through, a key of `App::repos`.
     repo: Option<RepoKey>,
@@ -667,7 +669,7 @@ impl App {
             }
             None => {
                 self.config.add_file(&name);
-                self.files.push(OpenFile::loaded(library));
+                self.files.push(OpenFile::loaded(library, None));
                 true
             }
         };
@@ -684,7 +686,6 @@ impl App {
     /// check on open runs or its repository has a job outstanding, and when the write fails.
     /// Closing the last open file of a repository syncs it once more, so its commits reach the
     /// remote.
-    #[cfg_attr(not(test), expect(dead_code, reason = "not reachable from the UI yet"))]
     fn close(&mut self, path: &Path) {
         if self.editing.is_some() {
             return;
@@ -740,7 +741,6 @@ impl App {
     }
 
     /// Shows the open file at `path`, a click on its tab; it is shown at the next start too.
-    #[cfg_attr(not(test), expect(dead_code, reason = "not reachable from the UI yet"))]
     fn switch(&mut self, path: &Path) {
         if self.editing.is_some() {
             return;
@@ -1021,6 +1021,38 @@ impl App {
         }
     }
 
+    /// One tab per open file, in order, then a `+` with New File and Load File. A tab's close
+    /// button is enabled as `close` allows.
+    fn tab_strip(&self, ui: &mut Ui, p: &Palette, files_enabled: bool) -> Option<TabAction> {
+        let mut clicked = None;
+        egui::ScrollArea::horizontal()
+            .id_salt("tabs")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for file in &self.files {
+                        let active = self.file().is_some_and(|shown| shown.is(&file.path));
+                        let closable = self.editing.is_none()
+                            && !file.checking
+                            && self.repo_of(file).is_none_or(|repo| !repo.worker.busy());
+                        let tab = tab(ui, p, file, active, closable);
+                        if tab.is_some() {
+                            clicked = tab;
+                        }
+                    }
+                    let button = theme::add_button(ui, p);
+                    egui::Popup::menu(&button).show(|ui| {
+                        let mut chosen = None;
+                        file_entries(ui, files_enabled, &mut chosen);
+                        if let Some(action) = chosen {
+                            clicked = Some(TabAction::Menu(action));
+                        }
+                    });
+                });
+            });
+        ui.add_space(8.0);
+        clicked
+    }
+
     /// The app and file lines, the add row and the list. Returns what was clicked in the list.
     fn content(&mut self, ui: &mut Ui, p: &Palette) -> Option<RowAction> {
         let file_error = self.file().and_then(|file| file.error.as_ref());
@@ -1102,13 +1134,26 @@ fn ensure_repo<'a>(
 }
 
 impl OpenFile {
-    /// A file loaded at its canonical path.
-    fn loaded(library: TodoLibrary) -> Self {
+    /// The file of the session at `path`, not loaded yet; `name` is its entry's tab label.
+    fn new(path: PathBuf, name: Option<String>) -> Self {
+        let name = name.unwrap_or_else(|| {
+            path.file_name().map_or_else(
+                || path.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            )
+        });
         OpenFile {
-            path: PathBuf::from(&library.file_name),
-            library: Some(library),
+            path,
+            name,
             ..OpenFile::default()
         }
+    }
+
+    /// A file loaded at its canonical path, labelled `name` or by its file name.
+    fn loaded(library: TodoLibrary, name: Option<String>) -> Self {
+        let mut file = OpenFile::new(PathBuf::from(&library.file_name), name);
+        file.library = Some(library);
+        file
     }
 
     /// The file's path, while it is loaded: only a loaded file is placed, checked or synced.
@@ -1343,10 +1388,18 @@ impl eframe::App for App {
                     Stroke::new(1.0, p.border),
                 );
             });
-        let clicked = egui::CentralPanel::default()
+        let (tab, clicked) = egui::CentralPanel::default()
             .frame(Frame::new().fill(p.bg).inner_margin(16.0))
-            .show(ui, |ui| self.content(ui, p))
+            .show(ui, |ui| {
+                (self.tab_strip(ui, p, files_enabled), self.content(ui, p))
+            })
             .inner;
+        match tab {
+            Some(TabAction::Switch(path)) => self.switch(&path),
+            Some(TabAction::Close(path)) => self.close(&path),
+            Some(TabAction::Menu(action)) => self.menu_action(action, &ctx, frame),
+            None => {}
+        }
         match clicked {
             Some(RowAction::Toggle(index)) => self.toggle(index),
             Some(RowAction::Edit(index)) => self.open_editor(index),
@@ -1472,12 +1525,11 @@ fn open_session(config: &mut AppConfig) -> (Vec<OpenFile>, Option<PathBuf>) {
                 {
                     continue;
                 }
-                OpenFile::loaded(library)
+                OpenFile::loaded(library, entry.name)
             }
             Err(e) => OpenFile {
-                path: PathBuf::from(&entry.path),
                 error: Some(e),
-                ..OpenFile::default()
+                ..OpenFile::new(PathBuf::from(&entry.path), entry.name)
             },
         };
         files.push(file);
@@ -1574,32 +1626,95 @@ fn menu(ui: &mut Ui, files_enabled: bool) -> Option<MenuAction> {
     let button = theme::menu_button(ui);
     let mut chosen = None;
     egui::Popup::menu(&button).show(|ui| {
-        let mut entry = |ui: &mut Ui, enabled: bool, text: &str, shortcut, action| {
-            let button = egui::Button::new(text).shortcut_text(shortcut_text(ui.ctx(), shortcut));
-            if ui.add_enabled(enabled, button).clicked() {
-                chosen = Some(action);
-            }
-        };
-        entry(
-            ui,
-            files_enabled,
-            "New File…",
-            &NEW_FILE,
-            MenuAction::NewFile,
-        );
-        entry(
-            ui,
-            files_enabled,
-            "Load File…",
-            &LOAD_FILE,
-            MenuAction::LoadFile,
-        );
+        file_entries(ui, files_enabled, &mut chosen);
         ui.separator();
-        entry(ui, true, "Settings…", &SETTINGS, MenuAction::Settings);
+        menu_entry(ui, true, MenuAction::Settings, &mut chosen);
         ui.separator();
-        entry(ui, true, "Quit", &QUIT, MenuAction::Quit);
+        menu_entry(ui, true, MenuAction::Quit, &mut chosen);
     });
     chosen
+}
+
+/// New File and Load File, in the menu and in the tab strip's `+` popup.
+fn file_entries(ui: &mut Ui, enabled: bool, chosen: &mut Option<MenuAction>) {
+    menu_entry(ui, enabled, MenuAction::NewFile, chosen);
+    menu_entry(ui, enabled, MenuAction::LoadFile, chosen);
+}
+
+/// The menu entry of `action`, with its shortcut; sets `chosen` when clicked.
+fn menu_entry(ui: &mut Ui, enabled: bool, action: MenuAction, chosen: &mut Option<MenuAction>) {
+    let (text, shortcut) = match action {
+        MenuAction::NewFile => ("New File…", &NEW_FILE),
+        MenuAction::LoadFile => ("Load File…", &LOAD_FILE),
+        MenuAction::Settings => ("Settings…", &SETTINGS),
+        MenuAction::Quit => ("Quit", &QUIT),
+    };
+    let button = egui::Button::new(text).shortcut_text(shortcut_text(ui.ctx(), shortcut));
+    if ui.add_enabled(enabled, button).clicked() {
+        *chosen = Some(action);
+    }
+}
+
+/// What was clicked in the tab strip: a tab, its close button, or an entry of the `+` popup.
+enum TabAction {
+    Switch(PathBuf),
+    Close(PathBuf),
+    Menu(MenuAction),
+}
+
+/// The tab of `file`: its name (red while it has a file line), the full path on hover, and a
+/// close button. The shown tab is drawn like the list's panel, the others plain.
+fn tab(
+    ui: &mut Ui,
+    p: &Palette,
+    file: &OpenFile,
+    active: bool,
+    closable: bool,
+) -> Option<TabAction> {
+    let mut clicked = None;
+    let border = if active {
+        p.border
+    } else {
+        Color32::TRANSPARENT
+    };
+    let fill = if active {
+        p.panel
+    } else {
+        Color32::TRANSPARENT
+    };
+    Frame::new()
+        .fill(fill)
+        .stroke(Stroke::new(1.0, border))
+        .corner_radius(6.0)
+        .inner_margin(Margin::symmetric(10, 4))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            let color = if file.error.is_some() {
+                p.due
+            } else if active {
+                p.text
+            } else {
+                p.muted
+            };
+            let label =
+                egui::Button::new(RichText::new(&file.name).size(12.6).color(color)).frame(false);
+            let hover = match &file.error {
+                Some(error) => format!("{}\n{error}", file.path.display()),
+                None => file.path.display().to_string(),
+            };
+            if ui.add(label).on_hover_text(hover).clicked() {
+                clicked = Some(TabAction::Switch(file.path.clone()));
+            }
+            let name = format!("Close {}", file.name);
+            if ui
+                .add_enabled_ui(closable, |ui| theme::close_button(ui, p, &name))
+                .inner
+                .clicked()
+            {
+                clicked = Some(TabAction::Close(file.path.clone()));
+            }
+        });
+    clicked
 }
 
 /// `shortcut` as the menu shows it. egui spells out a key after modifier names ("Ctrl+Comma");

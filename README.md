@@ -178,6 +178,16 @@ CLI:
 
 ARM64 and 32-bit Windows builds are not currently produced.
 
+## Several files in the desktop app
+
+The desktop app keeps several todo.txt files open, one tab each above the list. **New File** and
+**Load File** (in the menu at the left of the title bar, or under the **+** after the tabs) add a
+tab, or show the file's tab when it is already open; the × on a tab closes it. The app reopens the
+same tabs at the next start and shows the one you last clicked. They are saved in `rtm/config.toml`
+as `[[files]]` tables, one per tab, each with the file's `path`; add a `name = "Work"` line to one
+by hand to label its tab (the file name is shown otherwise). `file_name` names the shown file, so
+an older version of the app still opens that one. Each file syncs through its own repository.
+
 ## Syncing through Git or Pijul
 
 `rtmcli` and the desktop app sync your todo.txt when it is tracked in a Git or Pijul repository.

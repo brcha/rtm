@@ -24,7 +24,10 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         active: library
             .as_ref()
             .map(|library| PathBuf::from(&library.file_name)),
-        files: library.into_iter().map(OpenFile::loaded).collect(),
+        files: library
+            .into_iter()
+            .map(|library| OpenFile::loaded(library, None))
+            .collect(),
         error: None,
         new_item: String::new(),
         editing: None,
