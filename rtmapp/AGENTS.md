@@ -16,7 +16,8 @@ AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and 
 through Git or Pijul (RTM-64), in the background since RTM-20, with the check for a dirty or
 untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do not block the UI
 (RTM-65); UI tests with `egui_kittest` (RTM-86); the list of files in the config (RTM-124) and the
-per-file state with its own error line (RTM-125), the first steps to several open files (RTM-66).
+per-file state with its own error line (RTM-125), the first steps to several open files (RTM-66);
+the title bar's menu and the Settings dialog (RTM-134).
 
 ---
 
@@ -34,13 +35,14 @@ rtmapp/
 │   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
     ├── main.rs             ← Window options, eframe::run_native
-    ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, New
-    │                         File and Load File, filters, quick-add, complete/uncomplete,
-    │                         saving an edit, deleting
+    ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, the
+    │                         title bar's menu and shortcuts, New File and Load File, filters,
+    │                         quick-add, complete/uncomplete, saving an edit, deleting
     ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
     ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`)
+    ├── settings.rs         ← Settings dialog: the form (`SettingsForm`) and the modal
     ├── sync.rs             ← Sync through the file's repository: `find`, the worker thread
     ├── theme.rs            ← Palettes, fonts, egui styling
     └── tests/              ← Unit tests, one file per source file and topic
@@ -84,8 +86,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   otherwise). Keep them all in agreement.
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one the Tauri app wrote,
   so existing users' settings carry over: do not rename fields or change defaults (`#[serde(default)]`
-  on `AppConfig`). The file is written after a successful file load (or creation) or a filter
-  change, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
+  on `AppConfig`). The file is written after a successful file load (or creation), a filter
+  change or Save in the Settings dialog, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
   default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
   false turns off commits as well as pulls and pushes) and, until RTM-124, a top-level `vcs`.
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
@@ -136,6 +138,23 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   - **the app line** (`App::error`): a config save, a New File or Load File that failed, "Please
     load a file first", an unparsable quick-add. Cleared by a successful config save or change.
   So a file message stays when a filter changes, and a config or input error no longer hides it.
+- **Menu and shortcuts (RTM-134):** a painted ☰ button (`theme::menu_button`, accessible name
+  "Menu"; Inter has no such glyph) at the left of the title bar opens an `egui::Popup::menu` with
+  New File…, Load File…, Settings… and Quit, each showing its shortcut: Ctrl+N, Ctrl+O, Ctrl+, and
+  Ctrl+Q (Cmd on macOS, `Modifiers::COMMAND`). The shortcuts are inactive while a modal is open
+  (`App::modal_open`). New File and Load File keep the rules of the sidebar buttons they replaced.
+  Quit sends `ViewportCommand::Close`, so `on_exit` runs as when the window is closed. On macOS,
+  winit's own app menu also has Quit (Cmd+Q) through `terminate:`; RTM-140 checks that it reaches
+  `on_exit` too. A menu entry's accessible name ends in its shortcut text, which differs on macOS,
+  so the UI tests match only its start (`entry` in `app_ui_tests.rs`).
+- **Settings dialog** (`settings.rs`, RTM-134): the app-wide sync settings, `sync` and
+  `sync_interval_minutes` (a `DragValue` from 0 to 1440 that keeps a larger value from
+  `config.toml` until it is edited). Save writes the config at once. A new interval takes effect at
+  once (`tick` reads it); a change of `sync` sets `reconnect`, and `reconnect_when_idle`, called in
+  `logic`, runs `connect` once no job is outstanding, so a running job's result is not lost and the
+  pending changes are written first. The Git-or-Pijul choice is per file (RTM-124) and is not in
+  the dialog: it stays the question asked on open. Escape and the backdrop cancel, as in the edit
+  dialog.
 - **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled as the Tauri app's
   `openEditDialog` did; Save (or Enter in a field) writes the fields as its `update_item` did, then
   `save`. Fields the dialog does not show (done, dates of completion and creation, `uuid`, `sub`) are
@@ -193,8 +212,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     while the worker is idle (`Worker::busy`: jobs sent whose result was not handled yet, so a pull
     whose reload has not happened still counts); changes made during a job wait in memory and make
     one commit (`rtm: N changes`, one line each). Messages name the item's description only (`rtm:
-    complete Pay bill`). New File and Load File are disabled during any job and while a file dialog is open, Sync
-    now during a sync; nothing else.
+    complete Pay bill`). The menu's New File and Load File are disabled during any job and while a
+    file dialog is open, Sync now during a sync; nothing else.
   - **A pull that changed the file** (also one whose push then failed: `NotSynced { changed }`)
     reloads it and redoes `pending` on it, finding each item by equality (with two identical lines,
     the first); a change whose item the pull changed or removed is dropped and named in the file's
@@ -346,7 +365,7 @@ while no job runs and no item is being edited: on Linux the window still takes i
 portal dialog, so a sync may start or the edit dialog open meanwhile. Until then the result waits in
 the channel; when the worker is idle its pending changes have been written to the old file. A
 cancel, a failure (logged by rfd, as before) or a dialog thread that died clears the dialog and
-changes nothing. New File and Load File are disabled while a dialog is open. Closing the app with a
+changes nothing. The menu's New File and Load File are disabled while a dialog is open. Closing the app with a
 dialog open leaves the thread to end with the process; it writes nothing.
 
 "New File" (RTM-55) shows a save dialog (`.txt` filter, default name `todo.txt`), creates the file

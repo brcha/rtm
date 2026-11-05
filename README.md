@@ -184,8 +184,9 @@ ARM64 and 32-bit Windows builds are not currently produced.
 Nothing to set up: rtmcli pulls before every command and commits and pushes every change. The
 desktop app commits every change at once and syncs (pulls, then pushes) in the background: when it
 opens the file, every 10 minutes, when you click **Sync now** in its title bar, and when you close
-it. Editing never waits for a sync. Set `sync_interval_minutes` in `rtm/config.toml` to change the
-interval, or to 0 to sync only on open, on close and on demand.
+it. Editing never waits for a sync. Change the interval in **Settings** (the menu at the left of its
+title bar), or set it to 0 to sync only on open, on close and on demand; it is stored as
+`sync_interval_minutes` in `rtm/config.toml`.
 
 - Commit the todo.txt to the repository once (`git add todo.txt` and commit, or `pijul add` and
   `pijul record`), or let rtm do it: rtmcli with `--commit-changes`, the desktop app when it asks
@@ -198,9 +199,10 @@ interval, or to 0 to sync only on open, on close and on demand.
   commit or revert them yourself.
 - Without a remote (no upstream branch for Git), changes are committed but not pushed.
 - `rtmcli sync` only pulls and pushes. `--no-sync` (or `RTM_NO_SYNC=1`) works on the file without
-  committing, pulling or pushing; in the desktop app, put `sync = false` in `rtm/config.toml` in
-  your config folder. If the folder holds both a Git and a Pijul repository, choose with `--vcs git`
-  or `--vcs pijul` (or `RTM_VCS`); the desktop app asks and remembers the answer.
+  committing, pulling or pushing; in the desktop app, turn off "Sync through the file's
+  repository" in **Settings** (stored as `sync = false` in `rtm/config.toml`). If the folder holds
+  both a Git and a Pijul repository, choose with `--vcs git` or `--vcs pijul` (or `RTM_VCS`); the
+  desktop app asks and remembers the answer.
 - Offline, changes are still saved and committed, with a "Not synced" warning; the next sync pushes
   them.
 - If a pull conflicts, rtm stops (the desktop app closes the file) and leaves the conflict for you
