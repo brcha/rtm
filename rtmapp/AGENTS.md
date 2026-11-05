@@ -340,8 +340,8 @@ app's `rtmapp/src/styles.css` (at `5076649`), in both themes. The theme follows 
   `window.__TAURI__`, against screenshots of an egui prototype with the same sample items. Chromium is
   not the WebKitGTK webview the Tauri app used, so small text-rendering differences were expected.
 - **Focus ring:** a 3 px translucent stroke painted outside the input's border.
-- **Dialogs** share `theme::dialog_frame` (the edit dialog's CSS frame). The question before
-  closing a tab goes through `theme::question`: a bold title, a muted explanation, and the
+- **Dialogs** share `theme::dialog_frame` (the edit dialog's CSS frame). The questions (Git or
+  Pijul, closing a tab) go through `theme::question`: a bold title, a muted explanation, and the
   buttons on the right with the main answer rightmost.
 - **Item text:** one `LayoutJob` per row (`list::row_job`), with per-span font, colour and
   strikethrough.

@@ -475,27 +475,33 @@ impl App {
         let Some(found) = self.file().and_then(|file| file.choose_vcs.as_ref()) else {
             return;
         };
+        let name = file_name(self.file());
         let mut answer = None;
-        egui::Modal::new(egui::Id::unique("choose-vcs")).show(ctx, |ui| {
-            ui.label(
-                RichText::new("This folder holds both a Git and a Pijul repository.").color(p.text),
-            );
-            ui.label(RichText::new("Sync the file through:").color(p.text));
-            ui.horizontal(|ui| {
-                for vcs in found {
-                    let name = match vcs {
+        // Escape and the backdrop do nothing: the file waits for the answer.
+        theme::question(
+            ctx,
+            p,
+            "choose-vcs",
+            "Git or Pijul?",
+            &format!(
+                "The folder of {name} holds both a Git and a Pijul repository. Choose the one to \
+                 sync it through; the answer is remembered."
+            ),
+            |ui| {
+                for vcs in found.iter().rev() {
+                    let vcs = match vcs {
                         rtmsync::Vcs::Git => "Git",
                         rtmsync::Vcs::Pijul => "Pijul",
                     };
-                    if theme::primary_button(ui, name).clicked() {
-                        answer = Some(name.to_ascii_lowercase());
+                    if theme::primary_button(ui, vcs).clicked() {
+                        answer = Some(vcs.to_ascii_lowercase());
                     }
                 }
                 if theme::secondary_button(ui, "Don't sync").clicked() {
                     answer = Some(String::new());
                 }
-            });
-        });
+            },
+        );
         match answer.as_deref() {
             None => {}
             Some("") => {
@@ -1857,6 +1863,13 @@ fn scroll_to_once(ui: &Ui, tab: &egui::Response, path: &Path) {
         tab.scroll_to_me(None);
         ui.data_mut(|data| data.insert_temp(id, path));
     }
+}
+
+/// The file name of `file`, as the questions name it.
+fn file_name(file: Option<&OpenFile>) -> String {
+    file.and_then(|file| file.path.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// `shortcut` as the menu shows it. egui spells out a key after modifier names ("Ctrl+Comma");
