@@ -527,38 +527,40 @@ impl App {
         let Some((repo, question)) = &file.asking else {
             return;
         };
-        let name = file
-            .path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let name = file_name(Some(file));
         let vcs = match repo.vcs() {
             rtmsync::Vcs::Git => "Git",
             rtmsync::Vcs::Pijul => "Pijul",
         };
-        let (text, yes, no) = match question {
+        let (title, text, yes, no) = match question {
             Question::Modified => (
-                format!("{name} has changes that rtm did not commit."),
+                format!("Commit the changes to {name}?"),
+                format!(
+                    "{name} has changes that rtm did not commit. Commit them before syncing, or \
+                     leave the file closed to commit or revert them yourself."
+                ),
                 "Commit them",
                 "Don't open",
             ),
             Question::Untracked => (
-                format!("{name} is not in the {vcs} repository yet."),
+                format!("Add {name} to {vcs}?"),
+                format!(
+                    "{name} is not in the {vcs} repository yet. Add it to sync it, or open it \
+                     without sync; the app asks again next time."
+                ),
                 "Add it",
                 "Not now",
             ),
         };
         let mut answer = None;
-        egui::Modal::new(egui::Id::unique("sync-question")).show(ctx, |ui| {
-            ui.label(RichText::new(text).color(p.text));
-            ui.horizontal(|ui| {
-                if theme::primary_button(ui, yes).clicked() {
-                    answer = Some(true);
-                }
-                if theme::secondary_button(ui, no).clicked() {
-                    answer = Some(false);
-                }
-            });
+        // Escape and the backdrop do nothing: the file waits for the answer.
+        theme::question(ctx, p, "sync-question", &title, &text, |ui| {
+            if theme::primary_button(ui, yes).clicked() {
+                answer = Some(true);
+            }
+            if theme::secondary_button(ui, no).clicked() {
+                answer = Some(false);
+            }
         });
         if let Some(yes) = answer {
             self.answer(yes);
