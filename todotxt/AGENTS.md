@@ -50,6 +50,16 @@ todotxt/tests/
 - `remove_item(index)` removes the item and, recursively, every item whose `sub` is the uuid
   of a removed item (cyclic links terminate). Returns `Option<Vec<TodoItem>>`: None = out of
   bounds, otherwise the removed items in file order. Like every mutation it does not save.
+- **Projects and contexts** (RTM-119), shared by every frontend so they behave the same. Tag
+  names are compared case-insensitively (`+Work` is `+work`).
+  - `TodoLibrary::projects()` / `contexts()` return `Vec<(TodoProject, usize)>` /
+    `Vec<(TodoContext, usize)>`: every tag in the file, spelled as first seen in file order,
+    sorted by the lowercased name, with the number of open items carrying it. A tag found only
+    on done items is listed with 0; an item carrying a tag twice counts once.
+  - `TodoItem::matches(projects, contexts)` is true when the item carries **every** given
+    project and context; empty lists match everything. `TodoLibrary::filter_items(projects,
+    contexts)` returns the file indices of the matching items, in file order, done items
+    included: status and due filters stay with each frontend.
 - `TodoItem` fields: `done`, `priority`, `completion_date`, `creation_date`, `description`,
   `projects`, `contexts`, `due`, `recurrence`, `threshold`, `uuid`, `sub`.
 - **Priority has two serialization forms, chosen by `done`:** an open item writes `(X)`
