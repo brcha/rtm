@@ -188,42 +188,81 @@ fn set_vcs_adds_an_entry_for_a_file_without_one() {
 }
 
 #[test]
-fn opening_the_active_file_again_changes_nothing() {
-    let mut config = load_text("same", "file_name = \"/tmp/a.txt\"\nvcs = \"git\"\n");
-    let before = config.clone();
-    config.set_active("/tmp/a.txt");
-    assert_eq!(config, before);
-}
-
-#[test]
-fn opening_another_file_replaces_the_entry_and_its_choice() {
-    let mut config = load_text("other", "file_name = \"/tmp/a.txt\"\nvcs = \"git\"\n");
-    config.set_active("/tmp/b.txt");
-    assert_eq!(config.file_name.as_deref(), Some("/tmp/b.txt"));
-    assert_eq!(config.files, [entry("/tmp/b.txt", None)]);
-}
-
-#[test]
-fn opening_a_listed_file_keeps_its_name_and_choice() {
-    let mut config = load_text(
-        "listed",
-        "file_name = \"/tmp/a.txt\"\n\n[[files]]\npath = \"/tmp/b.txt\"\nname = \"Work\"\nvcs = \"pijul\"\n",
-    );
-    config.set_active("/tmp/b.txt");
+fn add_file_appends_an_entry_once() {
+    let mut config = load_text("add", "file_name = \"/tmp/a.txt\"\nvcs = \"git\"\n");
+    config.add_file("/tmp/b.txt");
+    config.add_file("/tmp/a.txt");
+    config.add_file("/tmp/b.txt");
     assert_eq!(
         config.files,
-        [FileEntry {
-            path: "/tmp/b.txt".into(),
-            name: Some("Work".into()),
-            vcs: Some("pijul".into()),
-        }]
+        [entry("/tmp/a.txt", Some("git")), entry("/tmp/b.txt", None)]
+    );
+    assert_eq!(config.file_name.as_deref(), Some("/tmp/a.txt"));
+}
+
+#[test]
+fn set_active_only_names_the_file() {
+    let mut config = load_text("active", "file_name = \"/tmp/a.txt\"\nvcs = \"git\"\n");
+    config.add_file("/tmp/b.txt");
+    config.set_active("/tmp/b.txt");
+    assert_eq!(config.file_name.as_deref(), Some("/tmp/b.txt"));
+    assert_eq!(
+        config.files,
+        [entry("/tmp/a.txt", Some("git")), entry("/tmp/b.txt", None)]
     );
 }
 
 #[test]
-fn opening_with_no_file_before_adds_the_entry() {
-    let mut config = AppConfig::default();
-    config.set_active("/tmp/a.txt");
-    assert_eq!(config.file_name.as_deref(), Some("/tmp/a.txt"));
+fn removing_a_file_drops_its_entry_and_clears_file_name_when_it_was_active() {
+    let mut config = load_text("remove", "file_name = \"/tmp/a.txt\"\n");
+    config.add_file("/tmp/b.txt");
+    config.remove_file("/tmp/b.txt");
     assert_eq!(config.files, [entry("/tmp/a.txt", None)]);
+    assert_eq!(config.file_name.as_deref(), Some("/tmp/a.txt"));
+    config.remove_file("/tmp/a.txt");
+    assert_eq!(config.files, []);
+    assert_eq!(config.file_name, None);
+}
+
+#[test]
+fn renaming_an_entry_keeps_its_name_and_choice() {
+    let mut config = load_text(
+        "rename",
+        "file_name = \"/tmp/a.txt\"\n\n[[files]]\npath = \"/tmp/b.txt\"\nname = \"Work\"\nvcs = \"pijul\"\n",
+    );
+    config.rename("/tmp/b.txt", "/real/b.txt");
+    assert_eq!(config.file_name.as_deref(), Some("/tmp/a.txt"));
+    assert_eq!(
+        config.files,
+        [
+            FileEntry {
+                path: "/real/b.txt".into(),
+                name: Some("Work".into()),
+                vcs: Some("pijul".into()),
+            },
+            entry("/tmp/a.txt", None),
+        ]
+    );
+}
+
+#[test]
+fn renaming_the_active_entry_moves_file_name() {
+    let mut config = load_text(
+        "rename active",
+        "file_name = \"/tmp/a.txt\"\nvcs = \"git\"\n",
+    );
+    config.rename("/tmp/a.txt", "/real/a.txt");
+    assert_eq!(config.file_name.as_deref(), Some("/real/a.txt"));
+    assert_eq!(config.files, [entry("/real/a.txt", Some("git"))]);
+}
+
+#[test]
+fn renaming_onto_a_listed_spelling_keeps_one_entry_with_the_newer_choice() {
+    let mut config = load_text(
+        "rename duplicate",
+        "file_name = \"/tmp/a.txt\"\nvcs = \"git\"\n\n[[files]]\npath = \"/real/a.txt\"\nvcs = \"pijul\"\n",
+    );
+    config.rename("/tmp/a.txt", "/real/a.txt");
+    assert_eq!(config.file_name.as_deref(), Some("/real/a.txt"));
+    assert_eq!(config.files, [entry("/real/a.txt", Some("git"))]);
 }

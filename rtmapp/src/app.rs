@@ -36,10 +36,10 @@ const QUIT: egui::KeyboardShortcut =
 pub struct App {
     config: AppConfig,
     config_path: PathBuf,
-    /// The open files (RTM-66); one until tabs come (RTM-127).
+    /// The open files (RTM-66), one per entry of the saved session, in its order (RTM-127).
     files: Vec<OpenFile>,
-    /// The index in `files` of the file shown.
-    active: usize,
+    /// The path of the file shown (`OpenFile::path`); none when no file is open.
+    active: Option<PathBuf>,
     /// The app line, above the file's: the config, a file that could not be created or opened,
     /// the quick-add input. Shown until the next successful change or config save.
     error: Option<String>,
@@ -53,6 +53,9 @@ pub struct App {
     reconnect: bool,
     /// The repositories the open files sync through (RTM-64), one worker each (RTM-126).
     repos: Vec<RepoSync>,
+    /// The workers of repositories whose last open file was closed, until their last commit and
+    /// sync are done; exit waits for them too.
+    closing: Vec<Worker>,
     /// The open file dialog: its result, and what to do with a chosen path.
     dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
     ctx: egui::Context,
@@ -72,6 +75,9 @@ struct RepoSync {
 /// What belongs to one open todo.txt (RTM-125).
 #[derive(Default)]
 struct OpenFile {
+    /// Its entry's path: canonical once loaded, as the config gave it until then. It names the
+    /// file while it is not loaded (missing, failed, closed by a conflict or "Don't open").
+    path: PathBuf,
     library: Option<TodoLibrary>,
     /// The repository it syncs through, a key of `App::repos`.
     repo: Option<RepoKey>,
@@ -109,51 +115,39 @@ impl App {
     fn with_config(cc: &eframe::CreationContext<'_>, config_path: PathBuf) -> Self {
         theme::install(&cc.egui_ctx);
         let mut config = AppConfig::load(&config_path);
-        let mut error = None;
-        let library = match config.file_name.clone().map(PathBuf::from) {
-            Some(path) if path.exists() => match load_library(&path) {
-                Ok(library) => {
-                    // The file's entry is looked up by the resolved path from now on; written
-                    // with the next save, not now.
-                    config.rename_active(&library.file_name);
-                    Some(library)
-                }
-                Err(e) => {
-                    error = Some(e);
-                    None
-                }
-            },
-            _ => None,
-        };
+        let (files, active) = open_session(&mut config);
         let mut app = App {
             config,
             config_path,
-            files: vec![OpenFile {
-                library,
-                error,
-                ..OpenFile::default()
-            }],
-            active: 0,
+            files,
+            active,
             error: None,
             new_item: String::new(),
             editing: None,
             settings: None,
             reconnect: false,
             repos: Vec::new(),
+            closing: Vec::new(),
             dialog: None,
             ctx: cc.egui_ctx.clone(),
         };
-        app.connect();
+        app.connect_all();
         app
     }
 
-    /// The file shown.
-    fn file(&self) -> &OpenFile {
-        &self.files[self.active]
+    /// The file shown, unless no file is open.
+    fn file(&self) -> Option<&OpenFile> {
+        let active = self.active.as_deref()?;
+        self.files.iter().find(|file| file.is(active))
     }
 
-    fn file_mut(&mut self) -> &mut OpenFile {
-        &mut self.files[self.active]
+    fn file_mut(&mut self) -> Option<&mut OpenFile> {
+        find_file(&mut self.files, self.active.as_deref())
+    }
+
+    /// The shown file's items, while it is loaded.
+    fn library(&self) -> Option<&TodoLibrary> {
+        self.file()?.library.as_ref()
     }
 
     /// The repository `file` syncs through.
@@ -165,10 +159,18 @@ impl App {
     /// Starts sync for the shown file: its check on open runs on the repository's worker, and the
     /// file syncs once that passes (`checked`). A file it replaced has left its repository first.
     fn connect(&mut self) {
-        let Some(file) = self.files.get_mut(self.active) else {
+        let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
             return;
         };
         file.connect(&mut self.repos, &self.config, &self.ctx);
+        self.prune();
+    }
+
+    /// Starts sync for every open file, as at startup and after Settings changed `sync`.
+    fn connect_all(&mut self) {
+        for file in &mut self.files {
+            file.connect(&mut self.repos, &self.config, &self.ctx);
+        }
         self.prune();
     }
 
@@ -203,8 +205,8 @@ impl App {
             }
         }
         self.prune();
-        if self.file().library.is_none() {
-            // A conflicted repository closed the file.
+        if self.library().is_none() {
+            // A conflicted repository closed the shown file.
             self.close_editor();
         }
     }
@@ -230,7 +232,7 @@ impl App {
     /// The answer to `asking`: yes commits the outside changes or adds the file, then syncs; no
     /// closes a modified file, and opens an untracked one without sync (asked again next time).
     fn answer(&mut self, yes: bool) {
-        let Some(file) = self.files.get_mut(self.active) else {
+        let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
             return;
         };
         let Some((repo, question)) = file.asking.take() else {
@@ -238,7 +240,7 @@ impl App {
         };
         if yes {
             let message = repo.commit_message(question);
-            let path = file.path();
+            let path = file.loaded_path();
             if let Some(joined) = find_repo(&mut self.repos, file.repo.as_ref()) {
                 joined.worker.found_remote(repo.remote());
                 if let Some(path) = path {
@@ -256,14 +258,16 @@ impl App {
         self.prune();
     }
 
-    /// Whether any repository has a job outstanding: New File and Load File wait for it.
+    /// Whether any repository has a job outstanding: Settings' reconnect waits for it.
     fn busy(&self) -> bool {
         self.repos.iter().any(|repo| repo.worker.busy())
     }
 
     /// Applies `change` to the list at once and writes it when the worker is idle.
     fn apply(&mut self, change: Change) {
-        let file = self.file_mut();
+        let Some(file) = self.file_mut() else {
+            return;
+        };
         let Some(library) = &mut file.library else {
             return;
         };
@@ -278,7 +282,8 @@ impl App {
     /// Writes every open file's pending changes whose repository is idle (see `OpenFile::flush`).
     fn flush(&mut self) {
         for file in &mut self.files {
-            file.flush(find_repo(&mut self.repos, file.repo.as_ref()));
+            // A failed write is in the file's line.
+            let _ = file.flush(find_repo(&mut self.repos, file.repo.as_ref()));
         }
     }
 
@@ -335,6 +340,11 @@ impl App {
             self.handle(&key, done);
         }
         self.flush();
+        // No open file is left for their results.
+        for worker in &mut self.closing {
+            worker.poll();
+        }
+        self.closing.retain(Worker::busy);
     }
 
     /// One job's result for the repository `key`: status, a reload of each file a pull changed,
@@ -370,7 +380,7 @@ impl App {
                     file.close_conflicted();
                 }
                 self.prune();
-                if self.file().library.is_none() {
+                if self.library().is_none() {
                     self.close_editor();
                 }
             }
@@ -421,15 +431,16 @@ impl App {
     /// a dialog opened on another item.
     fn close_editor(&mut self) {
         self.editing = None;
-        let file = self.file_mut();
-        file.edited = None;
-        file.deleting = None;
-        file.stale = false;
+        if let Some(file) = self.file_mut() {
+            file.edited = None;
+            file.deleting = None;
+            file.stale = false;
+        }
     }
 
     /// Opens the edit dialog on the item at `index`.
     fn open_editor(&mut self, index: usize) {
-        let Some(file) = self.files.get_mut(self.active) else {
+        let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
             return;
         };
         let Some(item) = file.library.as_ref().and_then(|l| l.items.get(index)) else {
@@ -443,7 +454,7 @@ impl App {
 
     /// Refuses Save or Delete when a pull changed the dialog's item; true when refused.
     fn refuse_stale(&mut self) -> bool {
-        let stale = self.file().stale;
+        let stale = self.file().is_some_and(|file| file.stale);
         if stale && let Some(form) = &mut self.editing {
             form.error = Some(
                 "A sync changed this item, or what deleting it would remove; close the dialog and \
@@ -456,7 +467,7 @@ impl App {
 
     /// The Git-or-Pijul question, while it is open. The answer is saved in the config.
     fn vcs_question(&mut self, ctx: &egui::Context, p: &Palette) {
-        let Some(found) = &self.file().choose_vcs else {
+        let Some(found) = self.file().and_then(|file| file.choose_vcs.as_ref()) else {
             return;
         };
         let mut answer = None;
@@ -482,11 +493,15 @@ impl App {
         });
         match answer.as_deref() {
             None => {}
-            Some("") => self.file_mut().choose_vcs = None,
+            Some("") => {
+                if let Some(file) = self.file_mut() {
+                    file.choose_vcs = None;
+                }
+            }
             Some(name) => {
-                let file = self.file().library.as_ref().map(|l| l.file_name.clone());
+                let file = self.file().and_then(OpenFile::loaded_path);
                 if let Some(file) = file {
-                    self.config.set_vcs(&file, name);
+                    self.config.set_vcs(&file.to_string_lossy(), name);
                 }
                 self.save_config();
                 self.connect();
@@ -495,14 +510,15 @@ impl App {
     }
 
     fn sync_question(&mut self, ctx: &egui::Context, p: &Palette) {
-        let Some((repo, question)) = &self.file().asking else {
+        let Some(file) = self.file() else {
             return;
         };
-        let name = self
-            .file()
-            .library
-            .as_ref()
-            .and_then(|library| Path::new(&library.file_name).file_name())
+        let Some((repo, question)) = &file.asking else {
+            return;
+        };
+        let name = file
+            .path
+            .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
         let vcs = match repo.vcs() {
@@ -540,9 +556,8 @@ impl App {
 
     /// Asks for a file and loads it once the dialog returns (see `dialog_result`).
     fn pick_file(&mut self, frame: &eframe::Frame) {
-        // Matches the disabled buttons; `dialog_result` is what waits for an idle worker before
-        // the file is switched.
-        if self.busy() || self.dialog.is_some() {
+        // Matches the disabled menu entries.
+        if self.dialog.is_some() {
             return;
         }
         let dialog = rfd::AsyncFileDialog::new()
@@ -555,7 +570,7 @@ impl App {
     /// Asks where to create a todo.txt, then creates it empty and opens it. The dialog has asked
     /// before returning an existing file, so that file is replaced.
     fn new_file(&mut self, frame: &eframe::Frame) {
-        if self.busy() || self.dialog.is_some() {
+        if self.dialog.is_some() {
             return;
         }
         let dialog = rfd::AsyncFileDialog::new()
@@ -583,11 +598,10 @@ impl App {
         self.dialog = Some((receive, then));
     }
 
-    /// Applies the file dialog's result once nothing depends on the open file: no job is running
-    /// (its pending changes are written then) and no item is being edited. Until then the result
-    /// waits in the channel; the worker's results and closing the edit dialog repaint.
+    /// Applies the file dialog's result once no item is being edited: opening a file shows its
+    /// tab. Until then the result waits in the channel; closing the edit dialog repaints.
     fn dialog_result(&mut self) {
-        if self.busy() || self.editing.is_some() {
+        if self.editing.is_some() {
             return;
         }
         let Some((receive, then)) = &self.dialog else {
@@ -605,25 +619,150 @@ impl App {
         }
     }
 
+    /// Creates `path` empty and opens it. A file open in a tab is not replaced: its tab would keep
+    /// the old items and write them back.
     fn create_file(&mut self, path: &Path) {
+        if let Ok(canonical) = path.canonicalize()
+            && self
+                .files
+                .iter()
+                .any(|file| file.library.is_some() && file.is(&canonical))
+        {
+            self.error = Some(format!(
+                "{} is open; close its tab before replacing it.",
+                canonical.display()
+            ));
+            return;
+        }
         match std::fs::File::create(path) {
             Ok(_) => self.open_file(path),
             Err(e) => self.error = Some(format!("{}: {e}", path.display())),
         }
     }
 
-    /// Makes `path` the active file, saves it in the config and starts its sync.
+    /// Shows `path`: the tab of the file when it is open (loading it again when it is not loaded,
+    /// as the file lines ask), otherwise a new tab, kept in the config. Its sync starts.
     fn open_file(&mut self, path: &Path) {
-        match load_library(path) {
-            Ok(library) => {
-                self.config.set_active(&library.file_name);
-                let file = self.file_mut();
+        let library = match load_library(path) {
+            Ok(library) => library,
+            Err(e) => {
+                self.error = Some(e);
+                return;
+            }
+        };
+        let name = library.file_name.clone();
+        let canonical = PathBuf::from(&name);
+        let connect = match self
+            .files
+            .iter_mut()
+            .find(|file| file.resolves_to(&canonical))
+        {
+            Some(file) if file.library.is_some() => false,
+            Some(file) => {
+                self.config.rename(&file.path.to_string_lossy(), &name);
+                file.path = canonical.clone();
                 file.library = Some(library);
                 file.error = None;
-                self.save_config();
-                self.connect();
+                true
             }
-            Err(e) => self.error = Some(e),
+            None => {
+                self.config.add_file(&name);
+                self.files.push(OpenFile::loaded(library));
+                true
+            }
+        };
+        self.active = Some(canonical);
+        if connect {
+            self.connect();
+        }
+        self.config.set_active(&name);
+        self.save_config();
+    }
+
+    /// Closes the tab of the open file at `path`: its pending changes are written and committed
+    /// first, and its entry leaves the config. Refused while the edit dialog is open, while its
+    /// check on open runs or its repository has a job outstanding, and when the write fails.
+    /// Closing the last open file of a repository syncs it once more, so its commits reach the
+    /// remote.
+    #[cfg_attr(not(test), expect(dead_code, reason = "not reachable from the UI yet"))]
+    fn close(&mut self, path: &Path) {
+        if self.editing.is_some() {
+            return;
+        }
+        let Some(file) = self.files.iter_mut().find(|file| file.is(path)) else {
+            return;
+        };
+        let mut repo = find_repo(&mut self.repos, file.repo.as_ref());
+        if file.checking || repo.as_ref().is_some_and(|repo| repo.worker.busy()) {
+            return;
+        }
+        if !file.flush(repo.as_deref_mut()) {
+            return;
+        }
+        let key = file.repo.clone();
+        let loaded = file.loaded_path();
+        let others =
+            |other: &OpenFile| !other.is(path) && other.repo.is_some() && other.repo == key;
+        if let Some(repo) = repo
+            && repo.worker.has_remote()
+            && !self.files.iter().any(others)
+            && let Some(loaded) = loaded
+        {
+            repo.worker.sync(vec![loaded]);
+        }
+        let Some(index) = self.files.iter().position(|file| file.is(path)) else {
+            return;
+        };
+        let closed = self.files.remove(index);
+        if self.active.as_deref() == Some(path) {
+            // The tab to its right takes its place, else the one to its left.
+            let next = self.files.get(index).or(self.files.last());
+            self.active = next.map(|file| file.path.clone());
+        }
+        self.config.remove_file(&closed.path.to_string_lossy());
+        if let Some(key) = &closed.repo
+            && !self
+                .files
+                .iter()
+                .any(|file| file.repo.as_ref() == Some(key))
+            && let Some(at) = self.repos.iter().position(|repo| &repo.key == key)
+        {
+            let repo = self.repos.remove(at);
+            if repo.worker.busy() {
+                self.closing.push(repo.worker);
+            }
+        }
+        if let Some(active) = &self.active {
+            self.config.set_active(&active.to_string_lossy());
+        }
+        self.prune();
+        self.save_config();
+    }
+
+    /// Shows the open file at `path`, a click on its tab; it is shown at the next start too.
+    #[cfg_attr(not(test), expect(dead_code, reason = "not reachable from the UI yet"))]
+    fn switch(&mut self, path: &Path) {
+        if self.editing.is_some() {
+            return;
+        }
+        if !self.files.iter().any(|file| file.is(path)) {
+            return;
+        }
+        self.active = Some(path.to_owned());
+        self.config.set_active(&path.to_string_lossy());
+        self.save_config();
+    }
+
+    /// Shows the first file (in tab order) with a question waiting, the Git-or-Pijul choice or the
+    /// outside changes, unless a dialog is open or the shown file has one. Only `active` moves:
+    /// the checks finish a few frames after startup, and nothing is written at startup.
+    fn show_question(&mut self) {
+        if self.modal_open() {
+            return;
+        }
+        let waiting = |file: &OpenFile| file.choose_vcs.is_some() || file.asking.is_some();
+        if let Some(file) = self.files.iter().find(|file| waiting(file)) {
+            self.active = Some(file.path.clone());
         }
     }
 
@@ -656,17 +795,17 @@ impl App {
     fn reconnect_when_idle(&mut self) {
         if self.reconnect && !self.busy() {
             self.reconnect = false;
-            self.connect();
+            self.connect_all();
         }
     }
 
     /// Whether a modal is open; the menu's shortcuts are inactive then.
     fn modal_open(&self) -> bool {
-        let file = self.file();
         self.editing.is_some()
             || self.settings.is_some()
-            || file.choose_vcs.is_some()
-            || file.asking.is_some()
+            || self
+                .file()
+                .is_some_and(|file| file.choose_vcs.is_some() || file.asking.is_some())
     }
 
     /// The menu entry the header's menu or a shortcut chose.
@@ -738,21 +877,19 @@ impl App {
             .inner_margin(8.0)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                let name = self.config.file_name.as_deref().unwrap_or("No file loaded");
+                let name = self
+                    .file()
+                    .map_or("No file loaded".into(), |file| file.path.to_string_lossy());
                 // CSS: word-break: break-all, since a path has no spaces to wrap at.
                 let mut job = LayoutJob::single_section(
-                    name.to_owned(),
+                    name.into_owned(),
                     TextFormat::simple(egui::FontId::proportional(11.9), p.muted),
                 );
                 job.wrap.break_anywhere = true;
                 ui.add(egui::Label::new(job));
             });
         self.filters(ui, p);
-        let count = self
-            .file()
-            .library
-            .as_ref()
-            .map_or(0, TodoLibrary::item_count);
+        let count = self.library().map_or(0, TodoLibrary::item_count);
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             ui.label(
                 RichText::new(format!("Total items: {count}"))
@@ -764,11 +901,7 @@ impl App {
 
     /// Completes or uncompletes the item at file index `index`, as the Tauri app did.
     fn toggle(&mut self, index: usize) {
-        let item = self
-            .file()
-            .library
-            .as_ref()
-            .and_then(|l| l.items.get(index));
+        let item = self.library().and_then(|l| l.items.get(index));
         if let Some(item) = item.cloned() {
             self.apply(Change::Toggle(item));
         }
@@ -781,7 +914,7 @@ impl App {
         if text.is_empty() {
             return;
         }
-        if self.file().library.is_none() {
+        if self.library().is_none() {
             self.error = Some("Please load a file first".to_owned());
             return;
         }
@@ -829,10 +962,12 @@ impl App {
         if self.refuse_stale() {
             return;
         }
-        let library = self
+        let active = self.active.as_deref();
+        let file = self
             .files
-            .get(self.active)
-            .and_then(|file| file.library.as_ref());
+            .iter()
+            .find(|file| active.is_some_and(|path| file.is(path)));
+        let library = file.and_then(|file| file.library.as_ref());
         let (Some(form), Some(library)) = (&mut self.editing, library) else {
             self.close_editor();
             return;
@@ -853,7 +988,7 @@ impl App {
     /// Shows the delete confirmation with the number of sub-items the delete would take, counted by
     /// removing from a copy so it is exactly what `delete_item` will remove.
     fn ask_delete(&mut self) {
-        let Some(file) = self.files.get_mut(self.active) else {
+        let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
             return;
         };
         let (Some(form), Some(library)) = (&mut self.editing, &file.library) else {
@@ -874,7 +1009,7 @@ impl App {
         if self.refuse_stale() {
             return;
         }
-        let (Some(form), Some(library)) = (self.editing.take(), &self.file().library) else {
+        let (Some(form), Some(library)) = (self.editing.take(), self.library()) else {
             self.close_editor();
             return;
         };
@@ -888,7 +1023,8 @@ impl App {
 
     /// The app and file lines, the add row and the list. Returns what was clicked in the list.
     fn content(&mut self, ui: &mut Ui, p: &Palette) -> Option<RowAction> {
-        for error in [&self.error, &self.file().error].into_iter().flatten() {
+        let file_error = self.file().and_then(|file| file.error.as_ref());
+        for error in [self.error.as_ref(), file_error].into_iter().flatten() {
             ui.label(RichText::new(error).color(p.due));
             ui.add_space(8.0);
         }
@@ -900,7 +1036,7 @@ impl App {
             .show(ui, |ui| {
                 // The list box fills the content area, as in the web app.
                 ui.set_min_size(ui.available_size());
-                let Some(library) = &self.file().library else {
+                let Some(library) = self.library() else {
                     empty_state(
                         ui,
                         p,
@@ -929,11 +1065,17 @@ impl RepoSync {
         let paths = files
             .iter()
             .filter(|file| file.repo.as_ref() == Some(&self.key))
-            .filter_map(OpenFile::path)
+            .filter_map(OpenFile::loaded_path)
             .collect();
         self.worker.sync(paths);
         self.last_sync = now;
     }
+}
+
+/// The open file at `path` among `files`.
+fn find_file<'a>(files: &'a mut [OpenFile], path: Option<&Path>) -> Option<&'a mut OpenFile> {
+    let path = path?;
+    files.iter_mut().find(|file| file.is(path))
 }
 
 /// The repository `key` among `repos`.
@@ -960,18 +1102,31 @@ fn ensure_repo<'a>(
 }
 
 impl OpenFile {
-    /// The file's path, while it is loaded.
-    fn path(&self) -> Option<PathBuf> {
-        self.library
-            .as_ref()
-            .map(|library| PathBuf::from(&library.file_name))
+    /// A file loaded at its canonical path.
+    fn loaded(library: TodoLibrary) -> Self {
+        OpenFile {
+            path: PathBuf::from(&library.file_name),
+            library: Some(library),
+            ..OpenFile::default()
+        }
     }
 
-    /// Whether this is the loaded file at `path`.
+    /// The file's path, while it is loaded: only a loaded file is placed, checked or synced.
+    fn loaded_path(&self) -> Option<PathBuf> {
+        self.library.as_ref().map(|_| self.path.clone())
+    }
+
+    /// Whether this is the open file at `path`, loaded or not.
     fn is(&self, path: &Path) -> bool {
-        self.library
-            .as_ref()
-            .is_some_and(|library| Path::new(&library.file_name) == path)
+        self.path == path
+    }
+
+    /// Whether this is the open file at `canonical`, also when its entry names it another way
+    /// (a file missing at startup is not resolved yet).
+    fn resolves_to(&self, canonical: &Path) -> bool {
+        self.is(canonical)
+            || (self.library.is_none()
+                && self.path.canonicalize().is_ok_and(|path| path == canonical))
     }
 
     /// Finds where the file syncs and, in a repository, assigns it there and queues its check on
@@ -983,7 +1138,7 @@ impl OpenFile {
         self.choose_vcs = None;
         self.asking = None;
         self.checking = false;
-        let Some(path) = self.path() else {
+        let Some(path) = self.loaded_path() else {
             return;
         };
         match sync::place(&path, config) {
@@ -1032,17 +1187,17 @@ impl OpenFile {
 
     /// Writes the pending changes and queues their commit on `repo`, the file's repository,
     /// unless it has a job outstanding: it may be a pull about to change the file, and the changes
-    /// are redone on what it brings.
-    fn flush(&mut self, repo: Option<&mut RepoSync>) {
+    /// are redone on what it brings. False when the write failed.
+    fn flush(&mut self, repo: Option<&mut RepoSync>) -> bool {
         // During the check on open a write would look like an outside change.
         if self.pending.is_empty()
             || self.checking
             || repo.as_ref().is_some_and(|repo| repo.worker.busy())
         {
-            return;
+            return true;
         }
         let Some(library) = &mut self.library else {
-            return;
+            return true;
         };
         let changes = std::mem::take(&mut self.pending);
         // The Tauri app read the file again after a completion; kept.
@@ -1052,7 +1207,7 @@ impl OpenFile {
             .and_then(|()| if reread { library.load() } else { Ok(()) });
         if let Err(e) = saved {
             self.error = Some(format!("{}: {e}", library.file_name));
-            return;
+            return false;
         }
         // While the outside-changes question is open, a commit would take those changes (or add
         // the untracked file) before the user answers; the write alone keeps the edit.
@@ -1060,6 +1215,7 @@ impl OpenFile {
             let path = PathBuf::from(&library.file_name);
             repo.worker.commit(path, commit_message(&changes));
         }
+        true
     }
 
     /// Reads the file again after a pull changed it, redoes the pending changes on it, and, when
@@ -1112,12 +1268,30 @@ impl eframe::App for App {
         self.finish_jobs(deadline);
         self.sync_now(Instant::now());
         self.finish_jobs(deadline);
+        // A closed repository's commit gets as long as an open one's; its sync, the exit limit.
+        let saving_deadline = deadline.max(Instant::now() + SAVE_TIMEOUT);
+        for worker in &mut self.closing {
+            while worker.busy() {
+                let until = if worker.syncing() {
+                    deadline
+                } else {
+                    saving_deadline
+                };
+                if worker
+                    .next(until.saturating_duration_since(Instant::now()))
+                    .is_none()
+                {
+                    break;
+                }
+            }
+        }
     }
 
     /// Runs before each `ui`, and also while the window is hidden (when a repaint was requested).
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.sync_results();
         self.reconnect_when_idle();
+        self.show_question();
         self.dialog_result();
         self.tick(Instant::now());
     }
@@ -1125,12 +1299,12 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let p = theme::palette(ui);
         // The status of the shown file's repository, or why the file does not sync.
-        let status = match self.repo_of(self.file()) {
-            _ if self.file().checking => Some("Checking…".to_owned()),
+        let status = self.file().and_then(|file| match self.repo_of(file) {
+            _ if file.checking => Some("Checking…".to_owned()),
             Some(repo) if repo.worker.syncing() => Some("Syncing…".to_owned()),
             Some(repo) => repo.status.clone(),
-            None => self.file().not_syncing.clone(),
-        };
+            None => file.not_syncing.clone(),
+        });
         // Sync now: shown when a repository has a remote, enabled unless all of those sync.
         let remotes: Vec<_> = self
             .repos
@@ -1140,8 +1314,8 @@ impl eframe::App for App {
             .collect();
         let sync_button =
             (!remotes.is_empty()).then(|| !remotes.iter().all(|worker| worker.syncing()));
-        // New File and Load File: disabled during any job and while a file dialog is open.
-        let files_enabled = !self.busy() && self.dialog.is_none();
+        // New File and Load File: disabled while a file dialog is open.
+        let files_enabled = self.dialog.is_none();
         let clicked = egui::Panel::top("header")
             .frame(Frame::NONE)
             .show(ui, |ui| {
@@ -1279,6 +1453,44 @@ fn commit_message(changes: &[Change]) -> String {
             format!("rtm: {} changes\n\n{}", changes.len(), lines.join("\n"))
         }
     }
+}
+
+/// Loads every file of the saved session, in its order, and finds the one `file_name` names (else
+/// the first). A file that fails to load keeps its place with the error in its line.
+fn open_session(config: &mut AppConfig) -> (Vec<OpenFile>, Option<PathBuf>) {
+    let mut files: Vec<OpenFile> = Vec::new();
+    for entry in config.files.clone() {
+        let file = match load_library(Path::new(&entry.path)) {
+            // Entries are looked up by the resolved path from now on; written with the next
+            // save, not now. Two entries for one file would open two tabs that overwrite
+            // each other, so the second is dropped.
+            Ok(library) => {
+                config.rename(&entry.path, &library.file_name);
+                if files
+                    .iter()
+                    .any(|file| file.is(Path::new(&library.file_name)))
+                {
+                    continue;
+                }
+                OpenFile::loaded(library)
+            }
+            Err(e) => OpenFile {
+                path: PathBuf::from(&entry.path),
+                error: Some(e),
+                ..OpenFile::default()
+            },
+        };
+        files.push(file);
+    }
+    let named = |file: &&OpenFile| {
+        config
+            .file_name
+            .as_deref()
+            .is_some_and(|name| file.is(Path::new(name)))
+    };
+    let active = files.iter().find(named).or(files.first());
+    let active = active.map(|file| file.path.clone());
+    (files, active)
 }
 
 /// Loads a todo.txt file. The path is canonicalized first, as the Tauri app did; `path` is the
@@ -1432,3 +1644,7 @@ mod ui_tests;
 #[cfg(test)]
 #[path = "tests/app_error_tests.rs"]
 mod error_tests;
+
+#[cfg(test)]
+#[path = "tests/app_tabs_tests.rs"]
+mod tabs_tests;

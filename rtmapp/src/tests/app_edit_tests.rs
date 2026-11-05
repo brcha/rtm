@@ -14,7 +14,10 @@ fn completing_a_recurring_item_saves_it_and_the_next_occurrence() {
     assert!(lines[0].starts_with("x ") && lines[0].contains("due:2026-11-01"));
     assert!(!lines[1].starts_with("x ") && lines[1].contains("due:2026-11-08"));
     // Re-read after completing, as in the Tauri app.
-    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 2);
+    assert_eq!(
+        app.file().unwrap().library.as_ref().unwrap().item_count(),
+        2
+    );
     assert!(!dir.join("config.toml").exists());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -145,7 +148,10 @@ fn asking_to_delete_counts_the_sub_items() {
     let dir = temp_dir("ask-delete");
     let mut app = app_with(&dir, LINKED);
     // load() drops a line whose uuid does not parse; make sure none was.
-    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 5);
+    assert_eq!(
+        app.file().unwrap().library.as_ref().unwrap().item_count(),
+        5
+    );
 
     open_editor(&mut app, 2);
     app.ask_delete();
@@ -155,7 +161,10 @@ fn asking_to_delete_counts_the_sub_items() {
     app.ask_delete();
     assert_eq!(app.editing.as_ref().unwrap().confirm_delete, Some(0));
     // Counting changes nothing.
-    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 5);
+    assert_eq!(
+        app.file().unwrap().library.as_ref().unwrap().item_count(),
+        5
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -163,7 +172,10 @@ fn asking_to_delete_counts_the_sub_items() {
 fn deleting_removes_the_item_and_its_sub_items() {
     let dir = temp_dir("delete");
     let mut app = app_with(&dir, LINKED);
-    assert_eq!(app.file().library.as_ref().unwrap().item_count(), 5);
+    assert_eq!(
+        app.file().unwrap().library.as_ref().unwrap().item_count(),
+        5
+    );
     open_editor(&mut app, 2);
 
     app.delete_item();

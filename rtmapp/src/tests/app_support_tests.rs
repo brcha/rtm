@@ -21,17 +21,17 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
     App {
         config: AppConfig::default(),
         config_path: dir.join("config.toml"),
-        files: vec![OpenFile {
-            library,
-            ..OpenFile::default()
-        }],
-        active: 0,
+        active: library
+            .as_ref()
+            .map(|library| PathBuf::from(&library.file_name)),
+        files: library.into_iter().map(OpenFile::loaded).collect(),
         error: None,
         new_item: String::new(),
         editing: None,
         settings: None,
         reconnect: false,
         repos: Vec::new(),
+        closing: Vec::new(),
         dialog: None,
         ctx: egui::Context::default(),
     }
@@ -39,7 +39,7 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
 
 /// The error lines shown, the app's first.
 pub(super) fn errors(app: &App) -> Vec<&str> {
-    [&app.error, &app.file().error]
+    [&app.error, &app.file().unwrap().error]
         .into_iter()
         .flatten()
         .map(String::as_str)

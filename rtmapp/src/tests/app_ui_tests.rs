@@ -117,7 +117,14 @@ fn the_choice_of_a_file_named_through_a_detour_is_found_after_startup() {
     });
 
     let app = harness.state();
-    let file = app.file().library.as_ref().unwrap().file_name.clone();
+    let file = app
+        .file()
+        .unwrap()
+        .library
+        .as_ref()
+        .unwrap()
+        .file_name
+        .clone();
     assert_eq!(
         Path::new(&file),
         dir.join("todo.txt").canonicalize().unwrap()
@@ -137,7 +144,7 @@ fn the_app_line_and_the_file_line_are_both_shown() {
     let mut harness = harness(&dir, "First item\n", |_| {});
 
     harness.state_mut().error = Some("Could not save the config: test".to_owned());
-    harness.state_mut().file_mut().error = Some("Not committed: test".to_owned());
+    harness.state_mut().file_mut().unwrap().error = Some("Not committed: test".to_owned());
     harness.run();
 
     let app_line = harness
