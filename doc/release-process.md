@@ -45,9 +45,12 @@
       branch, or the release's body);
     - for a patch on an older line (published with "Set as the latest release" unticked) sets
       `older_line = true` under `[extra]` in the post's front matter;
+    - for a beta, `A.B.0-beta.N.md`, sets `channel = "beta"` under `[extra]`;
     - passes `scripts/site/check.sh --external`.
 
-    The download links follow the newest post without `older_line`: they point at
+    The post also updates `releases.json`, the release metadata the programs' update check reads
+    (RTM-130); nothing else is edited for it. The download links follow the newest stable post
+    without `older_line`: they point at
     `https://github.com/brcha/rtm/releases/download/vX.Y.Z/<asset>`, with X.Y.Z from the post's
     file name (names as under "Assets"; `platforms` in `site/templates/macros.html`). See
     `site/AGENTS.md`.

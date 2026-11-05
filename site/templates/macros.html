@@ -6,12 +6,13 @@
 {%- endmacro release_version %}
 
 {#- The newest release's version: that of the newest release post. A patch on an older line
-    sets `older_line = true` in its post's [extra], so it does not move the downloads. Callers trim
-    the result, since a macro returns text. #}
+    sets `older_line = true` in its post's [extra], and a beta sets `channel = "beta"`, so neither
+    moves the downloads. Callers trim the result, since a macro returns text. #}
 {% macro latest_version() -%}
   {%- set news = get_section(path="news/_index.md") -%}
   {%- for post in news.pages -%}
-    {%- if not post.extra.older_line %}{{ self::release_version(post=post) }}{% break %}{% endif -%}
+    {%- set channel = post.extra.channel | default(value="stable") -%}
+    {%- if not post.extra.older_line and channel == "stable" %}{{ self::release_version(post=post) }}{% break %}{% endif -%}
   {%- endfor -%}
 {%- endmacro latest_version %}
 
