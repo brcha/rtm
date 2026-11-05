@@ -29,9 +29,7 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         error: None,
         new_item: String::new(),
         editing: None,
-        worker: None,
-        sync_status: None,
-        last_sync: Instant::now(),
+        repos: Vec::new(),
         dialog: None,
         ctx: egui::Context::default(),
     }

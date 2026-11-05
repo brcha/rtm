@@ -82,6 +82,17 @@ fn synced_app(dir: &Path, file: &Path) -> App {
     app
 }
 
+/// The worker of the shown file's repository.
+fn worker(app: &App) -> Option<&Worker> {
+    app.repo_of(app.file()).map(|repo| &repo.worker)
+}
+
+/// The sync line of the shown file's repository.
+fn status(app: &App) -> Option<&str> {
+    app.repo_of(app.file())
+        .and_then(|repo| repo.status.as_deref())
+}
+
 /// Queues a sync, as the timer or Sync now does.
 fn sync(app: &mut App) {
     app.sync_now(Instant::now());
@@ -215,11 +226,9 @@ fn a_pull_whose_push_fails_is_still_taken_in() {
     sync(&mut app);
     wait(&mut app);
     assert!(
-        app.sync_status
-            .as_deref()
-            .is_some_and(|s| s.starts_with("Not synced")),
+        status(&app).is_some_and(|s| s.starts_with("Not synced")),
         "{:?}",
-        app.sync_status
+        status(&app)
     );
     assert_eq!(
         descriptions(&app),
@@ -342,7 +351,7 @@ fn a_conflict_found_by_a_sync_closes_the_file() {
     let error = app.file().error.as_deref().unwrap();
     assert!(error.contains("resolve them by hand"), "{error}");
     assert!(error.contains("One change"), "{error}");
-    assert!(app.worker.is_none());
+    assert!(worker(&app).is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -350,19 +359,19 @@ fn a_conflict_found_by_a_sync_closes_the_file() {
 fn a_sync_is_due_once_the_interval_has_passed_and_never_with_0() {
     let dir = remote_and_clones("sync timer", "Alpha\n");
     let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
-    let opened = app.last_sync;
+    let opened = app.repos.first().unwrap().last_sync;
     let minutes = |n: u64| Duration::from_secs(n * 60);
 
     app.tick(opened + minutes(9));
-    assert!(!app.worker.as_ref().unwrap().syncing());
+    assert!(!worker(&app).unwrap().syncing());
     app.tick(opened + minutes(10));
-    assert!(app.worker.as_ref().unwrap().syncing());
-    assert_eq!(app.last_sync, opened + minutes(10));
+    assert!(worker(&app).unwrap().syncing());
+    assert_eq!(app.repos.first().unwrap().last_sync, opened + minutes(10));
     wait(&mut app);
 
     app.config.sync_interval_minutes = 0;
     app.tick(opened + minutes(60 * 24));
-    assert!(!app.worker.as_ref().unwrap().syncing());
+    assert!(!worker(&app).unwrap().syncing());
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -372,7 +381,7 @@ fn sync_off_neither_commits_nor_pulls() {
     let mut app = bare_app(&dir, Some(load_library(&dir.join("a/todo.txt")).unwrap()));
     app.config.sync = false;
     app.connect();
-    assert!(app.worker.is_none());
+    assert!(worker(&app).is_none());
     app.new_item = "Call mom".to_owned();
     app.add_item();
     assert_eq!(git(&dir.join("a"), &["log", "-1", "--format=%s"]), "start");
@@ -384,7 +393,7 @@ fn outside_changes_are_committed_and_pushed_when_the_user_says_yes() {
     let dir = remote_and_clones("ask modified yes", "Alpha\n");
     std::fs::write(dir.join("a/todo.txt"), "Alpha\nBy hand\n").unwrap();
     let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
-    assert!(app.worker.is_none());
+    assert!(worker(&app).is_none());
     assert!(matches!(app.file().asking, Some((_, Question::Modified))));
 
     app.answer(true);
@@ -405,7 +414,7 @@ fn outside_changes_close_the_file_when_the_user_says_no() {
     std::fs::write(dir.join("a/todo.txt"), "Alpha\nBy hand\n").unwrap();
     let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
     app.answer(false);
-    assert!(app.file().library.is_none() && app.worker.is_none());
+    assert!(app.file().library.is_none() && worker(&app).is_none());
     assert!(
         app.file()
             .error
@@ -431,7 +440,7 @@ fn an_untracked_file_is_added_and_pushed_when_the_user_says_yes() {
     wait(&mut app);
     assert_eq!(subjects(&dir.join("a"), 1), "rtm: track other.txt");
     assert_eq!(subjects(&dir.join("remote"), 1), "rtm: track other.txt");
-    assert!(app.worker.is_some());
+    assert!(worker(&app).is_some());
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -441,7 +450,7 @@ fn an_untracked_file_opens_without_sync_when_the_user_says_no() {
     std::fs::write(dir.join("a/other.txt"), "Other\n").unwrap();
     let mut app = synced_app(&dir, &dir.join("a/other.txt"));
     app.answer(false);
-    assert!(app.file().library.is_some() && app.worker.is_none() && app.file().asking.is_none());
+    assert!(app.file().library.is_some() && worker(&app).is_none() && app.file().asking.is_none());
     app.new_item = "Call mom".to_owned();
     app.add_item();
     assert_eq!(subjects(&dir.join("a"), 1), "start");
@@ -458,7 +467,7 @@ fn an_ignored_file_opens_without_sync_or_a_question() {
     std::fs::write(dir.join("a/.gitignore"), "other.txt\n").unwrap();
     std::fs::write(dir.join("a/other.txt"), "Other\n").unwrap();
     let app = synced_app(&dir, &dir.join("a/other.txt"));
-    assert!(app.file().library.is_some() && app.worker.is_none() && app.file().asking.is_none());
+    assert!(app.file().library.is_some() && worker(&app).is_none() && app.file().asking.is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -477,7 +486,7 @@ fn an_untracked_file_in_a_conflicted_repository_opens_without_sync_or_a_question
     std::fs::write(dir.join("a/other.txt"), "Other\n").unwrap();
 
     let app = synced_app(&dir, &dir.join("a/other.txt"));
-    assert!(app.file().library.is_some() && app.worker.is_none() && app.file().asking.is_none());
+    assert!(app.file().library.is_some() && worker(&app).is_none() && app.file().asking.is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -488,12 +497,12 @@ fn a_new_file_in_a_repository_is_asked_about_and_added() {
 
     app.create_file(&dir.join("a/new.txt"));
 
-    assert!(app.file().library.is_some() && app.worker.is_none());
+    assert!(app.file().library.is_some() && worker(&app).is_none());
     assert!(matches!(app.file().asking, Some((_, Question::Untracked))));
     app.answer(true);
     wait(&mut app);
     assert_eq!(subjects(&dir.join("a"), 1), "rtm: track new.txt");
-    assert_eq!(app.sync_status, None);
+    assert_eq!(status(&app), None);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -513,7 +522,7 @@ fn sync_off_asks_nothing_about_outside_changes() {
     let mut app = bare_app(&dir, Some(load_library(&dir.join("a/todo.txt")).unwrap()));
     app.config.sync = false;
     app.connect();
-    assert!(app.file().asking.is_none() && app.worker.is_none());
+    assert!(app.file().asking.is_none() && worker(&app).is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -540,4 +549,147 @@ fn a_conflicted_repository_is_not_opened() {
             .contains("resolve them by hand")
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+// Several open files (RTM-126): one worker per repository, shared by its files. The app shows one
+// file until tabs come, so these tests open the others directly.
+
+/// An app with `files` open, each connected as at startup, the first one shown.
+fn app_on(dir: &Path, files: &[PathBuf]) -> App {
+    let mut app = bare_app(dir, None);
+    app.files = files
+        .iter()
+        .map(|file| OpenFile {
+            library: Some(load_library(file).unwrap()),
+            ..OpenFile::default()
+        })
+        .collect();
+    for index in 0..files.len() {
+        app.active = index;
+        app.connect();
+    }
+    app.active = 0;
+    wait(&mut app);
+    app
+}
+
+/// Adds `text` to the open file at `index`, as the quick-add does for the shown file.
+fn add_to(app: &mut App, index: usize, text: &str) {
+    app.active = index;
+    app.new_item = text.to_owned();
+    app.add_item();
+    app.active = 0;
+}
+
+/// A second tracked file, `a/work.txt`, pushed and pulled into `b`.
+fn add_work_file(dir: &Path, lines: &str) {
+    std::fs::write(dir.join("a/work.txt"), lines).unwrap();
+    git(&dir.join("a"), &["add", "work.txt"]);
+    git(&dir.join("a"), &["commit", "--quiet", "-m", "work"]);
+    git(&dir.join("a"), &["push", "--quiet"]);
+    git(&dir.join("b"), &["pull", "--quiet"]);
+}
+
+#[test]
+fn two_files_in_one_repository_share_a_worker_commit_apart_and_sync_once() {
+    let dir = remote_and_clones("sync two files", "Alpha\n");
+    add_work_file(&dir, "Report\n");
+    let mut app = app_on(&dir, &[dir.join("a/todo.txt"), dir.join("a/work.txt")]);
+    assert_eq!(app.repos.len(), 1);
+
+    add_to(&mut app, 0, "Call mom");
+    add_to(&mut app, 1, "Send invoice");
+    wait(&mut app);
+    assert_eq!(
+        subjects(&dir.join("a"), 2),
+        "rtm: add Send invoice\nrtm: add Call mom"
+    );
+
+    sync(&mut app);
+    wait(&mut app);
+    assert_eq!(
+        subjects(&dir.join("remote"), 2),
+        "rtm: add Send invoice\nrtm: add Call mom"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_pull_reloads_only_the_files_it_changed() {
+    let dir = remote_and_clones("sync reload one", "Alpha\n");
+    add_work_file(&dir, "Report\n");
+    let mut app = app_on(&dir, &[dir.join("a/todo.txt"), dir.join("a/work.txt")]);
+    // Seen only in memory: a reload of this file would bring "Alpha" back.
+    let first = app.files.first_mut().unwrap().library.as_mut().unwrap();
+    first.items.first_mut().unwrap().description = "Not reloaded".to_owned();
+    std::fs::write(dir.join("b/work.txt"), "Report\nFrom b\n").unwrap();
+    git(&dir.join("b"), &["commit", "--quiet", "-am", "work from b"]);
+    git(&dir.join("b"), &["push", "--quiet"]);
+
+    sync(&mut app);
+    wait(&mut app);
+
+    let items: Vec<Vec<String>> = app
+        .files
+        .iter()
+        .map(|file| {
+            let library = file.library.as_ref().unwrap();
+            library
+                .items
+                .iter()
+                .map(|i| i.description.clone())
+                .collect()
+        })
+        .collect();
+    assert_eq!(items, [vec!["Not reloaded"], vec!["Report", "From b"]]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn files_in_two_repositories_sync_independently() {
+    let one = remote_and_clones("sync repo one", "Alpha\n");
+    let two = remote_and_clones("sync repo two", "Bravo\n");
+    let mut app = app_on(&one, &[one.join("a/todo.txt"), two.join("a/todo.txt")]);
+    assert_eq!(app.repos.len(), 2);
+
+    add_to(&mut app, 0, "In one");
+    add_to(&mut app, 1, "In two");
+    wait(&mut app);
+    sync(&mut app);
+    wait(&mut app);
+
+    assert_eq!(subjects(&one.join("remote"), 1), "rtm: add In one");
+    assert_eq!(subjects(&two.join("remote"), 1), "rtm: add In two");
+    let _ = std::fs::remove_dir_all(one);
+    let _ = std::fs::remove_dir_all(two);
+}
+
+#[test]
+fn a_conflict_closes_only_the_files_of_its_repository() {
+    let one = remote_and_clones("sync conflict one", "Alpha\n");
+    let two = remote_and_clones("sync conflict two", "Bravo\n");
+    let mut app = app_on(&one, &[one.join("a/todo.txt"), two.join("a/todo.txt")]);
+    push_from_b(&one, "Alpha from b\n");
+    open_editor(&mut app, 0).description = "Alpha from a".to_owned();
+    app.save_edit();
+    wait(&mut app);
+
+    sync(&mut app);
+    wait(&mut app);
+
+    let [closed, other] = app.files.as_slice() else {
+        panic!("two files are open");
+    };
+    assert!(closed.library.is_none() && closed.repo.is_none());
+    let error = closed.error.as_deref().unwrap();
+    assert!(error.contains("resolve them by hand"), "{error}");
+    assert!(other.library.is_some() && other.repo.is_some());
+    assert_eq!(app.repos.len(), 1);
+    assert_eq!(
+        app.files.len(),
+        2,
+        "the closed file stays open, with its message"
+    );
+    let _ = std::fs::remove_dir_all(one);
+    let _ = std::fs::remove_dir_all(two);
 }

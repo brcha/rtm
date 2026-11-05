@@ -7,7 +7,7 @@ fn a_conflict_message_stays_after_a_config_save() {
     let dir = temp_dir("error conflict save");
     let mut app = app_with(&dir, "First\n");
 
-    app.conflicted();
+    app.file_mut().close_conflicted();
     app.save_config();
 
     assert_eq!(app.error, None);
@@ -23,7 +23,7 @@ fn a_failed_config_save_and_a_file_message_are_both_shown() {
     // A regular file where the config's folder would be: creating the folder fails everywhere.
     app.config_path = dir.join("todo.txt").join("config.toml");
 
-    app.conflicted();
+    app.file_mut().close_conflicted();
     app.save_config();
 
     let errors = errors(&app);
