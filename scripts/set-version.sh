@@ -18,6 +18,7 @@
 #   - rtmapp/Cargo.toml   (the release version's source of truth; drives the installers)
 #   - rtmcli/Cargo.toml
 #   - rtmsync/Cargo.toml
+#   - rtmupdate/Cargo.toml
 #   - todotxt/Cargo.toml
 #
 # Only the `version` key inside the `[package]` table is touched: todotxt/Cargo.toml also has a
@@ -87,6 +88,7 @@ targets=(
     rtmapp/Cargo.toml
     rtmcli/Cargo.toml
     rtmsync/Cargo.toml
+    rtmupdate/Cargo.toml
     todotxt/Cargo.toml
 )
 
