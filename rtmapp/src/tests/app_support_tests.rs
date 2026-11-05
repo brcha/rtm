@@ -31,9 +31,7 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         editing: None,
         settings: None,
         reconnect: false,
-        worker: None,
-        sync_status: None,
-        last_sync: Instant::now(),
+        repos: Vec::new(),
         dialog: None,
         ctx: egui::Context::default(),
     }

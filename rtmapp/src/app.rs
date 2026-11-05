@@ -13,7 +13,7 @@ use crate::config::{self, AppConfig};
 use crate::edit::{self, EditForm, Outcome};
 use crate::list::{self, RowAction};
 use crate::settings::{self, SettingsForm};
-use crate::sync::{self, Done, Found, Question, Repo, Worker};
+use crate::sync::{self, Done, Found, Place, Question, Repo, RepoKey, Worker};
 use crate::theme::{self, Palette};
 
 /// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
@@ -49,26 +49,39 @@ pub struct App {
     editing: Option<EditForm>,
     /// The open Settings dialog, if any.
     settings: Option<SettingsForm>,
-    /// Settings changed `sync`: reconnect once the worker is idle (`reconnect_when_idle`).
+    /// Settings changed `sync`: reconnect once no job is outstanding (`reconnect_when_idle`).
     reconnect: bool,
-    /// Sync of the open file (RTM-64), when it syncs.
-    worker: Option<Worker>,
-    /// The sync line in the header: a failed pull or push, or why sync is off.
-    sync_status: Option<String>,
-    /// When the last sync was asked for; the next one is due `sync_interval_minutes` later.
-    last_sync: Instant,
+    /// The repositories the open files sync through (RTM-64), one worker each (RTM-126).
+    repos: Vec<RepoSync>,
     /// The open file dialog: its result, and what to do with a chosen path.
     dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
     ctx: egui::Context,
+}
+
+/// One repository's sync: the worker that runs all its git or pijul calls, for every open file
+/// in it.
+struct RepoSync {
+    key: RepoKey,
+    worker: Worker,
+    /// The sync line in the header: a failed pull or push.
+    status: Option<String>,
+    /// When the last sync was asked for; the next one is due `sync_interval_minutes` later.
+    last_sync: Instant,
 }
 
 /// What belongs to one open todo.txt (RTM-125).
 #[derive(Default)]
 struct OpenFile {
     library: Option<TodoLibrary>,
+    /// The repository it syncs through, a key of `App::repos`.
+    repo: Option<RepoKey>,
+    /// Why it does not sync, for the header: a check that failed (for example `git` missing).
+    not_syncing: Option<String>,
+    /// Its check on open is running on the repository's worker; its changes wait for it.
+    checking: bool,
     /// The file line, below the app's: what happened to this file (a failed load at startup, a
-    /// conflict, outside changes, a failed write, commit or reload, changes a pull dropped). Shown until the next successful
-    /// change or until a file is opened in its place.
+    /// conflict, outside changes, a failed write, commit or reload, changes a pull dropped). Shown
+    /// until the next successful change or until a file is opened in its place.
     error: Option<String>,
     /// Changes applied to `library` but not yet written: the file is written only while the worker
     /// is idle (RTM-20), and these are redone on the file a pull brings.
@@ -126,9 +139,7 @@ impl App {
             editing: None,
             settings: None,
             reconnect: false,
-            worker: None,
-            sync_status: None,
-            last_sync: Instant::now(),
+            repos: Vec::new(),
             dialog: None,
             ctx: cc.egui_ctx.clone(),
         };
@@ -145,83 +156,114 @@ impl App {
         &mut self.files[self.active]
     }
 
-    /// Starts sync for the loaded file, if it syncs, and syncs once. Stops it for a previous file.
+    /// The repository `file` syncs through.
+    fn repo_of(&self, file: &OpenFile) -> Option<&RepoSync> {
+        let key = file.repo.as_ref()?;
+        self.repos.iter().find(|repo| &repo.key == key)
+    }
+
+    /// Starts sync for the shown file: its check on open runs on the repository's worker, and the
+    /// file syncs once that passes (`checked`). A file it replaced has left its repository first.
     fn connect(&mut self) {
-        self.worker = None;
-        self.sync_status = None;
-        let file = self.file_mut();
-        file.choose_vcs = None;
-        file.asking = None;
-        let Some(library) = &self.file().library else {
+        let Some(file) = self.files.get_mut(self.active) else {
             return;
         };
-        match sync::find(Path::new(&library.file_name), &self.config) {
-            Found::NoSync => {}
+        file.connect(&mut self.repos, &self.config, &self.ctx);
+        self.prune();
+    }
+
+    /// The result of the check on open of the open file at `path`.
+    fn checked(&mut self, path: &Path, found: Found) {
+        let Some(file) = self
+            .files
+            .iter_mut()
+            .find(|file| file.checking && file.is(path))
+        else {
+            return;
+        };
+        file.checking = false;
+        match found {
             Found::Repo(repo) => {
-                self.worker = Some(Worker::start(repo, self.ctx.clone()));
-                self.sync_now(Instant::now());
+                // A sync queued before the file joined did not list it; read what it pulled.
+                file.reload(self.editing.as_mut());
+                if let Some(joined) = find_repo(&mut self.repos, file.repo.as_ref()) {
+                    joined.worker.found_remote(repo.remote());
+                }
+                self.sync_repo(&repo.key(), Instant::now());
             }
-            Found::Ask(repo, question) => self.file_mut().asking = Some((repo, question)),
-            Found::Ambiguous(found) => self.file_mut().choose_vcs = Some(found),
-            Found::Conflicted => self.conflicted(),
-            Found::Unavailable(e) => self.sync_status = Some(format!("Not syncing: {e}")),
+            Found::Ask(repo, question) => {
+                file.reload(self.editing.as_mut());
+                file.asking = Some((repo, question));
+            }
+            Found::NoSync => file.repo = None,
+            Found::Conflicted => file.close_conflicted(),
+            Found::Unavailable(e) => {
+                file.repo = None;
+                file.not_syncing = Some(format!("Not syncing: {e}"));
+            }
+        }
+        self.prune();
+        if self.file().library.is_none() {
+            // A conflicted repository closed the file.
+            self.close_editor();
         }
     }
 
-    /// Closes the file: its repository has conflicts, which a reload would read as items. Pending
-    /// changes cannot be written into it.
-    fn conflicted(&mut self) {
-        let open = self.file_mut();
-        let file = open.library.take().map(|library| library.file_name);
-        let lost = std::mem::take(&mut open.pending).len();
-        self.worker = None;
-        self.editing = None;
-        let lost = match lost {
-            0 => String::new(),
-            1 => " One change made during the sync was not saved.".to_owned(),
-            n => format!(" {n} changes made during the sync were not saved."),
-        };
-        self.file_mut().error = Some(format!(
-            "The repository holding {} has conflicts or a stopped rebase or merge; resolve them by \
-             hand, then load the file again.{lost}",
-            file.unwrap_or_default()
-        ));
+    /// Stops the repositories no open file syncs through any more (their workers end once their
+    /// queues are done).
+    fn prune(&mut self) {
+        let files = &self.files;
+        self.repos.retain(|repo| {
+            files
+                .iter()
+                .any(|file| file.repo.as_ref() == Some(&repo.key))
+        });
+    }
+
+    /// Queues a sync of the repository `key` for its open files.
+    fn sync_repo(&mut self, key: &RepoKey, now: Instant) {
+        if let Some(repo) = find_repo(&mut self.repos, Some(key)) {
+            repo.sync(&self.files, now);
+        }
     }
 
     /// The answer to `asking`: yes commits the outside changes or adds the file, then syncs; no
     /// closes a modified file, and opens an untracked one without sync (asked again next time).
     fn answer(&mut self, yes: bool) {
-        let Some((repo, question)) = self.file_mut().asking.take() else {
+        let Some(file) = self.files.get_mut(self.active) else {
+            return;
+        };
+        let Some((repo, question)) = file.asking.take() else {
             return;
         };
         if yes {
             let message = repo.commit_message(question);
-            let mut worker = Worker::start(repo, self.ctx.clone());
-            worker.commit(message);
-            self.worker = Some(worker);
-            self.sync_now(Instant::now());
+            let path = file.path();
+            if let Some(joined) = find_repo(&mut self.repos, file.repo.as_ref()) {
+                joined.worker.found_remote(repo.remote());
+                if let Some(path) = path {
+                    joined.worker.commit(path, message);
+                }
+            }
+            self.sync_repo(&repo.key(), Instant::now());
         } else if question == Question::Modified {
-            let file = self
-                .file_mut()
-                .library
-                .take()
-                .map(|library| library.file_name);
-            self.editing = None;
-            self.file_mut().error = Some(format!(
-                "{} has changes rtm did not commit; commit or revert them by hand, then load the \
-                 file again.",
-                file.unwrap_or_default()
-            ));
+            file.close_modified();
+            self.close_editor();
+        } else {
+            // Opened without sync, asked again next time.
+            file.repo = None;
         }
+        self.prune();
     }
 
+    /// Whether any repository has a job outstanding: New File and Load File wait for it.
     fn busy(&self) -> bool {
-        self.worker.as_ref().is_some_and(Worker::busy)
+        self.repos.iter().any(|repo| repo.worker.busy())
     }
 
     /// Applies `change` to the list at once and writes it when the worker is idle.
     fn apply(&mut self, change: Change) {
-        let file = &mut self.files[self.active];
+        let file = self.file_mut();
         let Some(library) = &mut file.library else {
             return;
         };
@@ -233,158 +275,163 @@ impl App {
         }
     }
 
-    /// Writes the pending changes and queues their commit, unless a job is outstanding: it may be
-    /// a pull about to change the file, and the changes are redone on what it brings.
+    /// Writes every open file's pending changes whose repository is idle (see `OpenFile::flush`).
     fn flush(&mut self) {
-        if self.file().pending.is_empty() || self.busy() {
-            return;
-        }
-        let file = &mut self.files[self.active];
-        let Some(library) = &mut file.library else {
-            return;
-        };
-        let changes = std::mem::take(&mut file.pending);
-        // The Tauri app read the file again after a completion; kept.
-        let reread = changes.iter().any(Change::completes);
-        let saved = library
-            .save()
-            .and_then(|()| if reread { library.load() } else { Ok(()) });
-        if let Err(e) = saved {
-            file.error = Some(format!("{}: {e}", library.file_name));
-            return;
-        }
-        if let Some(worker) = &mut self.worker {
-            worker.commit(commit_message(&changes));
+        for file in &mut self.files {
+            file.flush(find_repo(&mut self.repos, file.repo.as_ref()));
         }
     }
 
+    /// Syncs every repository, as Sync now and exit do.
     fn sync_now(&mut self, now: Instant) {
-        if let Some(worker) = &mut self.worker {
-            worker.sync();
-            self.last_sync = now;
+        for repo in &mut self.repos {
+            repo.sync(&self.files, now);
         }
     }
 
-    /// Syncs when the interval has passed since the last sync, and asks for a repaint when the
-    /// next one is due, so the timer runs in a hidden or minimized window too.
+    /// Syncs each repository when the interval has passed since its last sync, and asks for a
+    /// repaint when the next one is due, so the timer runs in a hidden or minimized window too.
     fn tick(&mut self, now: Instant) {
         let minutes = self.config.sync_interval_minutes;
-        if minutes == 0 || !self.worker.as_ref().is_some_and(Worker::has_remote) {
+        if minutes == 0 {
             return;
         }
         let interval = Duration::from_secs(minutes.saturating_mul(60));
-        let wait = match self.last_sync.checked_add(interval) {
-            None => return,
-            Some(due) if now < due => due - now,
-            Some(_) => {
-                self.sync_now(now);
-                interval
-            }
-        };
-        self.ctx.request_repaint_after(wait);
+        let mut wait = None::<Duration>;
+        for repo in self
+            .repos
+            .iter_mut()
+            .filter(|repo| repo.worker.has_remote())
+        {
+            let next = match repo.last_sync.checked_add(interval) {
+                None => continue,
+                Some(due) if now < due => due - now,
+                Some(_) => {
+                    repo.sync(&self.files, now);
+                    interval
+                }
+            };
+            wait = Some(wait.map_or(next, |wait| wait.min(next)));
+        }
+        if let Some(wait) = wait {
+            self.ctx.request_repaint_after(wait);
+        }
     }
 
-    /// Applies the worker's finished jobs, then writes the changes that waited for them.
+    /// Applies the workers' finished jobs, then writes the changes that waited for them.
     fn sync_results(&mut self) {
-        let Some(worker) = &mut self.worker else {
-            return;
-        };
-        for done in worker.poll() {
-            self.handle(done);
+        let results: Vec<_> = self
+            .repos
+            .iter_mut()
+            .flat_map(|repo| {
+                let key = repo.key.clone();
+                repo.worker
+                    .poll()
+                    .into_iter()
+                    .map(move |done| (key.clone(), done))
+            })
+            .collect();
+        for (key, done) in results {
+            self.handle(&key, done);
         }
         self.flush();
     }
 
-    /// One job's result: status, a reload after a pull that changed the file, closing the file on
-    /// a conflict.
-    fn handle(&mut self, done: Done) {
+    /// One job's result for the repository `key`: status, a reload of each file a pull changed,
+    /// closing the repository's files on a conflict.
+    fn handle(&mut self, key: &RepoKey, done: Done) {
+        let Some(repo) = find_repo(&mut self.repos, Some(key)) else {
+            // The repository stopped (a conflict, or its last file left) after the job.
+            return;
+        };
         match done {
+            Done::Checked { file, found } => self.checked(&file, found),
             Done::Committed => {}
             Done::Synced { changed } => {
-                self.sync_status = None;
-                if changed {
-                    self.reload();
-                }
+                repo.status = None;
+                self.reload(&changed);
             }
             Done::NotSynced { error, changed } => {
-                self.sync_status = Some(format!("Not synced: {error}"));
+                repo.status = Some(format!("Not synced: {error}"));
                 // A pull that got through before the push failed.
-                if changed {
-                    self.reload();
+                self.reload(&changed);
+            }
+            Done::NotCommitted { file, error } => {
+                if let Some(file) = self.files.iter_mut().find(|open| open.is(&file)) {
+                    file.error = Some(format!("Not committed: {error}"));
                 }
             }
-            Done::NotCommitted(e) => self.file_mut().error = Some(format!("Not committed: {e}")),
-            Done::Conflict if self.file().library.is_some() => self.conflicted(),
-            Done::Conflict => {}
+            Done::Conflict => {
+                for file in self
+                    .files
+                    .iter_mut()
+                    .filter(|file| file.repo.as_ref() == Some(key))
+                {
+                    file.close_conflicted();
+                }
+                self.prune();
+                if self.file().library.is_none() {
+                    self.close_editor();
+                }
+            }
+        }
+    }
+
+    /// Reads the open files at `changed` again after a pull changed them (see `OpenFile::reload`).
+    fn reload(&mut self, changed: &[PathBuf]) {
+        let changed = |file: &&mut OpenFile| changed.iter().any(|path| file.is(path));
+        for file in self.files.iter_mut().filter(changed) {
+            file.reload(self.editing.as_mut());
         }
     }
 
     /// Handles the outstanding jobs' results until none is left or `deadline` passes, writing the
     /// changes that waited for them. A job that changes are still waiting behind gets as long as a
-    /// sync's network timeout, and so does a commit: those changes are not in the file yet.
+    /// sync's network timeout, and so does a commit: those changes are not in the file yet. The
+    /// repositories' workers run at once, so they are waited for in turn within one limit.
     fn finish_jobs(&mut self, deadline: Instant) {
-        while let Some(worker) = &mut self.worker
-            && worker.busy()
-        {
-            let saving = !self.files[self.active].pending.is_empty() || !worker.syncing();
-            let until = if saving {
-                deadline.max(Instant::now() + SAVE_TIMEOUT)
-            } else {
-                deadline
-            };
-            let Some(done) = worker.next(until.saturating_duration_since(Instant::now())) else {
-                return;
-            };
-            self.handle(done);
-            self.flush();
+        let saving_deadline = deadline.max(Instant::now() + SAVE_TIMEOUT);
+        let keys: Vec<_> = self.repos.iter().map(|repo| repo.key.clone()).collect();
+        for key in keys {
+            while let Some(repo) = find_repo(&mut self.repos, Some(&key))
+                && repo.worker.busy()
+            {
+                let waiting = self
+                    .files
+                    .iter()
+                    .any(|file| file.repo.as_ref() == Some(&key) && !file.pending.is_empty());
+                let until = if waiting || !repo.worker.syncing() {
+                    saving_deadline
+                } else {
+                    deadline
+                };
+                let Some(done) = repo
+                    .worker
+                    .next(until.saturating_duration_since(Instant::now()))
+                else {
+                    break;
+                };
+                self.handle(&key, done);
+                self.flush();
+            }
         }
     }
 
-    /// Reads the file again after a pull changed it, redoes the pending changes on it, and finds
-    /// the edit dialog's item in the result.
-    fn reload(&mut self) {
-        let file = &mut self.files[self.active];
-        let Some(library) = &mut file.library else {
-            return;
-        };
-        if let Err(e) = library.load() {
-            file.error = Some(format!("{}: {e}", library.file_name));
-            return;
-        }
-        let mut dropped = Vec::new();
-        file.pending.retain(|change| {
-            let redone = change.redo(library);
-            if !redone {
-                dropped.push(change.describe());
-            }
-            redone
-        });
-        if !dropped.is_empty() {
-            file.error = Some(format!(
-                "A sync changed or removed the item of a change made meanwhile, which was not \
-                 applied: {}",
-                dropped.join("; ")
-            ));
-        }
-        let (Some(form), Some(original)) = (&mut self.editing, &file.edited) else {
-            return;
-        };
-        let Some(index) = library.items.iter().position(|item| item == original) else {
-            file.stale = true;
-            return;
-        };
-        form.index = index;
-        if form.confirm_delete.is_some()
-            && let Some(removing) = &file.deleting
-            && library.clone().remove_item(index).as_ref() != Some(removing)
-        {
-            file.stale = true;
-        }
+    /// Closes the edit dialog and forgets its item, so a later reload of the file does not touch
+    /// a dialog opened on another item.
+    fn close_editor(&mut self) {
+        self.editing = None;
+        let file = self.file_mut();
+        file.edited = None;
+        file.deleting = None;
+        file.stale = false;
     }
 
     /// Opens the edit dialog on the item at `index`.
     fn open_editor(&mut self, index: usize) {
-        let file = &mut self.files[self.active];
+        let Some(file) = self.files.get_mut(self.active) else {
+            return;
+        };
         let Some(item) = file.library.as_ref().and_then(|l| l.items.get(index)) else {
             return;
         };
@@ -437,8 +484,9 @@ impl App {
             None => {}
             Some("") => self.file_mut().choose_vcs = None,
             Some(name) => {
-                if let Some(library) = &self.files[self.active].library {
-                    self.config.set_vcs(&library.file_name, name);
+                let file = self.file().library.as_ref().map(|l| l.file_name.clone());
+                if let Some(file) = file {
+                    self.config.set_vcs(&file, name);
                 }
                 self.save_config();
                 self.connect();
@@ -589,7 +637,7 @@ impl App {
     }
 
     /// Saves the Settings dialog's fields. A new interval takes effect at once (`tick` reads it);
-    /// a change of `sync` reconnects once the worker is idle.
+    /// a change of `sync` reconnects once no repository has a job outstanding.
     fn save_settings(&mut self) {
         let Some(form) = self.settings.take() else {
             return;
@@ -781,13 +829,16 @@ impl App {
         if self.refuse_stale() {
             return;
         }
-        let (Some(form), Some(library)) = (&mut self.editing, &self.files[self.active].library)
-        else {
-            self.editing = None;
+        let library = self
+            .files
+            .get(self.active)
+            .and_then(|file| file.library.as_ref());
+        let (Some(form), Some(library)) = (&mut self.editing, library) else {
+            self.close_editor();
             return;
         };
         let Some(original) = library.items.get(form.index).cloned() else {
-            self.editing = None;
+            self.close_editor();
             return;
         };
         let mut edited = original.clone();
@@ -795,25 +846,26 @@ impl App {
             form.error = Some(e);
             return;
         }
-        self.editing = None;
-        self.file_mut().edited = None;
+        self.close_editor();
         self.apply(Change::Edit { original, edited });
     }
 
     /// Shows the delete confirmation with the number of sub-items the delete would take, counted by
     /// removing from a copy so it is exactly what `delete_item` will remove.
     fn ask_delete(&mut self) {
-        let (Some(form), Some(library)) = (&mut self.editing, &self.files[self.active].library)
-        else {
-            self.editing = None;
+        let Some(file) = self.files.get_mut(self.active) else {
+            return;
+        };
+        let (Some(form), Some(library)) = (&mut self.editing, &file.library) else {
+            self.close_editor();
             return;
         };
         match library.clone().remove_item(form.index) {
             Some(removed) => {
                 form.confirm_delete = Some(removed.len() - 1);
-                self.files[self.active].deleting = Some(removed);
+                file.deleting = Some(removed);
             }
-            None => self.editing = None,
+            None => self.close_editor(),
         }
     }
 
@@ -823,11 +875,12 @@ impl App {
             return;
         }
         let (Some(form), Some(library)) = (self.editing.take(), &self.file().library) else {
+            self.close_editor();
             return;
         };
         let original = library.items.get(form.index).cloned();
         let removing = library.clone().remove_item(form.index);
-        self.file_mut().edited = None;
+        self.close_editor();
         if let (Some(original), Some(removing)) = (original, removing) {
             self.apply(Change::Delete { original, removing });
         }
@@ -870,14 +923,194 @@ impl App {
     }
 }
 
+impl RepoSync {
+    /// Queues a sync of the repository for those of `files` that sync through it.
+    fn sync(&mut self, files: &[OpenFile], now: Instant) {
+        let paths = files
+            .iter()
+            .filter(|file| file.repo.as_ref() == Some(&self.key))
+            .filter_map(OpenFile::path)
+            .collect();
+        self.worker.sync(paths);
+        self.last_sync = now;
+    }
+}
+
+/// The repository `key` among `repos`.
+fn find_repo<'a>(repos: &'a mut [RepoSync], key: Option<&RepoKey>) -> Option<&'a mut RepoSync> {
+    let key = key?;
+    repos.iter_mut().find(|repo| &repo.key == key)
+}
+
+/// The sync of repository `key`, started with a worker when no open file uses it yet.
+fn ensure_repo<'a>(
+    repos: &'a mut Vec<RepoSync>,
+    key: &RepoKey,
+    ctx: &egui::Context,
+) -> Option<&'a mut RepoSync> {
+    if !repos.iter().any(|known| &known.key == key) {
+        repos.push(RepoSync {
+            key: key.clone(),
+            worker: Worker::start(key.vcs, ctx.clone()),
+            status: None,
+            last_sync: Instant::now(),
+        });
+    }
+    find_repo(repos, Some(key))
+}
+
+impl OpenFile {
+    /// The file's path, while it is loaded.
+    fn path(&self) -> Option<PathBuf> {
+        self.library
+            .as_ref()
+            .map(|library| PathBuf::from(&library.file_name))
+    }
+
+    /// Whether this is the loaded file at `path`.
+    fn is(&self, path: &Path) -> bool {
+        self.library
+            .as_ref()
+            .is_some_and(|library| Path::new(&library.file_name) == path)
+    }
+
+    /// Finds where the file syncs and, in a repository, assigns it there and queues its check on
+    /// open on the repository's worker, so syncs list it from now on. The file has left any
+    /// repository it was in.
+    fn connect(&mut self, repos: &mut Vec<RepoSync>, config: &AppConfig, ctx: &egui::Context) {
+        self.repo = None;
+        self.not_syncing = None;
+        self.choose_vcs = None;
+        self.asking = None;
+        self.checking = false;
+        let Some(path) = self.path() else {
+            return;
+        };
+        match sync::place(&path, config) {
+            Place::NoSync => {}
+            Place::Ambiguous(found) => self.choose_vcs = Some(found),
+            Place::Repo(key) => {
+                if let Some(repo) = ensure_repo(repos, &key, ctx) {
+                    repo.worker.check(key.root.clone(), path);
+                    self.repo = Some(key);
+                    self.checking = true;
+                }
+            }
+        }
+    }
+
+    /// Closes the file: its repository has conflicts, which a reload would read as items. Pending
+    /// changes cannot be written into it. It stays among the open files, with the reason.
+    fn close_conflicted(&mut self) {
+        self.repo = None;
+        self.checking = false;
+        // A file waiting for the outside-changes answer is in the repository's syncs too.
+        self.asking = None;
+        let file = self.library.take().map(|library| library.file_name);
+        let lost = match std::mem::take(&mut self.pending).len() {
+            0 => String::new(),
+            1 => " One change made during the sync was not saved.".to_owned(),
+            n => format!(" {n} changes made during the sync were not saved."),
+        };
+        self.error = Some(format!(
+            "The repository holding {} has conflicts or a stopped rebase or merge; resolve them by \
+             hand, then load the file again.{lost}",
+            file.unwrap_or_default()
+        ));
+    }
+
+    /// Closes the file after the user declined to commit its outside changes.
+    fn close_modified(&mut self) {
+        self.repo = None;
+        let file = self.library.take().map(|library| library.file_name);
+        self.error = Some(format!(
+            "{} has changes rtm did not commit; commit or revert them by hand, then load the file \
+             again.",
+            file.unwrap_or_default()
+        ));
+    }
+
+    /// Writes the pending changes and queues their commit on `repo`, the file's repository,
+    /// unless it has a job outstanding: it may be a pull about to change the file, and the changes
+    /// are redone on what it brings.
+    fn flush(&mut self, repo: Option<&mut RepoSync>) {
+        // During the check on open a write would look like an outside change.
+        if self.pending.is_empty()
+            || self.checking
+            || repo.as_ref().is_some_and(|repo| repo.worker.busy())
+        {
+            return;
+        }
+        let Some(library) = &mut self.library else {
+            return;
+        };
+        let changes = std::mem::take(&mut self.pending);
+        // The Tauri app read the file again after a completion; kept.
+        let reread = changes.iter().any(Change::completes);
+        let saved = library
+            .save()
+            .and_then(|()| if reread { library.load() } else { Ok(()) });
+        if let Err(e) = saved {
+            self.error = Some(format!("{}: {e}", library.file_name));
+            return;
+        }
+        // While the outside-changes question is open, a commit would take those changes (or add
+        // the untracked file) before the user answers; the write alone keeps the edit.
+        if let Some(repo) = repo.filter(|_| self.asking.is_none()) {
+            let path = PathBuf::from(&library.file_name);
+            repo.worker.commit(path, commit_message(&changes));
+        }
+    }
+
+    /// Reads the file again after a pull changed it, redoes the pending changes on it, and, when
+    /// the edit dialog is open on one of its items, finds that item in the result for `form`.
+    fn reload(&mut self, form: Option<&mut EditForm>) {
+        let Some(library) = &mut self.library else {
+            return;
+        };
+        if let Err(e) = library.load() {
+            self.error = Some(format!("{}: {e}", library.file_name));
+            return;
+        }
+        let mut dropped = Vec::new();
+        self.pending.retain(|change| {
+            let redone = change.redo(library);
+            if !redone {
+                dropped.push(change.describe());
+            }
+            redone
+        });
+        if !dropped.is_empty() {
+            self.error = Some(format!(
+                "A sync changed or removed the item of a change made meanwhile, which was not \
+                 applied: {}",
+                dropped.join("; ")
+            ));
+        }
+        // `edited` is set only while the dialog is open on this file's item.
+        let (Some(form), Some(original)) = (form, &self.edited) else {
+            return;
+        };
+        let Some(index) = library.items.iter().position(|item| item == original) else {
+            self.stale = true;
+            return;
+        };
+        form.index = index;
+        if form.confirm_delete.is_some()
+            && let Some(removing) = &self.deleting
+            && library.clone().remove_item(index).as_ref() != Some(removing)
+        {
+            self.stale = true;
+        }
+    }
+}
+
 impl eframe::App for App {
     /// Writes and commits the pending changes and syncs once more, within a few seconds.
     fn on_exit(&mut self) {
         let deadline = Instant::now() + Duration::from_secs(5);
         self.finish_jobs(deadline);
-        if let Some(worker) = &mut self.worker {
-            worker.sync();
-        }
+        self.sync_now(Instant::now());
         self.finish_jobs(deadline);
     }
 
@@ -891,18 +1124,22 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let p = theme::palette(ui);
-        let syncing = self.worker.as_ref().is_some_and(Worker::syncing);
-        let status = if syncing {
-            Some("Syncing…".to_owned())
-        } else {
-            self.sync_status.clone()
+        // The status of the shown file's repository, or why the file does not sync.
+        let status = match self.repo_of(self.file()) {
+            _ if self.file().checking => Some("Checking…".to_owned()),
+            Some(repo) if repo.worker.syncing() => Some("Syncing…".to_owned()),
+            Some(repo) => repo.status.clone(),
+            None => self.file().not_syncing.clone(),
         };
-        // Sync now: enabled unless a sync is already running.
-        let sync_button = self
-            .worker
-            .as_ref()
+        // Sync now: shown when a repository has a remote, enabled unless all of those sync.
+        let remotes: Vec<_> = self
+            .repos
+            .iter()
+            .map(|r| &r.worker)
             .filter(|worker| worker.has_remote())
-            .map(|_| !syncing);
+            .collect();
+        let sync_button =
+            (!remotes.is_empty()).then(|| !remotes.iter().all(|worker| worker.syncing()));
         // New File and Load File: disabled during any job and while a file dialog is open.
         let files_enabled = !self.busy() && self.dialog.is_none();
         let clicked = egui::Panel::top("header")
@@ -946,7 +1183,7 @@ impl eframe::App for App {
         if let Some(form) = &mut self.editing {
             match edit::show(ui.ctx(), p, form) {
                 Some(Outcome::Save) => self.save_edit(),
-                Some(Outcome::Cancel) => self.editing = None,
+                Some(Outcome::Cancel) => self.close_editor(),
                 Some(Outcome::AskDelete) => self.ask_delete(),
                 Some(Outcome::Delete) => self.delete_item(),
                 None => {}

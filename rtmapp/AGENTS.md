@@ -16,8 +16,9 @@ AppImage (RTM-38); deleting from the edit dialog (RTM-24); the macOS bundle and 
 through Git or Pijul (RTM-64), in the background since RTM-20, with the check for a dirty or
 untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do not block the UI
 (RTM-65); UI tests with `egui_kittest` (RTM-86); the list of files in the config (RTM-124) and the
-per-file state with its own error line (RTM-125), the first steps to several open files (RTM-66);
-the title bar's menu and the Settings dialog (RTM-134).
+per-file state with its own error line (RTM-125) and sync with one worker per repository, the
+check on open included (RTM-126), the first steps to several open files (RTM-66); the title bar's
+menu and the Settings dialog (RTM-134).
 
 ---
 
@@ -130,8 +131,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 - **Open files and error lines (RTM-125, epic RTM-66):** what belongs to one todo.txt lives in
   `OpenFile` (its library, pending changes, the sync questions, the edit dialog's `edited`,
   `deleting` and `stale`, and its error line); `App` holds `files` and the `active` index, one file
-  until tabs come (RTM-127). The worker, the sync status and the timer stay on `App` until sync
-  works per repository (RTM-126). Two error lines, the app's above the file's, each shown when set:
+  until tabs come (RTM-127). Each file also keeps the repository it syncs through (`repo`) and why
+  it does not sync (`not_syncing`). Two error lines, the app's above the file's, each shown when set:
   - **the file line** (`OpenFile::error`): the configured file failing to load at startup, a
     conflict, "Don't open", a failed write, commit or reload, changes a pull dropped. Cleared by a
     successful change or by opening a file in its place.
@@ -187,45 +188,67 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   Tauri app did, so no console window opens behind the GUI. The window opens centred at 900 × 650.
   Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
   uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
-- **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::find`): `sync = false`,
+- **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::place`, then `sync::check`): `sync = false`,
   no repository or an ignored file → no sync and no commits; both Git and Pijul → the Git-or-Pijul
   dialog (or "Don't sync", which asks again next time); a conflicted repository (`is_conflicted`) →
   the file is not opened and the file's error line says to resolve it by hand; a failed check (e.g. `git`
   missing) → "Not syncing: …" in the header; no remote → commit only.
-  - **The check on open (RTM-70)**, the RTM-57 table in `rtmsync/AGENTS.md`: `find` reads
-    `Vcs::state` and returns `Found::Ask(repo, question)` for a modified or untracked file; no worker
-    starts until `App::answer`. A modal (`sync_question`) asks. Modified: "Commit them" commits `rtm:
+  - **The check on open (RTM-70)**, the RTM-57 table in `rtmsync/AGENTS.md`, in two parts since
+    RTM-126. `place` runs no executables and stays on the UI thread: sync off or no repository →
+    no sync, both VCSs and no choice for the file → the Git-or-Pijul question, otherwise the
+    repository's directory and VCS. The file is then assigned to that repository (so its syncs list
+    it) and `check` runs as a `Check` job on the repository's worker, so it never meets a pull of
+    the same repository half-way and never blocks the window. Until its `Checked` result arrives the
+    file is `checking`: the header shows "Checking…", and changes stay in `pending`, unwritten, as a
+    write would look like an outside change. A sync queued before the file joined did not list it,
+    so the file is read again when the result arrives (`OpenFile::reload`, redoing its pending
+    changes). `check` reads `Vcs::state` and returns `Found::Ask(repo, question)` for a modified or
+    untracked file; nothing is committed until `App::answer`, and a change made meanwhile is written
+    but not committed. A modal (`sync_question`) asks. Modified: "Commit them" commits `rtm:
     commit outside changes` and syncs, "Don't open" closes the file with a "commit or revert by hand"
     error. Untracked: "Add it" commits `rtm: track <name>` (which adds it) and syncs, "Not now" opens
     it without sync, asked again next time. An untracked file in a conflicted repository opens
     without sync and without asking. A missing file keeps the old rule (tracked files sync), as in
     rtmcli: its state cannot be told reliably.
-  - **One worker thread** (`sync::Worker`) runs every git or pijul call: `Commit` (local) and
-    `Sync` (pull, then push) jobs, a result per job (`Done`), and `ctx.request_repaint()` after each,
-    so results arrive without input. At most one `Sync` waits in the queue.
-  - **When it syncs:** after the file is opened (after the answer, when the check on open asks),
-    every `sync_interval_minutes` since the last sync was asked for, on the header's **Sync now**
-    button (shown when there is a remote, disabled while a sync runs) and on exit. The timer and the results run in `App::logic`, which eframe also calls
+  - **One worker thread per repository (RTM-126)** (`sync::Worker`, held with its sync line and
+    timer in `App::repos` as a `RepoSync`) runs every git or pijul call of that repository, for all
+    its open files: `Commit { file, message }` (local) and `Sync(files)` (pull, then push, then a
+    conflict check of each listed file, since Pijul writes markers into files) jobs, a result per
+    job (`Done`), and `ctx.request_repaint()` after each, so results arrive without input. At most
+    one `Sync` waits in the queue. A repository is keyed by its directory (`rtmsync::root`) and
+    VCS: the Git-or-Pijul choice is per file (RTM-124), so two files in a directory holding both
+    may need two workers. A file is assigned to its repository when it opens (a worker starts for
+    the first file of a repository, its remote recorded by the first check that finds one) and
+    leaves when another file replaces it, its repository has a conflict, or its check or answer
+    means no sync; a repository no file uses any more stops.
+  - **When it syncs:** after a file is opened (after the answer, when the check on open asks), every
+    `sync_interval_minutes` since that repository's last sync was asked for, on the header's **Sync
+    now** button (shown when a repository has a remote, disabled while all of those sync; it syncs
+    every repository) and on exit. The timer and the results run in `App::logic`, which eframe also calls
     while the window is minimized or hidden; `request_repaint_after` wakes it when a sync is due.
   - **Editing never waits.** Each mutation is a `Change` (add, toggle, edit, delete) applied to the
-    list at once and kept in `pending` until written. `flush` writes and queues one `Commit` only
-    while the worker is idle (`Worker::busy`: jobs sent whose result was not handled yet, so a pull
-    whose reload has not happened still counts); changes made during a job wait in memory and make
-    one commit (`rtm: N changes`, one line each). Messages name the item's description only (`rtm:
-    complete Pay bill`). The menu's New File and Load File are disabled during any job and while a
-    file dialog is open, Sync now during a sync; nothing else.
-  - **A pull that changed the file** (also one whose push then failed: `NotSynced { changed }`)
-    reloads it and redoes `pending` on it, finding each item by equality (with two identical lines,
+    list at once and kept in its file's `pending` until written. `flush` writes a file and queues one
+    `Commit` only while its repository's worker is idle (`Worker::busy`: jobs sent whose result was
+    not handled yet, so a pull whose reload has not happened still counts); changes made during a
+    job wait in memory and make one commit (`rtm: N changes`, one line each). Messages name the
+    item's description only (`rtm: complete Pay bill`). The menu's New File and Load File are
+    disabled during any repository's job and while a file dialog is open, Sync now while every
+    repository with a remote syncs; nothing else.
+  - **A pull that changed files** (also one whose push then failed: `NotSynced { changed }`)
+    reloads each of them and redoes its `pending` on it, finding each item by equality (with two identical lines,
     the first); a change whose item the pull changed or removed is dropped and named in the file's
     error line. The edit dialog's item (kept in `edited`) is then found again; if it is gone, or what
-    deleting it would remove changed, `stale` makes Save and Delete refuse. The header shows
-    "Syncing…", or "Not synced: …" (git's first line; the rest on hover) after a failed pull or push.
-  - **A conflict from a job closes the file**, as on open: a reload would read the markers as items.
-    The file's error line counts the pending changes that could not be saved.
+    deleting it would remove changed, `stale` makes Save and Delete refuse. The header shows the
+    shown file's repository: "Syncing…", or "Not synced: …" (git's first line; the rest on hover)
+    after a failed pull or push; for a file outside any repository, why it does not sync.
+  - **A conflict from a job closes every open file of that repository**, as on open: a reload would
+    read the markers as items. Each keeps its place among the open files, and its error line counts
+    the pending changes that could not be saved; the repository's worker stops.
   - **On exit** (`on_exit`, eframe's wgpu build, `finish_jobs`): outstanding results are handled as
-    in `logic`, pending changes are written and committed, and a last sync runs, within 5 s. When
-    changes are waiting behind a running job, that job gets up to `SAVE_TIMEOUT` (125 s, a pull and
-    a push timeout), so they are not lost.
+    in `logic`, pending changes are written and committed, and a last sync of every repository runs,
+    within 5 s. When changes are waiting behind a running job, the repositories get up to
+    `SAVE_TIMEOUT` (125 s, a pull and a push timeout, counted once for all of them; their workers
+    run at the same time), so they are not lost.
     On macOS, `scripts/check-macos-quit.sh` checks that quitting through `terminate:` (Cmd+Q, the
     quit Apple event) reaches `on_exit` and pushes (RTM-140; see "macOS" in
     [`doc/release-process.md`](../doc/release-process.md)).

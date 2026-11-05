@@ -98,9 +98,11 @@ fn opening_another_file_replaces_its_entry_in_the_config() {
     let config = AppConfig::load(&dir.join("config.toml"));
     let other = dir.join("other.txt").canonicalize().unwrap();
     assert_eq!(config.file_name.as_deref(), other.to_str());
-    assert_eq!(config.files.len(), 1);
-    assert_eq!(Path::new(&config.files[0].path), other);
-    assert_eq!(config.files[0].vcs, None);
+    let [entry] = config.files.as_slice() else {
+        panic!("one entry: {:?}", config.files);
+    };
+    assert_eq!(Path::new(&entry.path), other);
+    assert_eq!(entry.vcs, None);
     let _ = std::fs::remove_dir_all(dir);
 }
 

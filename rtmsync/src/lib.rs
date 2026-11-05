@@ -439,20 +439,26 @@ fn check(program: &'static str, status: ExitStatus, stderr: &[u8]) -> Result<(),
 /// More than one means the directory is ambiguous and the caller has to choose. Symlinks are
 /// resolved first, so a link into a repository counts as versioned.
 pub fn detect(file: &Path) -> Vec<Vcs> {
+    nearest(file).map(|(_, found)| found).unwrap_or_default()
+}
+
+/// The repository's directory: the nearest directory, from the file's own up, that holds a
+/// marker, as `detect` finds it. `None` when the file is not versioned. Runs no executables.
+pub fn root(file: &Path) -> Option<PathBuf> {
+    nearest(file).map(|(dir, _)| dir)
+}
+
+/// The nearest directory holding a marker, and the VCSs whose markers it holds.
+fn nearest(file: &Path) -> Option<(PathBuf, Vec<Vcs>)> {
     let file = resolve(file);
-    let Some(dir) = file.parent() else {
-        return Vec::new();
-    };
-    dir.ancestors()
-        .map(|d| {
-            // `exists`, not `is_dir`: `.git` is a file in linked worktrees and submodules.
-            Vcs::ALL
-                .into_iter()
-                .filter(|vcs| d.join(vcs.marker()).exists())
-                .collect::<Vec<_>>()
-        })
-        .find(|found| !found.is_empty())
-        .unwrap_or_default()
+    file.parent()?.ancestors().find_map(|d| {
+        // `exists`, not `is_dir`: `.git` is a file in linked worktrees and submodules.
+        let found: Vec<_> = Vcs::ALL
+            .into_iter()
+            .filter(|vcs| d.join(vcs.marker()).exists())
+            .collect();
+        (!found.is_empty()).then(|| (d.to_path_buf(), found))
+    })
 }
 
 #[cfg(test)]

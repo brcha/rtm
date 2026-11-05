@@ -19,7 +19,7 @@ per-change sync (RTM-20), the GUI's check on open (RTM-70).
 ```
 rtmsync/
 ├── src/
-│   ├── lib.rs                ← Vcs enum, detect(), Vcs::{commit, sync, state, is_tracked,
+│   ├── lib.rs                ← Vcs enum, detect(), root(), Vcs::{commit, sync, state, is_tracked,
 │   │                           is_conflicted, has_remote}, State, Error
 │   └── tests/                ← Unit tests: markers (lib_detect), timed calls (lib_process)
 └── tests/
@@ -38,6 +38,8 @@ rtmsync/
   means not versioned; more than one means the caller asks the user which to use. It runs no
   executables and checks nothing else: tracked files, upstreams and repository state belong to the
   subtasks that sync.
+- `root(path)` (RTM-126) returns that nearest directory (symlinks resolved as for `detect`), the
+  repository's root as far as markers tell; rtmapp keys its per-repository sync by it.
 - `.git` is tested with `exists`, not `is_dir`: it is a file in linked worktrees and submodules.
 - The file's symlinks are resolved first, so a link into a repository counts as versioned. A file
   that does not exist yet is made absolute instead, so the walk still covers its parents.

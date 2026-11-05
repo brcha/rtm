@@ -1,11 +1,11 @@
-//! `detect` on files in repositories made by `git init` and `pijul init`, and outside any
+//! `detect` and `root` on files in repositories made by `git init` and `pijul init`, and outside any
 //! repository.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use rtmsync::{Vcs, detect};
+use rtmsync::{Vcs, detect, root};
 
 /// An empty scratch directory for test `name`.
 fn scratch(name: &str) -> PathBuf {
@@ -14,6 +14,16 @@ fn scratch(name: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+fn canonical(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap()
+}
+
+/// `root`, canonicalized again: on Windows `root` drops the `\\?\` prefix that `canonicalize`
+/// adds, so both sides are compared in the same form.
+fn canonical_root(file: &Path) -> Option<PathBuf> {
+    root(file).map(|dir| canonical(&dir))
 }
 
 /// A new Git repository in `dir`.
@@ -65,6 +75,14 @@ fn files_in_a_git_repository_are_detected_from_any_depth() {
     assert_eq!(detect(&nested.join("todo.txt")), [Vcs::Git]);
     // A file not created yet is judged by the directory it would be in.
     assert_eq!(detect(&repo.join("new.txt")), [Vcs::Git]);
+    assert_eq!(
+        canonical_root(&nested.join("todo.txt")),
+        Some(canonical(&repo))
+    );
+    assert_eq!(
+        canonical_root(&repo.join("new.txt")),
+        Some(canonical(&repo))
+    );
     fs::remove_dir_all(&repo).unwrap();
 }
 
@@ -86,6 +104,10 @@ fn files_in_a_pijul_repository_are_detected_from_any_depth() {
     assert_eq!(detect(&repo.join("todo.txt")), [Vcs::Pijul]);
     assert_eq!(detect(&nested.join("todo.txt")), [Vcs::Pijul]);
     assert_eq!(detect(&repo.join("new.txt")), [Vcs::Pijul]);
+    assert_eq!(
+        canonical_root(&nested.join("todo.txt")),
+        Some(canonical(&repo))
+    );
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -110,5 +132,6 @@ fn a_file_outside_any_repository_is_not_versioned() {
     fs::write(dir.join("todo.txt"), "").unwrap();
 
     assert_eq!(detect(&dir.join("todo.txt")), Vec::<Vcs>::new());
+    assert_eq!(root(&dir.join("todo.txt")), None);
     fs::remove_dir_all(&dir).unwrap();
 }

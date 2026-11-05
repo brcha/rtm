@@ -95,10 +95,15 @@ fn a_config_from_before_the_file_list_is_migrated_on_the_next_save_only() {
     let file = dir.join("todo.txt").canonicalize().unwrap();
     assert_eq!(table["file_name"].as_str(), file.to_str());
     assert!(!table.contains_key("vcs"), "{text}");
-    let files = table["files"].as_array().unwrap();
-    assert_eq!(files.len(), 1, "{text}");
-    assert_eq!(files[0]["path"].as_str(), file.to_str());
-    assert_eq!(files[0]["vcs"].as_str(), Some("git"));
+    let Some([entry]) = table
+        .get("files")
+        .and_then(|files| files.as_array())
+        .map(Vec::as_slice)
+    else {
+        panic!("one entry: {text}");
+    };
+    assert_eq!(entry.get("path").and_then(|v| v.as_str()), file.to_str());
+    assert_eq!(entry.get("vcs").and_then(|v| v.as_str()), Some("git"));
     let _ = std::fs::remove_dir_all(dir);
 }
 
