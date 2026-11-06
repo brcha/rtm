@@ -11,6 +11,7 @@ Subpart AGENTS.md files:
 - [`rtmapp/AGENTS.md`](rtmapp/AGENTS.md) — egui desktop app
 - [`rtmsync/AGENTS.md`](rtmsync/AGENTS.md) — sync through a VCS (epic RTM-1)
 - [`rtmupdate/AGENTS.md`](rtmupdate/AGENTS.md) — the update check (epic RTM-130)
+- [`rtmmcp/AGENTS.md`](rtmmcp/AGENTS.md) — the MCP server (epic RTM-113)
 - [`site/AGENTS.md`](site/AGENTS.md) — the project website (Zola, epic RTM-79)
 
 Documents:
@@ -30,6 +31,7 @@ rtm/                        ← Cargo workspace root
 ├── rtmapp/                 ← Desktop app (egui/eframe)
 ├── rtmsync/                ← Sync of todo.txt through Git or Pijul (library)
 ├── rtmupdate/              ← Update check against the website's releases.json (library)
+├── rtmmcp/                 ← MCP server for AI assistants, over stdio (library)
 ├── site/                   ← Project website (Zola); its scripts are in scripts/site/
 ├── vercel.json             ← How Vercel builds and deploys the website (site/AGENTS.md)
 ├── doc/                    ← Detailed reference: release process, Nix packaging, CI
@@ -38,7 +40,7 @@ rtm/                        ← Cargo workspace root
 └── shell.nix               ← Nix dev shell
 ```
 
-`todotxt`, `rtmcli`, `rtmapp`, `rtmsync` and `rtmupdate` share the root Cargo workspace (`Cargo.lock` at root). The `todotxt`
+`todotxt`, `rtmcli`, `rtmapp`, `rtmsync`, `rtmupdate` and `rtmmcp` share the root Cargo workspace (`Cargo.lock` at root). The `todotxt`
 library is the single source of truth for parsing, serialization, and business logic. Frontends depend
 on it via `path` dependency.
 
@@ -76,8 +78,8 @@ one that had them.
   exactly one scope, for commits on issue branches and PR titles alike (merges are squashes, so a PR
   title becomes the commit). `.github/workflows/pr-title.yml` rejects a PR title without one of
   these scopes; a new part of the repository adds its scope there and here in the same PR.
-  - `todotxt`, `rtmcli`, `rtmapp`, `rtmsync`, `rtmupdate`: the crates (for `rtmapp`, its packaging
-    metadata in `rtmapp/Cargo.toml` too).
+  - `todotxt`, `rtmcli`, `rtmapp`, `rtmsync`, `rtmupdate`, `rtmmcp`: the crates (for `rtmapp`, its
+    packaging metadata in `rtmapp/Cargo.toml` too).
   - `site`: the website, `scripts/site/`, `vercel.json`, its workflow and the release posts.
   - `release`: `release.yml`, the packages, `scripts/set-version.*`, `scripts/changelog.sh`,
     `cliff.toml`, `doc/release-process.md` and the release PRs.

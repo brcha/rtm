@@ -52,7 +52,7 @@ in {
     cargoBuildFlags    = [ "-p" "rtmcli" ];
     # No update check: Nix users update through the flake (doc/nix-packaging.md).
     buildNoDefaultFeatures = true;
-    cargoTestFlags     = [ "-p" "rtmcli" "-p" "todotxt" "-p" "rtmsync" ];
+    cargoTestFlags     = [ "-p" "rtmcli" "-p" "todotxt" "-p" "rtmsync" "-p" "rtmmcp" ];
     # The sync tests drive git and pijul; pijul signs through a scratch ssh-agent.
     nativeCheckInputs  = with pkgs; [ gitMinimal pijul openssh ];
     # Without it the Pijul test skips itself when pijul is missing.

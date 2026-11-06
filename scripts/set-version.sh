@@ -20,6 +20,7 @@
 #   - rtmapp/Cargo.toml   (the release version's source of truth; drives the installers)
 #   - rtmcli/Cargo.toml
 #   - rtmsync/Cargo.toml
+#   - rtmmcp/Cargo.toml
 #   - rtmupdate/Cargo.toml
 #   - todotxt/Cargo.toml
 #
@@ -99,6 +100,7 @@ targets=(
     rtmapp/Cargo.toml
     rtmcli/Cargo.toml
     rtmsync/Cargo.toml
+    rtmmcp/Cargo.toml
     rtmupdate/Cargo.toml
     todotxt/Cargo.toml
 )

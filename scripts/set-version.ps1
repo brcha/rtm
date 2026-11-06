@@ -14,6 +14,7 @@
       - rtmapp/Cargo.toml   (the release version's source of truth; drives the installers)
       - rtmcli/Cargo.toml
       - rtmsync/Cargo.toml
+      - rtmmcp/Cargo.toml
       - rtmupdate/Cargo.toml
       - todotxt/Cargo.toml
 
@@ -149,6 +150,7 @@ $targets = @(
     @{ Path = Join-Path $RepoRoot 'rtmapp/Cargo.toml';  Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'rtmcli/Cargo.toml';  Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'rtmsync/Cargo.toml'; Handler = ${function:Set-TomlPackageVersion} },
+    @{ Path = Join-Path $RepoRoot 'rtmmcp/Cargo.toml';  Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'rtmupdate/Cargo.toml'; Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'todotxt/Cargo.toml'; Handler = ${function:Set-TomlPackageVersion} }
 )

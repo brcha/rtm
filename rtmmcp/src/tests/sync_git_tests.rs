@@ -85,9 +85,13 @@ fn test_a_change_is_pulled_before_and_pushed_after() {
     let file = dir.join("a/todo.txt");
     let mut sync = RepoWrite::find(&source(file.clone())).unwrap();
     sync.pull().unwrap();
+    // By lines: git may check the file out with CRLF line ends (core.autocrlf on Windows).
     assert_eq!(
-        std::fs::read_to_string(&file).unwrap(),
-        "Buy milk\nCall mom\n"
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        ["Buy milk", "Call mom"]
     );
     std::fs::write(&file, "Buy milk\nCall mom\nPay rent").unwrap();
     sync.commit_and_push("rtm: add Pay rent");
