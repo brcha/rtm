@@ -11,6 +11,10 @@ rtmsync = { path = "../rtmsync" }
 rmcp = { version = "3.9", default-features = false, features = ["server", "transport-io", "macros", "schemars"] }
 tokio = { version = "1.54.1", features = ["rt"] }
 thiserror = "2.0.21"
+serde = { version = "1", features = ["derive"] }
+# The version rmcp uses, so the tool parameters' schemas satisfy its bounds.
+schemars = "1.2"
+chrono = "0.4.31"
 
 [target.'cfg(windows)'.dependencies]
 # The parent process's ID, for the one-server-per-client check; the version rtmapp uses.
@@ -20,3 +24,4 @@ windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_
 rmcp = { version = "3.9", default-features = false, features = ["client"] }
 tokio = { version = "1.54.1", features = ["rt", "macros", "io-util"] }
 uuid = { version = "1.5.0", features = ["v4"] }
+serde_json = "1"

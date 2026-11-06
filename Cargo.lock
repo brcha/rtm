@@ -3494,8 +3494,12 @@ dependencies = [
 name = "rtmmcp"
 version = "26.2.0"
 dependencies = [
+ "chrono",
  "rmcp",
  "rtmsync",
+ "schemars",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "todotxt",
  "tokio",

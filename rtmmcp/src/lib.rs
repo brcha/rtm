@@ -7,9 +7,8 @@
 
 mod claim;
 mod server;
-// Not called yet outside its tests: the todo.txt tools that use it come next.
-#[cfg_attr(not(test), expect(dead_code))]
 mod sync;
+mod tools;
 
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -98,9 +98,9 @@ impl RepoWrite {
         }
         if modified {
             return Err(format!(
-                "'{}' has changes not committed by rtm (made by hand, or with sync off). Nothing \
-                 was changed. The user has to commit or revert them first (rtmapp offers to when \
-                 it opens the file, rtmcli has --commit-changes).",
+                "'{}' has changes not committed by rtm (made by hand, or with sync off). The user \
+                 has to commit or revert them first (rtmapp offers to when it opens the file, \
+                 rtmcli has --commit-changes).",
                 file.display()
             ));
         }
