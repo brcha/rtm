@@ -297,3 +297,16 @@ fn renaming_onto_a_listed_spelling_keeps_one_entry_with_the_newer_choice() {
     assert_eq!(config.file_name.as_deref(), Some("/real/a.txt"));
     assert_eq!(config.files, [entry("/real/a.txt", Some("git"))]);
 }
+
+#[test]
+fn set_name_sets_and_clears_the_tab_label_of_a_listed_file_only() {
+    let mut config = AppConfig::default();
+    config.add_file("/tmp/a.txt");
+
+    config.set_name("/tmp/a.txt", Some("Work"));
+    assert_eq!(config.files[0].name.as_deref(), Some("Work"));
+    config.set_name("/tmp/a.txt", None);
+    assert_eq!(config.files[0].name, None);
+    config.set_name("/tmp/b.txt", Some("Home"));
+    assert_eq!(config.files, [entry("/tmp/a.txt", None)]);
+}

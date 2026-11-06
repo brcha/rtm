@@ -52,6 +52,8 @@ pub struct App {
     settings: Option<SettingsForm>,
     /// The file whose tab's close button was clicked, while the app asks before closing it.
     confirm_close: Option<PathBuf>,
+    /// The file whose tab is being renamed, and the name typed so far.
+    renaming: Option<(PathBuf, String)>,
     /// Settings changed `sync`: reconnect once no job is outstanding (`reconnect_when_idle`).
     reconnect: bool,
     /// The repositories the open files sync through (RTM-64), one worker each (RTM-126).
@@ -148,6 +150,7 @@ impl App {
             editing: None,
             settings: None,
             confirm_close: None,
+            renaming: None,
             reconnect: false,
             repos: Vec::new(),
             closing: Vec::new(),
@@ -1019,6 +1022,39 @@ impl App {
         self.save_config();
     }
 
+    /// Turns the label of the tab of `path` into a text field holding its name (its context
+    /// menu's Rename tab).
+    fn start_rename(&mut self, path: &Path) {
+        if let Some(file) = self.files.iter().find(|file| file.is(path)) {
+            self.renaming = Some((path.to_owned(), file.name.clone()));
+        }
+    }
+
+    /// Labels the tab of `path` with `text`, trimmed, and keeps it as its entry's `name`; an
+    /// empty name gives the file name back and clears `name`. An unchanged label writes nothing,
+    /// so keeping the file name does not save it as a name. The file itself is not touched.
+    fn rename_tab(&mut self, path: &Path, text: &str) {
+        self.renaming = None;
+        let name = text.trim();
+        let Some(file) = self
+            .files
+            .iter_mut()
+            .find(|file| file.is(path) && file.name != name)
+        else {
+            return;
+        };
+        file.name = if name.is_empty() {
+            OpenFile::default_name(path)
+        } else {
+            name.to_owned()
+        };
+        self.config.set_name(
+            &path.to_string_lossy(),
+            Some(name).filter(|n| !n.is_empty()),
+        );
+        self.save_config();
+    }
+
     /// Shows the first file (in tab order) with a question waiting, the Git-or-Pijul choice or the
     /// outside changes, unless a dialog is open or the shown file has one. Only `active` moves:
     /// the checks finish a few frames after startup, and nothing is written at startup.
@@ -1405,9 +1441,17 @@ impl App {
         }
     }
 
-    /// One tab per open file, in order, then a `+` with New File and Load File.
-    fn tab_strip(&self, ui: &mut Ui, p: &Palette, files_enabled: bool) -> TabStrip {
+    /// One tab per open file, in order, then a `+` with New File and Load File. The tab named by
+    /// `renaming` shows a text field editing its name.
+    fn tab_strip(
+        &self,
+        ui: &mut Ui,
+        p: &Palette,
+        files_enabled: bool,
+        mut renaming: Option<&mut (PathBuf, String)>,
+    ) -> TabStrip {
         let mut clicked = None;
+        let mut rename = None;
         let mut shown = None;
         let strip = egui::ScrollArea::horizontal()
             .id_salt("tabs")
@@ -1418,8 +1462,14 @@ impl App {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     for file in &self.files {
                         let active = self.file().is_some_and(|open| open.is(&file.path));
-                        let tab = tab(ui, p, file, active, self.can_close(file));
-                        clicked = clicked.take().or(tab.inner);
+                        let editing = renaming
+                            .as_deref_mut()
+                            .filter(|renaming| file.is(&renaming.0))
+                            .map(|renaming| &mut renaming.1);
+                        let tab = tab(ui, p, file, active, self.can_close(file), editing);
+                        let (action, end) = tab.inner;
+                        clicked = clicked.take().or(action);
+                        rename = rename.take().or(end);
                         if active {
                             scroll_to_once(ui, &tab.response, &file.path);
                             shown = Some(tab.response.rect);
@@ -1440,13 +1490,25 @@ impl App {
         let shown = shown.map(|rect| rect.intersect(strip.inner_rect));
         TabStrip {
             clicked,
+            rename,
             shown: shown.filter(|rect| rect.is_positive()),
         }
     }
 
     /// The tab strip above the page of the shown file: its lines, the add row and the list.
     fn tabs_and_page(&mut self, ui: &mut Ui, p: &Palette, files_enabled: bool) -> Option<Clicked> {
-        let strip = self.tab_strip(ui, p, files_enabled);
+        let mut renaming = self.renaming.take();
+        let strip = self.tab_strip(ui, p, files_enabled, renaming.as_mut());
+        // Applied before the click: a click elsewhere ends the edit in the frame it happens.
+        match strip.rename {
+            None => self.renaming = renaming,
+            Some(RenameEnd::Keep) => {
+                if let Some((path, text)) = renaming {
+                    self.rename_tab(&path, &text);
+                }
+            }
+            Some(RenameEnd::Cancel) => {}
+        }
         // The tabs stand on the page's top border.
         ui.add_space(-ui.spacing().item_spacing.y - 1.0);
         let row = Frame::new()
@@ -1562,17 +1624,20 @@ fn ensure_repo<'a>(
 impl OpenFile {
     /// The file of the session at `path`, not loaded yet; `name` is its entry's tab label.
     fn new(path: PathBuf, name: Option<String>) -> Self {
-        let name = name.unwrap_or_else(|| {
-            path.file_name().map_or_else(
-                || path.display().to_string(),
-                |name| name.to_string_lossy().into_owned(),
-            )
-        });
+        let name = name.unwrap_or_else(|| OpenFile::default_name(&path));
         OpenFile {
             path,
             name,
             ..OpenFile::default()
         }
+    }
+
+    /// The label of a tab without a name of its own: the file name.
+    fn default_name(path: &Path) -> String {
+        path.file_name().map_or_else(
+            || path.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        )
     }
 
     /// A file loaded at its canonical path, labelled `name` or by its file name.
@@ -1850,6 +1915,7 @@ impl eframe::App for App {
         match clicked {
             Some(Clicked::Tab(TabAction::Switch(path))) => self.switch(&path),
             Some(Clicked::Tab(TabAction::Close(path))) => self.confirm_close = Some(path),
+            Some(Clicked::Tab(TabAction::Rename(path))) => self.start_rename(&path),
             Some(Clicked::Tab(TabAction::Menu(action))) => self.menu_action(action, &ctx, frame),
             Some(Clicked::Row(RowAction::Toggle(index))) => self.toggle(index),
             Some(Clicked::Row(RowAction::Edit(index))) => self.open_editor(index),
@@ -2264,17 +2330,26 @@ fn menu_entry(ui: &mut Ui, enabled: bool, action: MenuAction, chosen: &mut Optio
     }
 }
 
-/// What was clicked in the tab strip: a tab, its close button, or an entry of the `+` popup.
+/// What was clicked in the tab strip: a tab, its close button, its context menu's Rename tab, or an
+/// entry of the `+` popup.
 enum TabAction {
     Switch(PathBuf),
     Close(PathBuf),
+    Rename(PathBuf),
     Menu(MenuAction),
 }
 
-/// What the tab strip reports: what was clicked, and where the shown tab is, to join it to the
-/// page below.
+/// How the edit of a tab's name ended: kept (Enter or a click elsewhere) or cancelled (Escape).
+enum RenameEnd {
+    Keep,
+    Cancel,
+}
+
+/// What the tab strip reports: what was clicked, how a rename ended, and where the shown tab is,
+/// to join it to the page below.
 struct TabStrip {
     clicked: Option<TabAction>,
+    rename: Option<RenameEnd>,
     shown: Option<egui::Rect>,
 }
 
@@ -2286,15 +2361,17 @@ enum Clicked {
 
 /// The tab of `file`, painted: its name (red while it has a file line), the full path on hover,
 /// and a close button shown while the pointer is over the tab. The shown tab has the page's fill
-/// and border, the others a faint fill, stronger under the pointer. Returns what was clicked, with
-/// the tab's response.
+/// and border, the others a faint fill, stronger under the pointer. A right click opens its
+/// context menu (Rename tab). With `editing`, a text field edits the name in place of the label.
+/// Returns what was clicked and how an edit ended, with the tab's response.
 fn tab(
     ui: &mut Ui,
     p: &Palette,
     file: &OpenFile,
     active: bool,
     closable: bool,
-) -> egui::InnerResponse<Option<TabAction>> {
+    editing: Option<&mut String>,
+) -> egui::InnerResponse<(Option<TabAction>, Option<RenameEnd>)> {
     let color = if file.error.is_some() {
         p.due
     } else if active {
@@ -2307,10 +2384,23 @@ fn tab(
     } else {
         egui::FontId::proportional(12.6)
     };
-    let galley = ui.painter().layout_no_wrap(file.name.clone(), font, color);
+    let text = editing.as_deref().unwrap_or(&file.name).clone();
+    let galley = ui.painter().layout_no_wrap(text, font.clone(), color);
+    // While editing, room for the cursor, and a minimum so a short name is easy to click into.
+    let width = if editing.is_some() {
+        galley.size().x.max(80.0) + 8.0
+    } else {
+        galley.size().x
+    };
     // 12 px before the name, 6 px to the close button (16 px), 8 px after it.
-    let size = egui::vec2(12.0 + galley.size().x + 6.0 + 16.0 + 8.0, 32.0);
+    let size = egui::vec2(12.0 + width + 6.0 + 16.0 + 8.0, 32.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let mut menu = None;
+    response.context_menu(|ui| {
+        if ui.button("Rename tab").clicked() {
+            menu = Some(TabAction::Rename(file.path.clone()));
+        }
+    });
     response
         .widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::Tab, true, &file.name));
     // egui reports `selected` as toggled; a tab is selected.
@@ -2344,8 +2434,39 @@ fn tab(
         let fill = p.border.gamma_multiply(if pointer { 0.7 } else { 0.35 });
         ui.painter().rect_filled(rect, corners, fill);
     }
-    let text_at = egui::pos2(rect.left() + 12.0, rect.center().y - galley.size().y / 2.0);
-    ui.painter().galley(text_at, galley, color);
+    let mut rename = None;
+    if let Some(text) = editing {
+        // The field's 4 px margin keeps the text where the label stands.
+        let field = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + 8.0, rect.center().y - 11.0),
+            egui::vec2(width + 8.0, 22.0),
+        );
+        let mut field_ui = ui.new_child(egui::UiBuilder::new().max_rect(field));
+        // The hint, also the field's accessible name, is the label an empty name gives.
+        let mut output = egui::TextEdit::singleline(text)
+            .hint_text(OpenFile::default_name(&file.path))
+            .font(font)
+            .margin(egui::Margin::symmetric(4, 2))
+            .desired_width(width)
+            .show(&mut field_ui);
+        if output.response.lost_focus() {
+            // Escape also ends the focus, so it is checked first.
+            rename = Some(if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                RenameEnd::Cancel
+            } else {
+                RenameEnd::Keep
+            });
+        } else if !output.response.has_focus() {
+            // The first frame: focus the field with the whole name selected.
+            output.response.request_focus();
+            let all = egui::text::CCursorRange::select_all_str(text);
+            output.state.cursor.set_char_range(Some(all));
+            output.state.store(ui.ctx(), output.response.id);
+        }
+    } else {
+        let text_at = egui::pos2(rect.left() + 12.0, rect.center().y - galley.size().y / 2.0);
+        ui.painter().galley(text_at, galley, color);
+    }
     if response.has_focus() {
         ui.painter().rect_stroke(
             rect.shrink(2.0),
@@ -2370,9 +2491,9 @@ fn tab(
     } else if response.clicked() {
         Some(TabAction::Switch(file.path.clone()))
     } else {
-        None
+        menu
     };
-    egui::InnerResponse::new(clicked, response)
+    egui::InnerResponse::new((clicked, rename), response)
 }
 
 /// Scrolls the tab strip to the shown tab when it becomes the shown one (at startup, on a click, on

@@ -96,7 +96,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one the Tauri app wrote,
   so existing users' settings carry over: do not rename fields or change defaults (`#[serde(default)]`
   on `AppConfig`). The file is written after a successful file load (or creation), a tab
-  closed or clicked, a filter change or Save in the Settings dialog, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
+  closed, clicked or renamed, a filter change or Save in the Settings dialog, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
   default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
   false turns off commits as well as pulls and pushes) and, until RTM-124, a top-level `vcs`.
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
@@ -197,6 +197,17 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     The close cross (`theme::close_button`, named "Close <name>") is drawn only while the pointer
     is over its tab or it has focus. At the end a painted `+` (`theme::add_button`, "Open a file")
     opens New File… and Load File…, the menu's entries.
+  - **Renaming (RTM-151):** a right click on a tab opens its context menu (`response.context_menu`
+    in `tab`; new entries go there), for now only "Rename tab". It turns the label into a text field
+    (`App::renaming`: the path and the text typed) holding the name, all selected, with the file
+    name as its hint. Enter or a click elsewhere keeps it, Escape cancels; Escape also ends the
+    field's focus, so `tab` checks it before treating the lost focus as Enter. The strip reports
+    the end apart from the click (`TabStrip::rename`, applied first in `tabs_and_page`), since a
+    click on another tab ends the edit in the same frame. `rename_tab` trims the name, labels the
+    tab and stores it as the entry's `name` (`AppConfig::set_name`), then writes the config; an
+    empty name gives back the file name and clears `name`; an unchanged label writes nothing (so
+    keeping the file name does not store it as a name). The file itself is not touched.
+    RTM-112's command-line session is to show no tabs, so it has no rename.
   - **Opening** (`open_file`): a file already open shows its tab; one whose tab is not loaded (it
     failed at startup, or a conflict or "Don't open" closed it) is loaded into that tab, which is
     the "load the file again" the file lines ask for; any other file gets a new tab and entry.
@@ -393,7 +404,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     (`get_by_role_and_label(Role::CheckBox, …)`). The edit dialog's fields and the priority
     dropdown are `labelled_by` their labels; kittest then returns the field, not the label, for
     `get_by_label("Description")`. The quick-add input is the only `Role::TextInput` outside the
-    dialog.
+    dialog, except a tab's name field while it is renamed (the rename tests find it by its value).
   - kittest's accessibility check is on: after each `run()`, any visible input without an
     accessible name fails the test. A new input needs a name (a linked label, `accessible_name`, or
     a hint text).
