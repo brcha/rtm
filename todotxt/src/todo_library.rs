@@ -1,7 +1,9 @@
+use crate::todo_context::TodoContext;
 use crate::todo_item::TodoItem;
+use crate::todo_project::TodoProject;
 use crate::todo_recurrence::TodoRecurrenceUnit;
 use chrono::{Duration, Local};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -160,6 +162,65 @@ impl TodoLibrary {
         // does not change.
         Some(())
     }
+
+    /// Every project in the file with the number of open items that carry it. Names are compared
+    /// case-insensitively and spelled as first seen in file order; the list is sorted by the
+    /// lowercased name. A project found only on done items is listed with 0, and an item that
+    /// carries a project twice counts once.
+    pub fn projects(&self) -> Vec<(TodoProject, usize)> {
+        tally(
+            self.items
+                .iter()
+                .map(|item| (item.done, item.projects.iter().map(|p| p.name.as_str()))),
+        )
+        .into_iter()
+        .map(|(name, count)| (TodoProject { name }, count))
+        .collect()
+    }
+
+    /// Every context in the file with the number of open items that carry it, with the same
+    /// rules as `projects`.
+    pub fn contexts(&self) -> Vec<(TodoContext, usize)> {
+        tally(
+            self.items
+                .iter()
+                .map(|item| (item.done, item.contexts.iter().map(|c| c.name.as_str()))),
+        )
+        .into_iter()
+        .map(|(name, count)| (TodoContext { name }, count))
+        .collect()
+    }
+
+    /// The file indices, in file order, of the items that carry every one of `projects` and
+    /// `contexts` (`TodoItem::matches`), done items included.
+    pub fn filter_items(&self, projects: &[TodoProject], contexts: &[TodoContext]) -> Vec<usize> {
+        (0..self.items.len())
+            .filter(|&i| self.items[i].matches(projects, contexts))
+            .collect()
+    }
+}
+
+/// The listing behind `projects` and `contexts`, from each item's `done` and tag names. Tags
+/// found only on done items are kept with 0, so done items stay reachable through the filter.
+fn tally<'a, N>(items: impl Iterator<Item = (bool, N)>) -> Vec<(String, usize)>
+where
+    N: Iterator<Item = &'a str>,
+{
+    let mut tags: BTreeMap<String, (String, usize)> = BTreeMap::new();
+    for (done, names) in items {
+        // An item that carries a tag twice (`+a +A`) counts once.
+        let mut counted = HashSet::new();
+        for name in names {
+            let key = name.to_lowercase();
+            let entry = tags
+                .entry(key.clone())
+                .or_insert_with(|| (name.to_string(), 0));
+            if !done && counted.insert(key) {
+                entry.1 += 1;
+            }
+        }
+    }
+    tags.into_values().collect()
 }
 
 #[cfg(test)]
@@ -173,3 +234,7 @@ mod completion_tests;
 #[cfg(test)]
 #[path = "tests/todo_library_items_tests.rs"]
 mod items_tests;
+
+#[cfg(test)]
+#[path = "tests/todo_library_tags_tests.rs"]
+mod tags_tests;

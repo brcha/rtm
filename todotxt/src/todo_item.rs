@@ -377,6 +377,24 @@ impl TodoItem {
             ..self.clone()
         }
     }
+
+    /// Whether the item carries every one of `projects` and every one of `contexts`, names
+    /// compared case-insensitively (`+Work` matches `+work`). Empty lists match every item.
+    pub fn matches(&self, projects: &[TodoProject], contexts: &[TodoContext]) -> bool {
+        projects.iter().all(|wanted| {
+            self.projects
+                .iter()
+                .any(|p| same_name(&p.name, &wanted.name))
+        }) && contexts.iter().all(|wanted| {
+            self.contexts
+                .iter()
+                .any(|c| same_name(&c.name, &wanted.name))
+        })
+    }
+}
+
+fn same_name(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
 }
 
 #[cfg(test)]
@@ -390,3 +408,7 @@ mod display_tests;
 #[cfg(test)]
 #[path = "tests/todo_item_editing_tests.rs"]
 mod editing_tests;
+
+#[cfg(test)]
+#[path = "tests/todo_item_filter_tests.rs"]
+mod filter_tests;
