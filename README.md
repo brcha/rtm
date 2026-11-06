@@ -221,6 +221,17 @@ Projects in 'todo.txt':
 Names are compared without regard to case: `+Work` and `+work` are one project, shown as first
 spelled in the file. A tag with `(0)` is found only on completed items.
 
+`rtmcli list` takes projects and contexts as filters, in any order and next to a due-date filter
+(`today`, `week`, `all`, `overdue`, `future`); an item must match all of them, and `-c` lists
+completed items instead of open ones:
+
+```
+$ rtmcli list +work @phone today
+```
+
+In PowerShell, quote contexts (`'@phone'`): an unquoted `@phone` is read as a PowerShell variable
+and the argument disappears.
+
 ## Syncing through Git or Pijul
 
 `rtmcli` and the desktop app sync your todo.txt when it is tracked in a Git or Pijul repository.

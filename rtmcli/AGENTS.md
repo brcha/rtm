@@ -18,7 +18,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ├── cli_filter_tests.rs    ← The due-date filters of list and complete
 ├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
 ├── cli_sync_tests.rs      ← Sync through git
-├── cli_tags_tests.rs      ← projects and contexts
+├── cli_tags_tests.rs      ← projects and contexts, and filtering list by them
 └── cli_update_tests.rs    ← check-update against a local HTTP server
 ```
 
@@ -28,7 +28,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 
 | Command        | Description                                              |
 |----------------|----------------------------------------------------------|
-| `list`         | List items, optionally filtered by completion and date   |
+| `list`         | List items, filtered by completion, date and tags        |
 | `projects`     | List the projects with their open-item counts (RTM-122)  |
 | `contexts`     | List the contexts with their open-item counts (RTM-122)  |
 | `add`          | Add a new item in Todo.txt format                        |
@@ -44,6 +44,10 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 - **Edition:** Rust 2024
 - File path resolved from: `-f <file>` flag → `$TODOTXT` env var → `todo.txt` (cwd fallback).
 - Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
+- `list` takes any number of filter terms, in any order (RTM-123): at most one date filter, plus
+  `+project` and `@context` terms. An item must match all of them (`TodoItem::matches`, see
+  `todotxt/AGENTS.md`). Rows are numbered `1..n` within the filter. An unknown term, a bare `+` or
+  `@`, or a second date filter is a usage error (exit 2). `complete` and `delete` take no tags.
 - `projects` / `contexts` sync first and load like `list`, then print `<tag> (<open items>)`
   lines from `TodoLibrary::projects` / `contexts` (order, case merging and `(0)` for done-only
   tags come from `todotxt`, see `todotxt/AGENTS.md`). They never write.
