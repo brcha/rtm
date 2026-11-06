@@ -18,6 +18,7 @@ todotxt/src/
 ├── todo_project.rs      ← +project tag
 ├── todo_priority.rs     ← (A)-(Z) priority
 ├── todo_recurrence.rs   ← rec: tag (daily/weekly/monthly/yearly/business-day)
+├── write_lock.rs        ← WriteLock: the lock every rtm process holds while changing a file
 └── tests/               ← Unit tests, one file per source file and topic
 todotxt/tests/
 └── library_file_tests.rs ← Load, edit and save todo.txt files through TodoLibrary
@@ -79,6 +80,17 @@ todotxt/tests/
   on the next parse, so writing one would silently turn a creation date into a different
   fact. It is also why fabricating dates only ever happens at `add_item`/`complete_item`, not
   in `Display`.
+- **`WriteLock::acquire(path)` (RTM-115)** waits for an exclusive lock on a todo.txt and holds it
+  until dropped. Every rtm process holds it whenever it writes the file, a pull included: around
+  the pull, load, change, save and commit of one change (and the push, where it follows at once),
+  and around every pull on its own. So two processes (the app, the CLI, MCP servers of different
+  clients) never lose each other's change, nor a change a pull brought. It is
+  `std::fs::File::lock` (Rust 1.89) on `<hash>.lock` in `$XDG_RUNTIME_DIR/rtm`, else `rtm-<user>`
+  in the temp directory (per user on macOS and Windows), created with mode 0700 on Unix: never
+  next to the todo.txt, where its repository would see it. The hash is 64-bit FNV-1a, written out because `DefaultHasher` may
+  change between Rust versions, of the canonical path (for a file not created yet, its
+  directory's canonical path and its name), so every spelling and every rtm binary agree.
+  Processes that disagree on `XDG_RUNTIME_DIR` do not share the lock.
 - Business-day recurrence is currently approximated as daily (known limitation).
 - Monthly recurrence is approximated as 30 days; yearly as 365 days.
 
