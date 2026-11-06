@@ -49,7 +49,7 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
-const LIGHT: Palette = Palette {
+pub(crate) const LIGHT: Palette = Palette {
     bg: rgb(0xf5, 0xf5, 0xf5),
     header: rgb(0x24, 0x29, 0x2e),
     panel: rgb(0xff, 0xff, 0xff),

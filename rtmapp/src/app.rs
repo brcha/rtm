@@ -11,7 +11,7 @@ use todotxt::{TodoContext, TodoItem, TodoLibrary, TodoProject};
 
 use crate::config::{self, AppConfig};
 use crate::edit::{self, ConfirmMove, EditForm, MoveTarget, Outcome};
-use crate::list::{self, RowAction};
+use crate::list::{self, RowAction, same_tag};
 use crate::settings::{self, SettingsForm};
 use crate::sync::{self, Done, Found, Place, Question, Repo, RepoKey, Worker};
 use crate::theme::{self, Palette};
@@ -1565,7 +1565,14 @@ impl App {
                     empty_state(ui, p, "No items found.");
                     None
                 } else {
-                    list::show(ui, p, &library.items, &visible)
+                    list::show(
+                        ui,
+                        p,
+                        &library.items,
+                        &visible,
+                        &file.projects,
+                        &file.contexts,
+                    )
                 }
             })
             .inner
@@ -1912,6 +1919,16 @@ impl eframe::App for App {
             Some(Clicked::Tab(TabAction::Menu(action))) => self.menu_action(action, &ctx, frame),
             Some(Clicked::Row(RowAction::Toggle(index))) => self.toggle(index),
             Some(Clicked::Row(RowAction::Edit(index))) => self.open_editor(index),
+            Some(Clicked::Row(RowAction::Project(tag))) => {
+                if let Some(file) = self.file_mut() {
+                    toggle_tag(&mut file.projects, &tag, |t| &t.name);
+                }
+            }
+            Some(Clicked::Row(RowAction::Context(tag))) => {
+                if let Some(file) = self.file_mut() {
+                    toggle_tag(&mut file.contexts, &tag, |t| &t.name);
+                }
+            }
             None => {}
         }
         self.vcs_question(&ui.ctx().clone(), p);
@@ -2204,11 +2221,6 @@ fn tag_section(
         *collapsed = !*collapsed;
     }
     (header, clicked_tag)
-}
-
-/// Whether two tag names are the same tag: case-insensitive, as in `todotxt`.
-fn same_tag(a: &str, b: &str) -> bool {
-    a.to_lowercase() == b.to_lowercase()
 }
 
 /// Removes `tag` from `selection` when it is there (by `name`, case-insensitively), else adds it.

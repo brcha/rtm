@@ -19,7 +19,8 @@ untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do n
 per-file state with its own error line (RTM-125) and sync with one worker per repository, the
 check on open included (RTM-126), the open files as tabs (RTM-127) and moving an item to another
 open file (RTM-128), for several open files (RTM-66); the title bar's menu and the Settings dialog
-(RTM-134); the projects and contexts in the sidebar (RTM-120) and filtering by them (RTM-121).
+(RTM-134); the projects and contexts in the sidebar (RTM-120) and filtering by them (RTM-121),
+also from a tag clicked in an item row (RTM-150).
 
 ---
 
@@ -45,7 +46,8 @@ rtmapp/
     ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
-    ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`)
+    ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`) and
+    │                         their clickable tags
     ├── settings.rs         ← Settings dialog: the form (`SettingsForm`) and the modal
     ├── sync.rs             ← Sync through the file's repository: `find`, the worker thread
     ├── theme.rs            ← Palettes, fonts, egui styling
@@ -144,7 +146,16 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     had it. "Clear filter (N)" above the Projects section, shown while tags are selected, empties
     the selection. A selected tag no longer in the file (deleted, or removed by a pull) leaves the
     selection when the sidebar is drawn. Tag names compare case-insensitively (`same_tag`). The
-    counts do not follow the selection. Clicking a tag inside an item row is RTM-150.
+    counts do not follow the selection.
+  - **Row tags (RTM-150):** a click on a `+project` or `@context` in an item row toggles it in
+    the same selection (`RowAction::Project` / `Context`); a click on the rest of the text still
+    opens the edit dialog. The row text stays one label: `list::show` lays it out with
+    `Label::layout_in_ui`, sets its AccessKit text and paints it, as `Label::ui` does, and
+    `row_job` returns each tag's characters (`TagSpan`, without the space before it). The pointer
+    hits a tag only on its glyphs (`glyph_rects`, from `Galley::pos_from_cursor`), so the empty
+    space after a short wrapped line still edits. The hovered tag is underlined (painted, since
+    `LayoutJob` merges a tag with the space before it into one section); tags in the selection
+    are bold in every row.
 - **Item rows** show the visible items in that order. A done item is struck through entirely, as the
   CSS did. Recurrence is shown through `TodoRecurrence`'s `Display` (`rec:+1m` appears as `rec:+m`).
   The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had
@@ -393,7 +404,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     (`get_by_role_and_label(Role::CheckBox, …)`). The edit dialog's fields and the priority
     dropdown are `labelled_by` their labels; kittest then returns the field, not the label, for
     `get_by_label("Description")`. The quick-add input is the only `Role::TextInput` outside the
-    dialog.
+    dialog, except a tab's name field while it is renamed (the rename tests find it by its value).
   - kittest's accessibility check is on: after each `run()`, any visible input without an
     accessible name fails the test. A new input needs a name (a linked label, `accessible_name`, or
     a hint text).
@@ -401,6 +412,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     focused text cursor).
   - File dialogs are not clicked (they would open a real dialog): a test hands the app the
     dialog's result with `dialog_returned`, as the file tests do.
+  - A row's text label is clicked with `click_row` (`Side::Start` for the description, `Side::End`
+    for the last section), not `.click()`: kittest clicks a node at its centre, which may fall on
+    a tag and filter instead of opening the edit dialog (RTM-150).
   - With the calendar open (a date field has focus), a click elsewhere in the dialog only closes it,
     so the edit test presses Escape before Save.
   - Not covered: screenshot snapshots (kittest's `snapshot`/`wgpu` features would need a GPU or

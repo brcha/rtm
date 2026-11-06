@@ -1064,9 +1064,7 @@ fn a_selected_tag_that_leaves_the_file_leaves_the_selection() {
     harness.run();
     assert_eq!(rows(&harness), ["Fix the fence"]);
 
-    harness
-        .get_by_role_and_label(Role::Label, "Fix the fence +home @phone")
-        .click();
+    click_row(&harness, "Fix the fence +home @phone", Side::Start);
     harness.run();
     harness.get_by_label("Delete item").click();
     harness.run();
@@ -1096,11 +1094,18 @@ fn name_field<'h>(harness: &'h Harness<'_, App>, name: &'h str) -> egui_kittest:
     harness.get(by().role(Role::TextInput).value(name))
 }
 
-/// The `name` of the `[[files]]` entry of `file` in `dir`'s config.
+/// The `name` of the `[[files]]` entry of `file` in `dir`'s config. The entry keeps the path the
+/// harness wrote until a save stores the resolved one (the temp dir is a symlink on macOS).
 fn saved_name(dir: &Path, file: &str) -> Option<String> {
     let config = AppConfig::load(&dir.join("config.toml"));
-    let path = dir.join(file).canonicalize().unwrap();
-    config.entry(&path).unwrap().name.clone()
+    let path = dir.join(file);
+    let canonical = path.canonicalize().unwrap();
+    config
+        .entry(&canonical)
+        .or(config.entry(&path))
+        .unwrap()
+        .name
+        .clone()
 }
 
 #[test]
@@ -1185,5 +1190,117 @@ fn clicking_another_tab_keeps_the_new_name_and_switches() {
     tab(&harness, "Personal");
     assert_eq!(saved_name(&dir, "todo.txt").as_deref(), Some("Personal"));
     assert_eq!(rows(&harness), ["Report"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// Filtering by a tag clicked in an item row (RTM-150).
+
+/// Where `click_row` clicks in a row's text.
+enum Side {
+    /// Near the left end: the description.
+    Start,
+    /// Near the right end of the last line: the row's last section.
+    End,
+}
+
+/// Clicks inside the text of the row `text` (its full text, tags included). kittest clicks a node
+/// at its centre, which may fall on a tag; this clicks a few pixels in from one end instead.
+fn click_row(harness: &Harness<'_, App>, text: &str, side: Side) {
+    let rect = harness.get_by_role_and_label(Role::Label, text).rect();
+    let pos = match side {
+        Side::Start => egui::pos2(rect.left() + 3.0, rect.top() + 5.0),
+        Side::End => egui::pos2(rect.right() - 3.0, rect.bottom() - 5.0),
+    };
+    harness.event(egui::Event::PointerMoved(pos));
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::default(),
+        });
+    }
+}
+
+#[test]
+fn clicking_a_tag_in_a_row_filters_by_it_and_clicking_it_again_shows_all() {
+    let dir = temp_dir("ui-row-tag");
+    let mut harness = harness(&dir, TAGGED, |_| {});
+
+    click_row(&harness, "Write the report +work @office", Side::End);
+    harness.run();
+    assert_eq!(rows(&harness), ["Write the report"]);
+    assert!(tag_rows(&harness).contains(&"@office 1 (selected)".to_owned()));
+    assert!(harness.query_by_label("Save").is_none());
+
+    click_row(&harness, "Write the report +work @office", Side::End);
+    harness.run();
+    assert_eq!(
+        rows(&harness),
+        ["Write the report", "Call the client", "Fix the fence"]
+    );
+    assert!(harness.query_by_label_contains("Clear filter").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_tag_clicked_in_a_row_combines_with_the_sidebar_selection() {
+    let dir = temp_dir("ui-row-tag-combine");
+    let mut harness = harness(&dir, TAGGED, |_| {});
+
+    harness.get_by_label("+work").click();
+    harness.run();
+    click_row(&harness, "Call the client +work @phone", Side::End);
+    harness.run();
+    assert_eq!(rows(&harness), ["Call the client"]);
+    harness.get_by_label("Clear filter (2)");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn clicking_the_description_of_a_row_still_edits_it() {
+    let dir = temp_dir("ui-row-tag-edit");
+    let mut harness = harness(&dir, TAGGED, |_| {});
+
+    click_row(&harness, "Write the report +work @office", Side::Start);
+    harness.run();
+    harness.get_by_label("Save");
+    assert!(harness.query_by_label_contains("Clear filter").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_row_tag_matches_the_selection_whatever_its_case() {
+    let dir = temp_dir("ui-row-tag-case");
+    let contents = "Write the report +work\nCall the client +Work\nFix the fence\n";
+    let mut harness = harness(&dir, contents, |_| {});
+
+    harness.get_by_label("+work").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Write the report", "Call the client"]);
+
+    click_row(&harness, "Call the client +Work", Side::End);
+    harness.run();
+    assert_eq!(
+        rows(&harness),
+        ["Write the report", "Call the client", "Fix the fence"]
+    );
+    assert!(harness.query_by_label_contains("Clear filter").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_click_past_the_end_of_a_wrapped_rows_last_line_edits() {
+    let dir = temp_dir("ui-row-tag-wrap");
+    let long = "Write the long report ".repeat(12);
+    let text = format!("{}+work", long);
+    let mut harness = harness(&dir, &format!("{text}\nFix the fence\n"), |_| {});
+
+    let rect = harness.get_by_role_and_label(Role::Label, &text).rect();
+    assert!(rect.height() > 30.0, "the row wraps");
+    click_row(&harness, &text, Side::End);
+    harness.run();
+    harness.get_by_label("Save");
+    assert!(harness.query_by_label_contains("Clear filter").is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
