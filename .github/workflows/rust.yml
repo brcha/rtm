@@ -26,7 +26,7 @@ jobs:
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       if: github.event_name == 'pull_request'
       with:
         fetch-depth: 2
@@ -72,12 +72,12 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     # Building pijul takes minutes, so it goes into its own root, cached per OS and version.
     - name: Restore pijul
       id: pijul
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.pijul-ci
         key: pijul-${{ runner.os }}-${{ matrix.pijul }}
