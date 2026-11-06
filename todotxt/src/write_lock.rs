@@ -2,38 +2,60 @@
 //! (the app, the CLI, MCP servers started by different clients) never interleave a load, change
 //! and save of the same file with another write and lose one of the changes.
 
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// An exclusive lock on one todo.txt, held until it is dropped.
+/// An exclusive lock on a todo.txt, or on the repository directory holding it, held until it is
+/// dropped.
 ///
 /// The lock is taken on a file in a per-user directory, never next to the todo.txt, where its
-/// repository would see it. Its name is a hash of the todo.txt's canonical path, so every spelling
-/// of the path, in every rtm program, takes the same lock.
+/// repository would see it. Its name is a hash of the locked path's canonical form, so every
+/// spelling of the path, in every rtm program, takes the same lock.
 #[derive(Debug)]
 pub struct WriteLock {
     _file: File,
 }
 
 impl WriteLock {
-    /// Waits for the lock on `todo_file`, which need not exist yet (its directory must).
-    pub fn acquire(todo_file: &Path) -> io::Result<WriteLock> {
-        Self::acquire_in(&lock_dir()?, todo_file)
+    /// Waits for the lock on `path`: a todo.txt (which need not exist yet; its directory must), or
+    /// the repository directory holding it.
+    pub fn acquire(path: &Path) -> io::Result<WriteLock> {
+        Self::acquire_in(&lock_dir()?, path)
     }
 
-    fn acquire_in(dir: &Path, todo_file: &Path) -> io::Result<WriteLock> {
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(lock_path(dir, todo_file)?)?;
+    /// Takes the lock on `path` if no one holds it, without waiting: `None` while another
+    /// holder has it. For a thread that must not block, such as a user interface's.
+    pub fn try_acquire(path: &Path) -> io::Result<Option<WriteLock>> {
+        Self::try_acquire_in(&lock_dir()?, path)
+    }
+
+    fn acquire_in(dir: &Path, path: &Path) -> io::Result<WriteLock> {
+        let file = open(dir, path)?;
         file.lock()?;
         Ok(WriteLock { _file: file })
     }
+
+    fn try_acquire_in(dir: &Path, path: &Path) -> io::Result<Option<WriteLock>> {
+        let file = open(dir, path)?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(WriteLock { _file: file })),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(TryLockError::Error(e)) => Err(e),
+        }
+    }
 }
 
-/// The lock file for `todo_file` in `dir`.
+/// The lock file for `path` in `dir`, opened for locking.
+fn open(dir: &Path, path: &Path) -> io::Result<File> {
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(lock_path(dir, path)?)
+}
+
+/// The lock file for `path` in `dir`.
 fn lock_path(dir: &Path, todo_file: &Path) -> io::Result<PathBuf> {
     let canonical = match todo_file.canonicalize() {
         Ok(path) => path,
