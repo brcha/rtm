@@ -64,3 +64,30 @@
     workflows still pass `toolchain: stable`, so the choice shows next to the SHA.
   - Workflows from fork pull requests wait for the maintainer's approval ("Require approval for
     all external contributors"), not only those from first-time contributors.
+- **Claude review (RTM-147):** `claude-review.yml` runs Anthropic's `claude-code-action` with the
+  official `code-review` plugin. It reviews a pull request against `main` or `releases/**` and
+  posts the findings as comments from `claude[bot]`.
+  - It runs when a pull request is opened, reopened or marked ready for review. It does not run
+    on every push, and it skips drafts and pull requests from forks, which get no secrets. The
+    plugin also stops when Claude has already commented on the pull request, so reopening does
+    not start a second review.
+  - It only comments: it never pushes, approves or blocks. It is not a required check, so a
+    failed or skipped review never holds up a merge.
+  - The plugin checks the changes against `CLAUDE.md` files. The prompt tells it that rtm's are
+    named `AGENTS.md`.
+  - The plugin marketplace (`anthropics/claude-plugins-official`) is checked out at a pinned
+    commit and passed to the action as a local path. The plugin's frontmatter grants the tools it
+    may use, so the pin keeps an upstream change from widening them. To update it, change the
+    commit SHA and its comment, as for an action.
+  - The workflow token is read-only. The comments go out through the Claude GitHub App, which is
+    installed on this repository only; the action gets the app's token in exchange for the run's
+    OIDC token (`id-token: write`). Claude may only run the `gh` commands the plugin needs, which
+    read the pull request and post the review.
+  - The action refuses to run while the workflow file differs from the copy on `main` ("Workflow
+    validation failed"). So a pull request that changes `claude-review.yml` is not reviewed by
+    it.
+  - It authenticates with the repository secret `CLAUDE_CODE_OAUTH_TOKEN`, a token from the
+    maintainer's Claude subscription. `claude setup-token` creates it, valid for one year. When
+    it expires, the review fails until the secret is replaced.
+  - To bill the Anthropic API instead, store an API key as `ANTHROPIC_API_KEY` and replace the
+    `claude_code_oauth_token` input with `anthropic_api_key`.
