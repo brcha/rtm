@@ -236,7 +236,8 @@ The desktop app lists the projects and contexts of the shown file in its sidebar
 open-item counts, in Projects and Contexts sections that collapse from their headers (the app
 remembers which ones are collapsed). Click tags there to filter the list: an item must carry every
 selected tag, a second click removes a tag, and **Clear filter** shows everything again. Each
-tab keeps its own selection until the app closes.
+tab keeps its own selection until the app closes. A tag in an item row works the same way: click
+it to add it to the filter or remove it, and click the rest of the item to edit it.
 
 ## Syncing through Git or Pijul
 
