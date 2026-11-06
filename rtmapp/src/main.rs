@@ -10,6 +10,7 @@ mod list;
 mod settings;
 mod sync;
 mod theme;
+mod update;
 
 use eframe::egui;
 

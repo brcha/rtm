@@ -39,6 +39,7 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         next_move: 0,
         delivered: Vec::new(),
         dialog: None,
+        updates: UpdateCheck::new(String::new(), false, Instant::now()),
         ctx: egui::Context::default(),
     }
 }

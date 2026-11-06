@@ -170,3 +170,18 @@ CLI:
 4. Open a new terminal and run `rtmcli --help`.
 
 ARM64 and 32-bit Windows builds are not currently produced.
+
+## Updates
+
+The desktop app checks for a newer release a few seconds after it starts and once a day while it
+runs. When one exists, a notice under the title bar offers it: **Download** opens the release's
+page, where you download it as you did the first time; the × hides the notice until the next start.
+`rtmcli check-update` does the same check on demand and prints the release's page; it is the only
+rtmcli command that uses the network.
+
+Each check is one request for `https://rtm.brcha.com/releases.json`, with no version or identifier,
+so the website sees only your IP address. Turn the desktop app's check off in **Settings** ("Check
+for updates", stored as `check_for_updates = false` in `rtm/config.toml`). To be offered beta
+releases too, choose the Beta channel there (`update_channel = "beta"`), or run
+`rtmcli check-update --channel beta`. The Nix packages have no update check; update them through
+your flake inputs.

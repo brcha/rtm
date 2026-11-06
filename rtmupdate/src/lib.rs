@@ -125,12 +125,17 @@ pub fn newest(feed: &str, current: &str, channel: Channel) -> Result<Option<Rele
         .map(|(_, release)| release))
 }
 
-/// [`check_at`] the URL in `RTM_UPDATE_URL`, or [`URL`] when it is unset or empty.
-pub fn check(current: &str, channel: Channel) -> Result<Option<Release>, Error> {
-    let url = std::env::var("RTM_UPDATE_URL")
+/// The URL in `RTM_UPDATE_URL`, or [`URL`] when it is unset or empty.
+pub fn url() -> String {
+    std::env::var("RTM_UPDATE_URL")
         .ok()
-        .filter(|url| !url.is_empty());
-    check_at(url.as_deref().unwrap_or(URL), current, channel)
+        .filter(|url| !url.is_empty())
+        .unwrap_or_else(|| URL.to_owned())
+}
+
+/// [`check_at`] the [`url`].
+pub fn check(current: &str, channel: Channel) -> Result<Option<Release>, Error> {
+    check_at(&url(), current, channel)
 }
 
 /// Fetches the release list at `url`, following redirects, and returns [`newest`] of it.

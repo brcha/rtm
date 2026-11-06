@@ -15,6 +15,7 @@ use crate::list::{self, RowAction};
 use crate::settings::{self, SettingsForm};
 use crate::sync::{self, Done, Found, Place, Question, Repo, RepoKey, Worker};
 use crate::theme::{self, Palette};
+use crate::update::{self, Notice, UpdateCheck};
 
 /// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
 /// push, 60 s each at most, and a little more.
@@ -65,6 +66,8 @@ pub struct App {
     delivered: Vec<u64>,
     /// The open file dialog: its result, and what to do with a chosen path.
     dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
+    /// The update check and its notice (RTM-138).
+    updates: UpdateCheck,
     ctx: egui::Context,
 }
 
@@ -116,15 +119,21 @@ struct OpenFile {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        App::with_config(cc, config::config_path())
+        App::with_config(cc, config::config_path(), update::url())
     }
 
-    /// `new` with the config at `config_path`: the UI tests start the app on a temp config, so
-    /// they never read or write the user's.
-    fn with_config(cc: &eframe::CreationContext<'_>, config_path: PathBuf) -> Self {
+    /// `new` with the config at `config_path` and the release list at `update_url`: the UI tests
+    /// start the app on a temp config, so they never read or write the user's, and on a local
+    /// server or a closed port, so they never reach the network.
+    fn with_config(
+        cc: &eframe::CreationContext<'_>,
+        config_path: PathBuf,
+        update_url: String,
+    ) -> Self {
         theme::install(&cc.egui_ctx);
         let mut config = AppConfig::load(&config_path);
         let (files, active) = open_session(&mut config);
+        let updates = UpdateCheck::new(update_url, config.check_for_updates, Instant::now());
         let mut app = App {
             config,
             config_path,
@@ -141,6 +150,7 @@ impl App {
             next_move: 0,
             delivered: Vec::new(),
             dialog: None,
+            updates,
             ctx: cc.egui_ctx.clone(),
         };
         app.connect_all();
@@ -1028,16 +1038,22 @@ impl App {
     }
 
     /// Saves the Settings dialog's fields. A new interval takes effect at once (`tick` reads it);
-    /// a change of `sync` reconnects once no repository has a job outstanding.
+    /// a change of `sync` reconnects once no repository has a job outstanding; turning the update
+    /// check on or changing its channel checks at once.
     fn save_settings(&mut self) {
         let Some(form) = self.settings.take() else {
             return;
         };
         let sync = self.config.sync;
+        let updates = (self.config.check_for_updates, self.config.beta());
         form.apply(&mut self.config);
         self.save_config();
         if self.config.sync != sync {
             self.reconnect = true;
+        }
+        if (self.config.check_for_updates, self.config.beta()) != updates {
+            self.updates
+                .set(self.config.check_for_updates, Instant::now());
         }
     }
 
@@ -1661,6 +1677,9 @@ impl eframe::App for App {
         self.show_question();
         self.dialog_result();
         self.tick(Instant::now());
+        self.updates.results();
+        self.updates
+            .tick(Instant::now(), self.config.beta(), &self.ctx);
     }
 
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
@@ -1694,6 +1713,17 @@ impl eframe::App for App {
             Some(HeaderAction::Sync) => self.sync_now(Instant::now()),
             Some(HeaderAction::Menu(action)) => self.menu_action(action, &ctx, frame),
             None => {}
+        }
+        if let Some(notice) = self.updates.shown().cloned() {
+            let clicked = egui::Panel::top("update notice")
+                .frame(Frame::NONE)
+                .show(ui, |ui| update_notice(ui, p, &notice))
+                .inner;
+            match clicked {
+                Some(NoticeAction::Download) => ctx.open_url(egui::OpenUrl::new_tab(&notice.url)),
+                Some(NoticeAction::Close) => self.updates.dismissed = true,
+                None => {}
+            }
         }
         egui::Panel::left("sidebar")
             .exact_size(220.0)
@@ -1927,6 +1957,44 @@ fn load_library(path: &Path) -> Result<TodoLibrary, String> {
         .load()
         .map_err(|e| format!("{}: {e}", canonical.display()))?;
     Ok(library)
+}
+
+/// What was clicked in the update notice.
+enum NoticeAction {
+    Download,
+    Close,
+}
+
+/// The strip under the title bar that offers a newer release (RTM-138): Download opens its page,
+/// the close button hides the strip for the rest of the run.
+fn update_notice(ui: &mut Ui, p: &Palette, notice: &Notice) -> Option<NoticeAction> {
+    let mut clicked = None;
+    Frame::new()
+        .fill(p.panel)
+        .stroke(Stroke::new(1.0, p.border))
+        .inner_margin(Margin::symmetric(20, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "Rusty Todo.txt Manager {} is available",
+                        notice.version
+                    ))
+                    .size(12.6)
+                    .color(p.text),
+                );
+                if theme::primary_button(ui, "Download").clicked() {
+                    clicked = Some(NoticeAction::Download);
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if theme::close_button(ui, p, "Close the update notice", true).clicked() {
+                        clicked = Some(NoticeAction::Close);
+                    }
+                });
+            });
+        });
+    clicked
 }
 
 /// What was clicked in the title bar.
