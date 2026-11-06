@@ -18,6 +18,7 @@ todotxt/src/
 ├── todo_project.rs      ← +project tag
 ├── todo_priority.rs     ← (A)-(Z) priority
 ├── todo_recurrence.rs   ← rec: tag (daily/weekly/monthly/yearly/business-day)
+├── write_lock.rs        ← WriteLock: the lock every rtm process holds while changing a file
 └── tests/               ← Unit tests, one file per source file and topic
 todotxt/tests/
 └── library_file_tests.rs ← Load, edit and save todo.txt files through TodoLibrary
@@ -47,6 +48,9 @@ todotxt/tests/
 - `uncomplete_item(index)` clears `done` and `completion_date`, returns `Option<()>` (None =
   out of bounds). Priority and creation date are untouched — priority re-serializes as `(X)`
   automatically because `Display` keys that choice off `done`.
+- `replace_item(index, item)` (RTM-115) puts `item` in the old one's place and returns the old
+  item, `Option<TodoItem>` (None = out of bounds). The new item is stored as given: no date is
+  stamped, and `uuid`/`sub` are the caller's to carry over. Like every mutation it does not save.
 - `remove_item(index)` removes the item and, recursively, every item whose `sub` is the uuid
   of a removed item (cyclic links terminate). Returns `Option<Vec<TodoItem>>`: None = out of
   bounds, otherwise the removed items in file order. Like every mutation it does not save.
@@ -79,6 +83,18 @@ todotxt/tests/
   on the next parse, so writing one would silently turn a creation date into a different
   fact. It is also why fabricating dates only ever happens at `add_item`/`complete_item`, not
   in `Display`.
+- **`WriteLock::acquire(path)` (RTM-115)** waits for an exclusive lock on a todo.txt and holds it
+  until dropped. Every rtm process holds it whenever it writes the file, a pull included: around
+  the pull, load, change, save and commit of one change (and the push, where it follows at once),
+  and around every pull on its own. So two processes (the app, the CLI, MCP servers of different
+  clients) never lose each other's change, nor a change a pull brought. It is
+  `std::fs::File::lock` (Rust 1.89) on `<hash>.lock` in `$XDG_RUNTIME_DIR/rtm`, else `rtm-<user>`
+  in the temp directory (per user on macOS and Windows), created with mode 0700 on Unix: never
+  next to the todo.txt, where its repository would see it. The hash is 64-bit FNV-1a, written out because `DefaultHasher` may
+  change between Rust versions, of the canonical path (for a file not created yet, its
+  directory's canonical path and its name), so every spelling and every rtm binary agree.
+  Processes that disagree on `XDG_RUNTIME_DIR` do not share the lock. `write_lock::lock_dir()` is
+  public, for the other rtm locks kept there (the MCP server's one-server-per-client check).
 - Business-day recurrence is currently approximated as daily (known limitation).
 - Monthly recurrence is approximated as 30 days; yearly as 365 days.
 

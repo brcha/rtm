@@ -163,6 +163,13 @@ impl TodoLibrary {
         Some(())
     }
 
+    /// Puts `item` in place of the item at `index`, keeping its position, and returns the old
+    /// item; None = out of bounds. The new item is stored as given: no date is stamped.
+    pub fn replace_item(&mut self, index: usize, item: TodoItem) -> Option<TodoItem> {
+        let slot = self.items.get_mut(index)?;
+        Some(std::mem::replace(slot, item))
+    }
+
     /// Every project in the file with the number of open items that carry it. Names are compared
     /// case-insensitively and spelled as first seen in file order; the list is sorted by the
     /// lowercased name. A project found only on done items is listed with 0, and an item that

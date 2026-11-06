@@ -85,9 +85,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 
 ## Conventions
 
-- **Rust edition:** 2024. No async, with one exception (RTM-65): the file dialogs are
-  `rfd::AsyncFileDialog` futures, each awaited with `pollster::block_on` on a thread of its own (see
-  File dialog). No runtime, no `async fn`; anything else stays synchronous.
+- **Rust edition:** 2024. Async only where a library needs it (root `AGENTS.md`): the file
+  dialogs (RTM-65) are `rfd::AsyncFileDialog` futures, each awaited with `pollster::block_on` on a
+  thread of its own (see File dialog). The UI and sync code are synchronous.
 - **Identity:** crate, binary, Nix package and eframe app name are `rtmapp`. The app name is also the
   Wayland app id and the X11 `WM_CLASS`, so it must match the desktop entry's file name and its
   `StartupWMClass`; `Exec=rtmapp` and `Icon=rtmapp` match the binary and the installed icons, and

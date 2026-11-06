@@ -25,8 +25,8 @@
   through their flake inputs or nixpkgs. The flag applies to the check phase's tests too.
 - **Tests in the build (RTM-71):** the check phase runs the sync tests, so `gitMinimal`, `pijul` and
   `openssh` (the Pijul sync test signs through a scratch `ssh-agent`) are `nativeCheckInputs`;
-  `rtmcli` also runs `rtmsync`'s tests, with `RTM_REQUIRE_PIJUL` set so the Pijul tests cannot skip
-  themselves. At
+  `rtmcli` also runs the tests of `todotxt`, `rtmsync` and `rtmmcp` (the libraries it links), with
+  `RTM_REQUIRE_PIJUL` set so the Pijul tests cannot skip themselves. At
   run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
 - **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
   macOS for pushes to `main` that change more than Markdown and pull requests against `main` or

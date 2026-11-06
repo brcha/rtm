@@ -208,3 +208,29 @@ fn test_library_clone() {
     assert_eq!(lib1.file_name, lib2.file_name);
     assert_eq!(lib1.item_count(), lib2.item_count());
 }
+
+#[test]
+fn test_replace_item_keeps_position_and_returns_old_item() {
+    let mut lib = TodoLibrary::new("dummy.txt".to_string());
+    lib.items = vec![
+        "First".parse().unwrap(),
+        "Second".parse().unwrap(),
+        "Third".parse().unwrap(),
+    ];
+    let new: TodoItem = "(A) Second, edited due:2026-12-01".parse().unwrap();
+    let old = lib.replace_item(1, new.clone()).unwrap();
+    assert_eq!(old.description, "Second");
+    assert_eq!(lib.items.len(), 3);
+    assert_eq!(lib.items[0].description, "First");
+    assert_eq!(lib.items[1], new);
+    assert_eq!(lib.items[2].description, "Third");
+}
+
+#[test]
+fn test_replace_item_out_of_bounds() {
+    let mut lib = TodoLibrary::new("dummy.txt".to_string());
+    lib.items = vec!["Only".parse().unwrap()];
+    assert_eq!(lib.replace_item(1, "Other".parse().unwrap()), None);
+    assert_eq!(lib.items.len(), 1);
+    assert_eq!(lib.items[0].description, "Only");
+}

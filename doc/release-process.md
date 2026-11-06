@@ -94,7 +94,7 @@
   `workflow_dispatch` (on a `releases/**` branch a release, see "Making a release"; on any other
   branch a dry run: builds and uploads to the Actions run, publishes nothing) and pull requests
   against `main` or `releases/**` (`pr-title.yml` checks those too); on those it builds and tests the packages (publishes nothing)
-  only when they touch the crates (`rtmsync` included since RTM-21, `rtmupdate` since RTM-136), `Cargo.toml`/`Cargo.lock`,
+  only when they touch the crates (`rtmsync` included since RTM-21, `rtmupdate` since RTM-136, `rtmmcp` since RTM-115), `Cargo.toml`/`Cargo.lock`,
   `LICENSE`, `scripts/build-appimage.sh`, `scripts/build-macos.sh`,
   `scripts/check-macos-quit.sh` or the workflow, Markdown
   excluded (its `changes` job, see "Which changes start which build" in [CI](ci.md)). It has no
@@ -156,7 +156,7 @@
   one manual pre-release tool, not something CI invokes; keep them in step. Run either on `main`
   after a cut, or on a release branch for a patch release (see "Making a release"), to bump the
   version across `rtmapp/Cargo.toml`, `rtmcli/Cargo.toml`, `rtmsync/Cargo.toml`,
-  `rtmupdate/Cargo.toml` and `todotxt/Cargo.toml` in lockstep. The Nix packages read their
+  `rtmmcp/Cargo.toml`, `rtmupdate/Cargo.toml` and `todotxt/Cargo.toml` in lockstep. The Nix packages read their
   versions from those files, so a bump needs no Nix change (RTM-75). It scopes its match to the
   `[package]` table specifically — `todotxt/Cargo.toml` also has a `[dependencies.uuid]` table
   with its own `version` key. A new release must have a higher version than the last one on its line
