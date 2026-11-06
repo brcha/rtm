@@ -43,3 +43,23 @@ fn a_link_into_a_repository_locks_the_repository() {
     std::fs::remove_dir_all(&dir).unwrap();
     std::fs::remove_dir_all(&outside).unwrap();
 }
+
+#[test]
+fn a_file_in_a_pijul_repository_locks_the_repository() {
+    let dir = scratch("pijul");
+    std::fs::create_dir(dir.join(".pijul")).unwrap();
+    assert_eq!(
+        lock_target(&dir.join("sub/todo.txt")),
+        root(&dir.join("sub/todo.txt")).unwrap()
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_new_file_outside_any_repository_locks_itself() {
+    let dir = scratch("new outside");
+    let file = dir.join("sub/new.txt");
+    assert!(!file.exists());
+    assert_eq!(lock_target(&file), file);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
