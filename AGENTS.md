@@ -125,10 +125,10 @@ one that had them.
   website (`site/`, `scripts/site/`, `vercel.json`, the site workflow), and there only when the
   deployment failed.
 - **Claude review comments** (RTM-147): `claude-review.yml` reviews each pull request from a
-  branch of this repository once, when it opens, and posts its findings as comments from
-  `claude[bot]`. Unlike the Vercel bot's notices, these are review feedback. A session working on
-  the PR reads them, fixes what holds, and replies when it disagrees. See "Claude review" in
-  [CI](doc/ci.md).
+  branch of this repository when it opens and after every push, and posts its findings as
+  comments from `claude[bot]`. Unlike the Vercel bot's notices, these are review feedback. A
+  session working on the PR reads them, fixes what holds, and replies when it disagrees. See
+  "Claude review" in [CI](doc/ci.md).
 - **Native dependency sync:** When adding a new system/native library dependency to any crate in
   the workspace, register it in **both** of the following locations to keep CI and the Nix builds
   in sync:
