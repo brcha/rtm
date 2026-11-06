@@ -190,6 +190,22 @@ shown otherwise). `file_name` names the shown file, so an older version of the a
 that one. Each file syncs through its own repository. To move an item, with its sub-items, to
 another open file, use **Move to…** in its edit dialog.
 
+## Projects and contexts
+
+`rtmcli projects` and `rtmcli contexts` list every `+project` and `@context` in the todo.txt, each
+with the number of open items that carry it:
+
+```
+$ rtmcli projects
+Projects in 'todo.txt':
++garden (0)
++home (1)
++work (3)
+```
+
+Names are compared without regard to case: `+Work` and `+work` are one project, shown as first
+spelled in the file. A tag with `(0)` is found only on completed items.
+
 ## Syncing through Git or Pijul
 
 `rtmcli` and the desktop app sync your todo.txt when it is tracked in a Git or Pijul repository.
