@@ -19,7 +19,7 @@ untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do n
 per-file state with its own error line (RTM-125) and sync with one worker per repository, the
 check on open included (RTM-126), the open files as tabs (RTM-127) and moving an item to another
 open file (RTM-128), for several open files (RTM-66); the title bar's menu and the Settings dialog
-(RTM-134); the projects and contexts in the sidebar (RTM-120).
+(RTM-134); the projects and contexts in the sidebar (RTM-120) and filtering by them (RTM-121).
 
 ---
 
@@ -136,8 +136,15 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   no file is shown or its tab is not loaded. Drawn each frame from the library, so they follow
   every change, reload and tab switch. A click on a header flips `projects_collapsed` /
   `contexts_collapsed` and saves the config, like the view checkboxes. The `Total items` footer is
-  laid out first (bottom-up) and the sections scroll above it. The rows are labels; filtering by
-  them is RTM-121.
+  laid out first (bottom-up) and the sections scroll above it.
+  - **Filtering (RTM-121):** each tag is a selectable button; a click toggles it in the shown
+    file's selection (`OpenFile::projects` / `contexts`, per tab, for the run, never saved).
+    `tabs_and_page` keeps only the items of `list::visible` that carry every selected tag
+    (`TodoItem::matches`), so the view checkboxes still apply and `visible` stays as the Tauri app
+    had it. "Clear filter (N)" above the Projects section, shown while tags are selected, empties
+    the selection. A selected tag no longer in the file (deleted, or removed by a pull) leaves the
+    selection when the sidebar is drawn. Tag names compare case-insensitively (`same_tag`). The
+    counts do not follow the selection. Clicking a tag inside an item row is RTM-150.
 - **Item rows** show the visible items in that order. A done item is struck through entirely, as the
   CSS did. Recurrence is shown through `TodoRecurrence`'s `Display` (`rec:+1m` appears as `rec:+m`).
   The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had
