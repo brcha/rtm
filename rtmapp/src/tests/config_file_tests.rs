@@ -25,6 +25,8 @@ fn round_trip() {
         sync_interval_minutes: 0,
         check_for_updates: false,
         update_channel: "beta".into(),
+        projects_collapsed: true,
+        contexts_collapsed: true,
         files: vec![FileEntry {
             path: "/home/user/todo.txt".into(),
             name: Some("Home".into()),
@@ -66,6 +68,13 @@ fn only_beta_is_the_beta_channel() {
         };
         assert_eq!(config.beta(), beta, "{channel}");
     }
+}
+
+#[test]
+fn sidebar_sections_are_open_without_their_keys() {
+    let config: AppConfig = toml::from_str("reverse_sort = true").unwrap();
+    assert!(!config.projects_collapsed);
+    assert!(!config.contexts_collapsed);
 }
 
 #[test]

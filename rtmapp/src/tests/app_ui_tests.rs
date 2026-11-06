@@ -859,3 +859,97 @@ fn a_build_without_the_check_has_no_update_settings() {
     assert!(harness.query_by_label("Check for updates").is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Projects and contexts in the sidebar (RTM-120).
+
+/// The sidebar's tag rows, as `<tag> <open count>`, in order: each tag label followed by its count.
+fn tag_rows(harness: &Harness<'_, App>) -> Vec<String> {
+    let texts: Vec<String> = harness
+        .get_all_by_role(Role::Label)
+        .filter_map(|node| {
+            let node = node.accesskit_node();
+            node.label().or_else(|| node.value())
+        })
+        .collect();
+    texts
+        .windows(2)
+        .filter(|pair| pair[0].starts_with(['+', '@']) && pair[1].parse::<usize>().is_ok())
+        .map(|pair| format!("{} {}", pair[0], pair[1]))
+        .collect()
+}
+
+#[test]
+fn the_sidebar_lists_projects_and_contexts_with_open_counts() {
+    let dir = temp_dir("ui-tags");
+    let contents = "Write the report +work @office\nCall the client +Work @phone\n\
+                    x 2026-01-01 Plant bulbs +garden\n";
+    let harness = harness(&dir, contents, |_| {});
+    assert_eq!(
+        tag_rows(&harness),
+        ["+garden 0", "+work 2", "@office 1", "@phone 1"]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_sidebar_follows_changes_and_tabs() {
+    let dir = temp_dir("ui-tags-follow");
+    let mut harness = two_tabs(&dir, false);
+    harness.get_by_label("No projects");
+    harness.get_by_label("No contexts");
+
+    let input = harness.get_by_role(Role::TextInput);
+    input.focus();
+    input.type_text("Water plants +home");
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(tag_rows(&harness), ["+home 1"]);
+
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Water plants")
+        .click();
+    harness.run();
+    assert_eq!(tag_rows(&harness), ["+home 0"]);
+
+    tab(&harness, "Work").click();
+    harness.run();
+    assert!(tag_rows(&harness).is_empty());
+    harness.get_by_label("No projects");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_collapsed_section_is_saved_and_stays_collapsed() {
+    let dir = temp_dir("ui-tags-collapse");
+    let contents = "Write the report +work @office\n";
+    let mut harness = harness(&dir, contents, |_| {});
+
+    harness.get_by_label("Projects").click();
+    harness.run();
+    assert_eq!(tag_rows(&harness), ["@office 1"]);
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert!(config.projects_collapsed && !config.contexts_collapsed);
+
+    // A new start on the saved config.
+    let config_path = dir.join("config.toml");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(900.0, 650.0))
+        .with_max_steps(60)
+        .build_eframe(|cc| App::with_config(cc, config_path, closed_url()));
+    harness.run();
+    assert_eq!(tag_rows(&harness), ["@office 1"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_long_tag_list_scrolls_above_the_total() {
+    let dir = temp_dir("ui-tags-overflow");
+    let contents: String = (0..80)
+        .map(|i| format!("Item {i} +project{i:02}\n"))
+        .collect();
+    let harness = harness(&dir, &contents, |_| {});
+    let total = harness.get_by_label("Total items: 80");
+    let bottom = total.accesskit_node().bounding_box().unwrap().y1;
+    assert!(bottom <= 650.0, "{bottom}");
+    let _ = std::fs::remove_dir_all(dir);
+}
