@@ -17,6 +17,30 @@
        written by `scripts/changelog.sh YY.M.0`.
     4. Run the Release workflow on `releases/vYY.M`.
     5. Once the release is published, open the website post PR (see "Website post" below).
+  - **Minor release with betas, `YY.M.0-beta.N` then `YY.M.0` (RTM-139):** betas exist only for
+    minor releases, on their release branch, before the release.
+    1. Cut `releases/vYY.M` from `main` and move `main` to the next version, as steps 1 and 2 of
+       a minor release.
+    2. On the branch, a PR `build(release): set version to YY.M.0-beta.1 -- RTM-NN`:
+       `set-version`, `cargo update --workspace` and `scripts/changelog.sh YY.M.0-beta.1` (a new
+       `CHANGELOG.md` since the cut).
+    3. Run the Release workflow on `releases/vYY.M`. The draft is a prerelease and never Latest;
+       publish it, then open the website post PR (`channel = "beta"`).
+    4. Each further beta: the same PR for `YY.M.0-beta.N` (its section covers the commits since
+       beta.(N-1), whose draft must be published first), run, publish, post.
+    5. The release: a PR `build(release): set version to YY.M.0 -- RTM-NN` (its section covers
+       everything since the cut, above the betas'). Before running the release, dry-run the PR's
+       branch with `-f previous=v<last stable release>`: the release run's upgrade tests start
+       from the last beta, so this covers the most common upgrade. Then run, publish and post as
+       for any release.
+
+    The first beta cycle confirms what no run before a published beta can test:
+    - the beta.2 and `YY.M.0` version PRs' Release runs pass: their upgrade tests start from the
+      published beta.1 and last beta, and fail if Windows ends with two products or `apt` or
+      `dnf` with the old version;
+    - beta.1's draft shows "Set as a pre-release" ticked and "Set as the latest release"
+      unticked;
+    - a run for a beta after its release exists (`YY.M.0` published) is refused.
   - **Patch release `YY.M.P`:**
     1. Fixes land on `main` like all development and are cherry-picked to `releases/vYY.M` by PRs
        titled like the original PR (not the squash commit's subject, which ends in `(#NN)`).
@@ -34,7 +58,8 @@
     (26.1.2 after 26.2.0) is created with `make_latest: false`; when publishing it, make sure "Set
     as the latest release" is unticked. Download and try the draft, then publish it by hand.
     Publishing creates the `vX.Y.Z` tag, which starts no run: the workflow has no tag trigger
-    (RTM-102). Releases are not marked as prereleases.
+    (RTM-102). A beta (RTM-139) is created with `prerelease: true` and `make_latest: false`, and
+    is refused once its release exists; releases are not prereleases.
     Keep the `build(release): set version` and `docs(release): changelog` subjects exact when
     squash-merging: the changelog leaves those commits out.
   - **Website post (RTM-91):** each published release gets a post on the project website, and the
@@ -58,7 +83,9 @@
     `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in the Nix dev shell; bash only).
     A patch release's section covers the commits since the line's previous tag, prepended; a minor
     release's the commits since the previous release branch was cut (the first CalVer release:
-    since `v0.1.3`), in a new file. If the release branch moves while the changelog or version PR
+    since `v0.1.3`), in a new file. With betas: beta.1 as a minor release, in a new file; beta.N
+    since beta.(N-1), prepended; the release everything since the cut in one section (the beta
+    tags ignored), prepended above the betas'. If the release branch moves while the changelog or version PR
     is open, update the PR from the branch and run the script again. Release branches are never
     deleted: the next minor release's range starts at the previous one's cut.
   - **The first CalVer release** was 26.1.0 (RTM-98): its release issue first set `main` from
@@ -82,12 +109,14 @@
   RTM-38 they are built without Tauri: cargo-wix, cargo-deb, cargo-generate-rpm (RTM-9), appimagetool,
   and (RTM-11) `scripts/build-macos.sh`.
 - **Previous release (RTM-49):** the `version` job also outputs `previous`, the newest published
-  (non-draft, prereleases included) release below the version being built, for the upgrade tests.
+  (non-draft, betas included) release below the version being built, for the upgrade tests. A
+  beta sorts below its release, so beta.1 upgrades from the last stable release, beta.N from
+  beta.(N-1) and `YY.M.0` from its last beta (RTM-139): each step of the chain is tested once.
   A manual run can name another one with the `previous` input (`gh workflow run Release --ref <branch>
-  -f previous=v0.1.3`), which also lifts the Windows v0.1.3 skip.
+  -f previous=v0.1.3`, or a beta's tag), which also lifts the Windows v0.1.3 skip.
 - **Job structure:** `version` (resolves and verifies the release version once, on `ubuntu-latest`;
-  outputs the run's `mode`, `release`, `dry-run` or `check`, which `publish` acts on, `latest`, and
-  `notes`, the draft's body)
+  outputs the run's `mode`, `release`, `dry-run` or `check`, which `publish` acts on, `latest`,
+  `notes`, the draft's body, and for betas `beta`, `package` and `msi`, see "Versioning")
   → `windows`, `linux` and `macos` (build in parallel, each `needs: version`, each uploading its own
   `dist/` as a plain build artifact — `dist-windows` / `dist-linux` / `dist-macos`; Windows and macOS
   also test there) → `linux-deb`, `linux-deb-install` and `linux-rpm` (test the Linux packages from
@@ -96,7 +125,26 @@
   performs the dry-run upload or draft-release publish exactly once). The `release` gate needs the
   same jobs. The platform jobs deliberately do **not** call `softprops/action-gh-release` themselves —
   independent jobs calling it concurrently would race to create/update the same tagged release.
-- **Versioning:** `major.minor.patch`, all numeric (MSI `ProductVersion` allows nothing else). The
+- **Versioning:** `major.minor.patch`, all numeric, or a beta of a minor release,
+  `major.minor.0-beta.N` (RTM-139). The MSI `ProductVersion` allows only numbers, and each package
+  format orders versions its own way, so a beta takes a different form in each, all sorting below
+  the release:
+
+  | Where | Beta | Release |
+  |---|---|---|
+  | Cargo, tags, asset file names, `CHANGELOG.md` | `26.3.0-beta.1` | `26.3.0` |
+  | deb and RPM version (`~` sorts first) | `26.3.0~beta.1` | `26.3.0` |
+  | MSI `ProductVersion` (`DisplayVersion`) | `26.3.0.1` | `26.3.0` |
+  | macOS `CFBundleShortVersionString` | `26.3.0` | `26.3.0` |
+  | macOS `CFBundleVersion` | `26.3.0.1` | `26.3.0` |
+
+  cargo-deb and cargo-wix make their forms themselves; the workflow sets the RPM's
+  (`--set-metadata`), and `scripts/build-macos.sh` the bundle's. The MSI compares only the first
+  three fields, so beta.2 over beta.1 and the release over a beta are same-version upgrades, which
+  `AllowDowngrades='yes'` in `wix/main.wxs` allows. The install and upgrade checks compare each
+  package with its own form (the `version` job's `package` and `msi` outputs). The Windows exe's
+  numeric version is `26.3.0.0` for a beta (winresource ignores the pre-release part); its text
+  `ProductVersion` is the Cargo version. The
   0.x alpha ended with 26.1.0, the first CalVer release (`YY.minor.patch`); 0.1.4 was never
   released. `minor` counts the releases within a year and starts at 1 (the first release of 2027
   is `27.1.0`, the next `27.2.0`); `patch` fixes a release (`27.1.1`). Every `YY.*` is above `0.1.x`, so the MSI and apt upgrades keep working. The
@@ -237,7 +285,8 @@
   `rtmapp/assets/Info.plist`; keep the two equal, the job checks it), and joined with `lipo` into universal binaries. Each
   release build takes about 5 minutes per target.
 - **dmg:** `scripts/build-macos.sh <binary> <version> <output.dmg>` lays out `Rusty Todo.txt
-  Manager.app` by hand (binary, `Info.plist` with `@VERSION@` filled in, `icon.icns` as
+  Manager.app` by hand (binary, `Info.plist` with `@VERSION@` and `@BUNDLE_VERSION@` filled in,
+  see "Versioning", `icon.icns` as
   `Resources/rtmapp.icns`, both licences in `Resources/`), signs it ad hoc and packs it with an
   `/Applications` link using `hdiutil` (retried: it can fail with "Resource busy" on runners). Only
   tools that ship with macOS, no downloads. The rtmcli tarball (binary and `LICENSE`) is made in the

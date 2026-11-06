@@ -5,8 +5,10 @@
 #
 # Usage: scripts/set-version.sh <version> [repo-root]
 #
-#   version    "26.1.0" or "v26.1.0" (a leading v/V is stripped). Exactly major.minor.patch,
-#              all-numeric: MSI ProductVersion cannot represent pre-release or build suffixes.
+#   version    "26.1.0" or "v26.1.0" (a leading v/V is stripped): major.minor.patch, all
+#              numeric, or a beta of a minor release, "26.3.0-beta.1" (N from 1 to 65534; the
+#              packages carry it as 26.3.0~beta.1 and the MSI as 26.3.0.1). No other suffix: the
+#              MSI ProductVersion is numeric.
 #   repo-root  Root of the workspace. Defaults to the parent of this script's directory.
 #
 # The release workflow (.github/workflows/release.yml) treats the committed manifests as the
@@ -42,11 +44,12 @@ version=$1
 root=${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 
 normalised=${version#[vV]}
-[[ $normalised =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] ||
-    die "invalid version '$version': expected 'major.minor.patch' (optionally prefixed with 'v'), all-numeric, no pre-release or build-metadata suffix"
+[[ $normalised =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-beta\.([0-9]+))?$ ]] ||
+    die "invalid version '$version': expected 'major.minor.patch' or 'major.minor.0-beta.N' (optionally prefixed with 'v'), no other suffix"
 major=${BASH_REMATCH[1]}
 minor=${BASH_REMATCH[2]}
 patch=${BASH_REMATCH[3]}
+beta=${BASH_REMATCH[5]}
 
 # MSI ProductVersion limits: https://learn.microsoft.com/windows/win32/msi/productversion
 # The length check keeps the arithmetic below from overflowing; 10# avoids octal on "08".
@@ -59,6 +62,14 @@ check_max() {
 check_max major "$major" 255
 check_max minor "$minor" 255
 check_max patch "$patch" 65535
+# A beta is the MSI's fourth field (cargo-wix maps A.B.0-beta.N to A.B.0.N), and comes only before
+# a minor release.
+if [[ -n $beta ]]; then
+    ((10#$patch == 0)) || die "version '$normalised' invalid: betas are only for minor releases (A.B.0-beta.N)"
+    if ((${#beta} > 9 || 10#$beta < 1 || 10#$beta > 65534)); then
+        die "version '$normalised' invalid: the beta number must be from 1 to 65534"
+    fi
+fi
 
 # Patches the `version` of the [package] table. mode "get" prints the current line; mode "apply"
 # prints the patched file. Only the matched text is replaced, so line endings stay as they were.

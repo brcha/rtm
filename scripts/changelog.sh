@@ -5,15 +5,20 @@
 #
 # Usage: scripts/changelog.sh <version>
 #
-#   version  "26.1.0" or "v26.1.0", YY.M.P.
+#   version  "26.1.0" or "v26.1.0", YY.M.P, or a beta of a minor release, "26.3.0-beta.1".
 #
 # Ranges:
 #   - Patch release (P > 0): the commits since vYY.M.(P-1), prepended to CHANGELOG.md. That tag
 #     exists once the previous patch's draft release is published; until then this fails.
-#   - Minor release (P = 0): the commits since the previous release branch was cut (its merge base
-#     with HEAD), written to a new CHANGELOG.md. The previous release's tag is on its own branch,
-#     not reachable from here, so it cannot be the boundary. With no earlier release branch (the
-#     first CalVer release), the commits since v0.1.3, the last 0.x release.
+#   - Minor release (P = 0) and its first beta (YY.M.0-beta.1): the commits since the previous
+#     release branch was cut (its merge base with HEAD), written to a new CHANGELOG.md. The
+#     previous release's tag is on its own branch, not reachable from here, so it cannot be the
+#     boundary. With no earlier release branch (the first CalVer release), the commits since
+#     v0.1.3, the last 0.x release.
+#   - A later beta (YY.M.0-beta.N, N > 1): the commits since vYY.M.0-beta.(N-1), prepended. That
+#     tag exists once the previous beta's draft release is published.
+#   - A minor release after betas (vYY.M.0-beta.1 exists): every commit since the cut in one
+#     section, the beta tags ignored, prepended above the betas' sections.
 
 set -euo pipefail
 
@@ -25,11 +30,16 @@ die() {
 [[ $# -eq 1 ]] || die "usage: ${0##*/} <version>"
 
 version=${1#[vV]}
-[[ $version =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || die "invalid version '$1': expected YY.M.P"
+[[ $version =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-beta\.([0-9]+))?$ ]] ||
+    die "invalid version '$1': expected YY.M.P or YY.M.0-beta.N"
 major=${BASH_REMATCH[1]}
 minor=${BASH_REMATCH[2]}
 patch=${BASH_REMATCH[3]}
+beta=${BASH_REMATCH[5]}
 tag=v$version
+if [[ -n $beta ]] && ((patch > 0 || 10#$beta < 1)); then
+    die "invalid version '$1': betas are YY.M.0-beta.N, N from 1"
+fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -44,6 +54,12 @@ if ((patch > 0)); then
     git rev-parse --quiet --verify "refs/tags/$previous" >/dev/null ||
         die "tag $previous not found; publish its draft release first"
     [[ -f CHANGELOG.md ]] || die "CHANGELOG.md not found; a patch release adds to the line's file"
+    git cliff "$previous..HEAD" --tag "$tag" --prepend CHANGELOG.md
+elif [[ -n $beta ]] && ((10#$beta > 1)); then
+    previous=v$major.$minor.0-beta.$((10#$beta - 1))
+    git rev-parse --quiet --verify "refs/tags/$previous" >/dev/null ||
+        die "tag $previous not found; publish its draft release first"
+    [[ -f CHANGELOG.md ]] || die "CHANGELOG.md not found; a later beta adds to the line's file"
     git cliff "$previous..HEAD" --tag "$tag" --prepend CHANGELOG.md
 else
     # --prune: a deleted release branch's stale ref would otherwise move the range's start.
@@ -62,7 +78,13 @@ else
         base=v0.1.3
         echo "No earlier release branch: since $base"
     fi
-    git cliff "$base..HEAD" --tag "$tag" -o CHANGELOG.md
+    if [[ -z $beta ]] && git rev-parse --quiet --verify "refs/tags/v$major.$minor.0-beta.1" >/dev/null; then
+        # After betas: one section for everything since the cut, above the betas' sections.
+        [[ -f CHANGELOG.md ]] || die "CHANGELOG.md not found; the betas' sections belong below this one"
+        git cliff "$base..HEAD" --tag "$tag" --ignore-tags 'beta' --prepend CHANGELOG.md
+    else
+        git cliff "$base..HEAD" --tag "$tag" -o CHANGELOG.md
+    fi
 fi
 
 # The new section must have at least one entry before the next section starts.

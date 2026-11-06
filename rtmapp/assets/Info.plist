@@ -22,7 +22,7 @@
     <key>CFBundleShortVersionString</key>
     <string>@VERSION@</string>
     <key>CFBundleVersion</key>
-    <string>@VERSION@</string>
+    <string>@BUNDLE_VERSION@</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
     <key>LSMinimumSystemVersion</key>

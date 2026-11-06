@@ -34,9 +34,10 @@
     the same version is a no-op on the second run, not an error.
 
 .PARAMETER Version
-    The target version, e.g. "26.1.0" or "v26.1.0" (a leading v/V is stripped). Must be exactly
-    major.minor.patch, all-numeric. Pre-release/build-metadata suffixes (e.g. "-rc1", "+build5")
-    are rejected, because MSI ProductVersion cannot represent them.
+    The target version, e.g. "26.1.0" or "v26.1.0" (a leading v/V is stripped): major.minor.patch,
+    all-numeric, or a beta of a minor release, "26.3.0-beta.1" (N from 1 to 65534; the packages
+    carry it as 26.3.0~beta.1 and the MSI as 26.3.0.1). Other suffixes (e.g. "-rc1", "+build5")
+    are rejected, because MSI ProductVersion is numeric.
 
 .PARAMETER RepoRoot
     Root of the workspace containing rtmapp/, rtmcli/ and todotxt/. Defaults to the parent of this
@@ -67,14 +68,15 @@ Set-StrictMode -Version Latest
 
 $normalised = $Version -replace '^[vV]', ''
 
-if ($normalised -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
-    throw "Invalid version '$Version'. Expected 'major.minor.patch' (optionally prefixed with " +
-          "'v'), all-numeric, no pre-release or build-metadata suffix. Got: '$normalised'."
+if ($normalised -notmatch '^(\d+)\.(\d+)\.(\d+)(-beta\.(\d+))?$') {
+    throw "Invalid version '$Version'. Expected 'major.minor.patch' or 'major.minor.0-beta.N' " +
+          "(optionally prefixed with 'v'), no other suffix. Got: '$normalised'."
 }
 
 $major = [int]$Matches[1]
 $minor = [int]$Matches[2]
 $patch = [int]$Matches[3]
+$beta = $Matches[5]
 
 # MSI ProductVersion field limits: https://learn.microsoft.com/windows/win32/msi/productversion
 if ($major -gt 255) {
@@ -85,6 +87,16 @@ if ($minor -gt 255) {
 }
 if ($patch -gt 65535) {
     throw "Version '$normalised' invalid: patch ($patch) exceeds the MSI ProductVersion limit of 65535."
+}
+# A beta is the MSI's fourth field (cargo-wix maps A.B.0-beta.N to A.B.0.N), and comes only before
+# a minor release.
+if ($beta) {
+    if ($patch -ne 0) {
+        throw "Version '$normalised' invalid: betas are only for minor releases (A.B.0-beta.N)."
+    }
+    if ($beta.Length -gt 9 -or [int]$beta -lt 1 -or [int]$beta -gt 65534) {
+        throw "Version '$normalised' invalid: the beta number must be from 1 to 65534."
+    }
 }
 
 Write-Host "Setting version to $normalised"
