@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use todotxt::TodoItem;
 use todotxt::TodoLibrary;
+use todotxt::{TodoContext, TodoProject};
 
 #[derive(Parser)]
 #[command(name = "rtmcli")]
@@ -39,9 +40,10 @@ enum Commands {
         #[arg(short, long)]
         completed: bool,
 
-        /// Filter by due date
-        #[arg(value_enum)]
-        filter: Option<Filter>,
+        /// Filters, in any order: one due date filter (today, week, all, overdue, future),
+        /// +project and @context. An item must match all of them
+        #[arg(value_name = "FILTER")]
+        filters: Vec<String>,
     },
     /// List the projects in the file with their number of open items
     Projects,
@@ -309,7 +311,7 @@ fn find_again(lib: &TodoLibrary, target: &TodoItem, taken: &[usize]) -> usize {
     std::process::exit(1);
 }
 
-#[derive(ValueEnum, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Filter {
     Today,
     Week,
@@ -329,12 +331,45 @@ fn parse_filter(s: &str) -> Option<Filter> {
     }
 }
 
+/// Sorts `list`'s terms into its due date filter, projects and contexts, or exits 2 on an unknown
+/// term or a second date filter.
+fn list_filters(terms: &[String]) -> (Option<Filter>, Vec<TodoProject>, Vec<TodoContext>) {
+    let mut filter: Option<(&str, Filter)> = None;
+    let mut projects = Vec::new();
+    let mut contexts = Vec::new();
+    for term in terms {
+        if let Some(date) = parse_filter(term) {
+            if let Some((first, _)) = filter {
+                eprintln!("Error: only one due date filter, got '{first}' and '{term}'");
+                std::process::exit(2);
+            }
+            filter = Some((term, date));
+        } else if let Ok(project) = term.parse() {
+            projects.push(project);
+        } else if let Ok(context) = term.parse() {
+            contexts.push(context);
+        } else {
+            eprintln!(
+                "Error: unknown filter '{term}': use today, week, all, overdue, future, \
+                 +project or @context"
+            );
+            std::process::exit(2);
+        }
+    }
+    (filter.map(|(_, date)| date), projects, contexts)
+}
+
 fn main() {
     let cli = Cli::parse();
     // Before the file and its repository are looked at: the check reads no file and syncs nothing.
     if let Commands::CheckUpdate { channel } = cli.command {
         check_update(channel);
     }
+    // Before the repository is looked at, so a usage error never commits, syncs or hints first.
+    let list_filters = match &cli.command {
+        Commands::List { filters, .. } => Some(list_filters(filters)),
+        _ => None,
+    };
     let file_name = cli
         .file
         .unwrap_or_else(|| std::env::var("TODOTXT").unwrap_or_else(|_| "todo.txt".to_string()));
@@ -344,7 +379,8 @@ fn main() {
     let repo = repo.as_ref();
 
     match cli.command {
-        Commands::List { completed, filter } => {
+        Commands::List { completed, .. } => {
+            let (filter, projects, contexts) = list_filters.expect("parsed for list above");
             if let Some(repo) = repo {
                 repo.sync();
             }
@@ -372,6 +408,7 @@ fn main() {
                             None => true,
                             Some((start, end)) => item.due.is_some_and(|d| d >= start && d <= end),
                         }
+                        && item.matches(&projects, &contexts)
                 })
                 .collect();
 

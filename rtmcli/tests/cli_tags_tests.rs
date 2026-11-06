@@ -1,5 +1,7 @@
-//! The `projects` and `contexts` commands, run on a scratch todo.txt.
+//! Projects and contexts: the `projects` and `contexts` commands and filtering `list` by them, run
+//! on a scratch todo.txt.
 
+use chrono::{Duration, Local};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -101,5 +103,92 @@ fn missing_file_is_an_error() {
             "{output:?}"
         );
     }
+    cleanup(&file);
+}
+
+/// The date `days` from today.
+fn day(days: i64) -> String {
+    (Local::now().date_naive() + Duration::days(days))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
+/// The rows a successful `list` prints after its header.
+fn rows(output: &Output) -> Vec<String> {
+    lines(output).into_iter().skip(1).collect()
+}
+
+/// The exit code and stderr of a failed command.
+fn failure(output: &Output) -> (Option<i32>, String) {
+    (
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn list_filters_by_project() {
+    let file = todo_file("list-project", FIXTURE);
+    assert_eq!(
+        rows(&rtmcli(&file, &["list", "+work"])),
+        [
+            "1. Write the report +Work @office",
+            "2. Call the client +work @phone"
+        ]
+    );
+    cleanup(&file);
+}
+
+#[test]
+fn list_needs_every_tag_in_any_order() {
+    let file = todo_file("list-every", FIXTURE);
+    let expected = ["1. Call the client +work @phone"];
+    assert_eq!(rows(&rtmcli(&file, &["list", "+work", "@phone"])), expected);
+    assert_eq!(rows(&rtmcli(&file, &["list", "@phone", "+work"])), expected);
+    assert_eq!(
+        rows(&rtmcli(&file, &["list", "+work", "@yard"])),
+        ["No items found."]
+    );
+    cleanup(&file);
+}
+
+#[test]
+fn list_completed_by_tag() {
+    let file = todo_file("list-completed", FIXTURE);
+    assert_eq!(
+        rows(&rtmcli(&file, &["list", "-c", "+garden"])),
+        ["1. x 2026-11-01 2026-10-30 Plant the bulbs +garden @yard"]
+    );
+    cleanup(&file);
+}
+
+#[test]
+fn list_combines_tags_with_a_due_date_filter() {
+    let content = format!(
+        "Send the invoice +work due:{}\nBook the trip +work due:{}\nWater the plants +home due:{}\n",
+        day(0),
+        day(3),
+        day(0)
+    );
+    let file = todo_file("list-due", &content);
+    assert_eq!(
+        rows(&rtmcli(&file, &["list", "today", "+work"])),
+        [format!("1. Send the invoice +work due:{}", day(0))]
+    );
+    assert_eq!(rows(&rtmcli(&file, &["list", "+work", "all"])).len(), 2);
+    cleanup(&file);
+}
+
+#[test]
+fn list_rejects_unknown_filters() {
+    let file = todo_file("list-unknown", FIXTURE);
+    for term in ["work", "+", "@"] {
+        let (code, stderr) = failure(&rtmcli(&file, &["list", term]));
+        assert_eq!(code, Some(2), "{term}: {stderr}");
+        assert!(stderr.contains("unknown filter"), "{term}: {stderr}");
+    }
+    let (code, stderr) = failure(&rtmcli(&file, &["list", "today", "+work", "week"]));
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("only one due date filter"), "{stderr}");
     cleanup(&file);
 }
