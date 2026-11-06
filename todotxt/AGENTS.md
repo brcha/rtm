@@ -48,6 +48,9 @@ todotxt/tests/
 - `uncomplete_item(index)` clears `done` and `completion_date`, returns `Option<()>` (None =
   out of bounds). Priority and creation date are untouched — priority re-serializes as `(X)`
   automatically because `Display` keys that choice off `done`.
+- `replace_item(index, item)` (RTM-115) puts `item` in the old one's place and returns the old
+  item, `Option<TodoItem>` (None = out of bounds). The new item is stored as given: no date is
+  stamped, and `uuid`/`sub` are the caller's to carry over. Like every mutation it does not save.
 - `remove_item(index)` removes the item and, recursively, every item whose `sub` is the uuid
   of a removed item (cyclic links terminate). Returns `Option<Vec<TodoItem>>`: None = out of
   bounds, otherwise the removed items in file order. Like every mutation it does not save.
