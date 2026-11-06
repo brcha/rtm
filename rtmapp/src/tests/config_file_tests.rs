@@ -23,6 +23,8 @@ fn round_trip() {
         sync: false,
         vcs: None,
         sync_interval_minutes: 0,
+        check_for_updates: false,
+        update_channel: "beta".into(),
         files: vec![FileEntry {
             path: "/home/user/todo.txt".into(),
             name: Some("Home".into()),
@@ -43,7 +45,27 @@ fn file_with_only_file_name() {
     assert!(config.sync);
     assert_eq!(config.vcs, None);
     assert_eq!(config.sync_interval_minutes, 10);
+    // Files written before the update check existed check, on the stable channel.
+    assert!(config.check_for_updates);
+    assert_eq!(config.update_channel, "stable");
+    assert!(!config.beta());
     assert!(config.files.is_empty(), "parsing alone does not migrate");
+}
+
+#[test]
+fn only_beta_is_the_beta_channel() {
+    for (channel, beta) in [
+        ("beta", true),
+        ("stable", false),
+        ("Beta", false),
+        ("nightly", false),
+    ] {
+        let config = AppConfig {
+            update_channel: channel.into(),
+            ..AppConfig::default()
+        };
+        assert_eq!(config.beta(), beta, "{channel}");
+    }
 }
 
 #[test]

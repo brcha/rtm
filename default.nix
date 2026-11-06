@@ -70,6 +70,8 @@ in {
     inherit src;
     cargoLock.lockFile = ./Cargo.lock;
     cargoBuildFlags    = [ "-p" "rtmapp" ];
+    # No update check: Nix users update through the flake (doc/nix-packaging.md).
+    buildNoDefaultFeatures = true;
     cargoTestFlags     = [ "-p" "rtmapp" ];
     # The sync tests drive git.
     nativeCheckInputs  = [ pkgs.gitMinimal ];

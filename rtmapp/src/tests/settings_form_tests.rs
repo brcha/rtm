@@ -28,6 +28,8 @@ fn apply_leaves_other_keys_alone() {
     let form = SettingsForm {
         sync: false,
         interval: 0,
+        check_for_updates: true,
+        beta: false,
     };
     form.apply(&mut config);
     assert_eq!(
@@ -38,4 +40,31 @@ fn apply_leaves_other_keys_alone() {
             ..before
         }
     );
+}
+
+#[test]
+fn form_round_trips_the_update_settings() {
+    let config = AppConfig {
+        check_for_updates: false,
+        update_channel: "beta".to_owned(),
+        ..AppConfig::default()
+    };
+    let form = SettingsForm::new(&config);
+    assert!(!form.check_for_updates);
+    assert!(form.beta);
+    let mut written = AppConfig::default();
+    form.apply(&mut written);
+    assert!(!written.check_for_updates);
+    assert_eq!(written.update_channel, "beta");
+}
+
+#[test]
+fn an_unknown_channel_is_saved_as_stable() {
+    let config = AppConfig {
+        update_channel: "nightly".to_owned(),
+        ..AppConfig::default()
+    };
+    let mut written = config.clone();
+    SettingsForm::new(&config).apply(&mut written);
+    assert_eq!(written.update_channel, "stable");
 }

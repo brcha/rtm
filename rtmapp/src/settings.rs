@@ -1,5 +1,6 @@
-//! The Settings dialog (RTM-134), opened from the header's menu: the app-wide sync settings. The
-//! Git-or-Pijul choice is per file (RTM-124) and stays the question asked on open.
+//! The Settings dialog (RTM-134), opened from the header's menu: the app-wide sync settings and the
+//! update check (RTM-138). The Git-or-Pijul choice is per file (RTM-124) and stays the question
+//! asked on open.
 
 use eframe::egui::{self, Align, Color32, Layout, Modal, RichText, Ui};
 
@@ -14,6 +15,9 @@ const MAX_INTERVAL: u64 = 24 * 60;
 pub struct SettingsForm {
     pub sync: bool,
     pub interval: u64,
+    pub check_for_updates: bool,
+    /// The beta channel; off is stable.
+    pub beta: bool,
 }
 
 pub enum Outcome {
@@ -26,6 +30,8 @@ impl SettingsForm {
         SettingsForm {
             sync: config.sync,
             interval: config.sync_interval_minutes,
+            check_for_updates: config.check_for_updates,
+            beta: config.beta(),
         }
     }
 
@@ -33,6 +39,8 @@ impl SettingsForm {
     pub fn apply(&self, config: &mut AppConfig) {
         config.sync = self.sync;
         config.sync_interval_minutes = self.interval;
+        config.check_for_updates = self.check_for_updates;
+        config.update_channel = if self.beta { "beta" } else { "stable" }.to_owned();
     }
 }
 
@@ -88,6 +96,10 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) -> Option<Outcome>
             hint(ui, p, "0: only on open, on close and with Sync now.");
         });
     });
+    // Builds without the update check (the Nix package) have nothing to set.
+    if cfg!(feature = "update-check") {
+        updates_ui(ui, p, form);
+    }
     ui.add_space(4.0);
     let mut outcome = None;
     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
@@ -99,6 +111,29 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) -> Option<Outcome>
         }
     });
     outcome
+}
+
+fn updates_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        ui.checkbox(
+            &mut form.check_for_updates,
+            RichText::new("Check for updates").size(12.6),
+        );
+        hint(
+            ui,
+            p,
+            "Asks rtm.brcha.com once a day whether a newer release exists; nothing about you or \
+             your files is sent.",
+        );
+    });
+    ui.add_enabled_ui(form.check_for_updates, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Channel").size(12.6));
+            ui.radio_value(&mut form.beta, false, RichText::new("Stable").size(12.6));
+            ui.radio_value(&mut form.beta, true, RichText::new("Beta").size(12.6));
+        });
+    });
 }
 
 fn hint(ui: &mut Ui, p: &Palette, text: &str) {

@@ -48,6 +48,7 @@ rtmapp/
     ├── settings.rs         ← Settings dialog: the form (`SettingsForm`) and the modal
     ├── sync.rs             ← Sync through the file's repository: `find`, the worker thread
     ├── theme.rs            ← Palettes, fonts, egui styling
+    ├── update.rs           ← The update check (`UpdateCheck`) and its notice's release (`Notice`)
     └── tests/              ← Unit tests, one file per source file and topic
 ```
 
@@ -70,6 +71,8 @@ rtmapp/
 | icu_calendar 2.4    | CLDR first day of the week for a locale            |
 | icu_locale_core 2.4 | Parses the locale for `icu_calendar`               |
 | windows-sys 0.52    | Windows only: the taskbar ID (winit's version)     |
+| rtmupdate (path)    | The update check; optional, feature `update-check` |
+| log 0.4             | Logs a failed update check (through env_logger)    |
 | egui_kittest 0.37   | Dev-dependency: the UI tests (see Conventions)     |
 
 `Cargo.lock` also has pollster 0.4: `rfd` up to 0.17.2 needs it on Linux for `xdg-portal`. rfd's main
@@ -94,6 +97,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
   false turns off commits as well as pulls and pushes) and, until RTM-124, a top-level `vcs`.
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
+  Keys added for the update check (RTM-138): `check_for_updates` (default true) and
+  `update_channel` (`"stable"` or `"beta"`, default `"stable"`; anything else counts as stable,
+  `AppConfig::beta`).
   - **The file list (RTM-124, epic RTM-66):** `[[files]]` tables, the saved session, written last
     (after the plain keys). Each has `path`, an optional `name` (the tab label, set by hand) and an
     optional `vcs` (`"git"` or `"pijul"`, any case, the answer when the file's directory has both;
@@ -183,9 +189,34 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   winit's own app menu also has Quit (Cmd+Q) through `terminate:`; RTM-140 checks that it reaches
   `on_exit` too. A menu entry's accessible name ends in its shortcut text, which differs on macOS,
   so the UI tests match only its start (`entry` in `app_ui_tests.rs`).
-- **Settings dialog** (`settings.rs`, RTM-134): the app-wide sync settings, `sync` and
-  `sync_interval_minutes` (a `DragValue` from 0 to 1440 that keeps a larger value from
-  `config.toml` until it is edited). Save writes the config at once. A new interval takes effect at
+- **Update check** (`update.rs`, RTM-138, epic RTM-130):
+  - `UpdateCheck` runs `rtmupdate::check_at` 3 s after start and then every 24 h, each time on a
+    thread of its own that sends the answer over `mpsc` and asks for a repaint. `logic` takes the
+    answer (`results`) and starts a due check (`tick`, which also asks for a repaint when the next
+    one is due, so the timer runs in a hidden window).
+  - What is sent is rtmupdate's anonymous GET (see `rtmupdate/AGENTS.md`). A newer release becomes
+    the notice; an up-to-date answer removes it; a failure, an unknown file included, is only
+    logged (`log::warn!`, visible with `RUST_LOG=warn`). A release whose page is not `https://` is
+    such a failure: Download hands the URL to the OS, which would open a local file or another
+    app's link as readily.
+  - The notice is a top panel under the header, above the sidebar and the tabs: "Rusty Todo.txt
+    Manager <version> is available", **Download** (`ctx.open_url` with the release's post; the
+    notice stays) and a close button, which hides it for the rest of the run (`dismissed`). It is
+    the same for every package: no download or install.
+  - Settings' "Check for updates" and its channel (Stable, Beta): saving a change calls
+    `UpdateCheck::set`, which drops a running check (so an answer for the old channel never
+    shows), removes the notice, and checks at once when the check is on.
+  - The release list's URL is resolved once in `App::new` (`update::url()`, which is
+    `rtmupdate::url()`: `RTM_UPDATE_URL` or the site) and passed to `with_config`, so the UI
+    tests, which share one process, use a local server or a closed port instead of setting the
+    variable.
+  - The default cargo feature `update-check` pulls in `rtmupdate`. Without it (the Nix package,
+    `buildNoDefaultFeatures`), the check is never enabled and the Settings dialog has no update
+    controls; the config keys keep their values. `cargo test -p rtmapp --no-default-features`
+    runs that build's tests.
+- **Settings dialog** (`settings.rs`, RTM-134): the update check's controls (see Update check
+  above) and the app-wide sync settings, `sync` and `sync_interval_minutes` (a `DragValue` from 0
+  to 1440 that keeps a larger value from `config.toml` until it is edited). Save writes the config at once. A new interval takes effect at
   once (`tick` reads it); a change of `sync` sets `reconnect`, and `reconnect_when_idle`, called in
   `logic`, runs `connect` once no job is outstanding, so a running job's result is not lost and the
   pending changes are written first. The Git-or-Pijul choice is per file (RTM-124) and is not in
@@ -321,9 +352,10 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   in-process, with no display or GPU, so they run in `rust.yml` on all three OSes and in the Nix
   check phase like any other test. They click and type through the AccessKit tree, then check the
   todo.txt and config on disk.
-  - The `harness` helper writes a temp todo.txt and `config.toml` (sync off) and starts the app
-    with `App::with_config(cc, path)`, the constructor `App::new` calls with the real path. Never
-    `App::new` in a test. Temp dirs use a `ui-` prefix: all unit tests share one process, and
+  - The `harness` helper writes a temp todo.txt and `config.toml` (sync and the update check off)
+    and starts the app with `App::with_config(cc, path, url)`, the constructor `App::new` calls
+    with the real path and the real release list; `url` is a closed port (`harness_at` takes a
+    local server's). Never `App::new` in a test. Temp dirs use a `ui-` prefix: all unit tests share one process, and
     two tests that pass `temp_dir` the same name share, and wipe, one directory.
   - Widgets are found by role and accessible name. A row checkbox is named after its item's
     description (and is toggled when done), like the row's text label, so queries name the role

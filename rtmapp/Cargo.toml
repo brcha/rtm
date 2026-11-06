@@ -18,10 +18,18 @@ rfd = "0.16"
 # Waits for rfd's async file dialog on its own thread (the one exception to "no async").
 pollster = "1"
 env_logger = { version = "0.11.11", default-features = false }
+log = "0.4"
+rtmupdate = { path = "../rtmupdate", optional = true }
 # The calendar's first day of the week: the OS locale, and CLDR's week data for it.
 sys-locale = "0.3"
 icu_calendar = "2.4"
 icu_locale_core = "2.4"
+
+[features]
+default = ["update-check"]
+# The update check and its notice. The Nix package builds without it: Nix users update through the
+# flake.
+update-check = ["dep:rtmupdate"]
 
 # The taskbar ID (AppUserModelID); 0.52 is the version winit already pulls in.
 [target.'cfg(windows)'.dependencies]

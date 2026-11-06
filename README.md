@@ -178,6 +178,21 @@ CLI:
 
 ARM64 and 32-bit Windows builds are not currently produced.
 
+### Updates
+
+The desktop app checks for a newer release a few seconds after it starts and once a day while it
+runs. When one exists, a notice under the title bar offers it: **Download** opens the release's
+page, where you download it as you did the first time; the × hides the notice until the next start.
+`rtmcli check-update` does the same check on demand and prints the release's page; it is the only
+rtmcli command that uses the network.
+
+Each check is one request for `https://rtm.brcha.com/releases.json`, with no version or identifier,
+so the website sees only your IP address. Turn the desktop app's check off in **Settings** ("Check
+for updates", stored as `check_for_updates = false` in `rtm/config.toml`). To be offered beta
+releases too, choose the Beta channel there (`update_channel = "beta"`), or run
+`rtmcli check-update --channel beta`. The Nix packages have no update check; update them through
+your flake inputs.
+
 ## Several files in the desktop app
 
 The desktop app keeps several todo.txt files open, one tab each above the list. **New File** and
@@ -222,14 +237,6 @@ title bar), or set it to 0 to sync only on open, on close and on demand; it is s
 - rtm uses the `git` or `pijul` you already have, with your SSH keys and credential helpers, and
   never asks for a password. For an HTTPS remote, set up a git credential helper (Git Credential
   Manager, `osxkeychain`, `libsecret`, ...); otherwise use an SSH remote with `ssh-agent`.
-
-## Checking for updates
-
-`rtmcli check-update` tells you whether a newer release exists, with a link to its notes;
-`rtmcli check-update --channel beta` also reports beta releases. It is the only command that uses
-the network: it sends one request for `https://rtm.brcha.com/releases.json`, with no version or
-identifier, so the website sees only your IP address. The Nix packages have no update check;
-update them through your flake inputs.
 
 ## General plan
 

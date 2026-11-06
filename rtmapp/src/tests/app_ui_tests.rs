@@ -16,10 +16,21 @@ const FILTERS: [&str; 4] = [
 ];
 
 /// The app as `main` starts it, on a temp config naming a temp todo.txt with `contents`. `config`
-/// adjusts the config first; sync is off. The window has `main`'s size, so the edit dialog fits.
+/// adjusts the config first; sync and the update check are off, and the release list is on a
+/// closed port. The window has `main`'s size, so the edit dialog fits.
 fn harness(
     dir: &Path,
     contents: &str,
+    config: impl FnOnce(&mut AppConfig),
+) -> Harness<'static, App> {
+    harness_at(dir, contents, closed_url(), config)
+}
+
+/// `harness` with the release list at `update_url`.
+fn harness_at(
+    dir: &Path,
+    contents: &str,
+    update_url: String,
     config: impl FnOnce(&mut AppConfig),
 ) -> Harness<'static, App> {
     let file = dir.join("todo.txt");
@@ -27,6 +38,7 @@ fn harness(
     let mut settings = AppConfig {
         file_name: Some(file.to_string_lossy().into_owned()),
         sync: false,
+        check_for_updates: false,
         ..AppConfig::default()
     };
     config(&mut settings);
@@ -36,9 +48,19 @@ fn harness(
         .with_size(egui::vec2(900.0, 650.0))
         // The modal's fade and a focused text cursor take more frames than the default 4.
         .with_max_steps(60)
-        .build_eframe(|cc| App::with_config(cc, config_path));
+        .build_eframe(|cc| App::with_config(cc, config_path, update_url));
     harness.run();
     harness
+}
+
+/// A release-list URL nothing listens on, so a check through it fails.
+fn closed_url() -> String {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    format!("http://127.0.0.1:{port}/releases.json")
 }
 
 /// The items shown, in list order: the names of the row checkboxes.
@@ -677,5 +699,163 @@ fn an_item_moves_to_another_tab_after_asking() {
         work.lines().nth(1).is_some_and(|l| l.ends_with("Alpha")),
         "{work}"
     );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// The update notice and its settings (RTM-138).
+
+/// Answers one request with a release list holding the stable release `version`.
+#[cfg(feature = "update-check")]
+fn serve_release(version: &str) -> (String, std::thread::JoinHandle<()>) {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/releases.json", listener.local_addr().unwrap());
+    let body = format!(
+        r#"{{"schema": 1, "releases": [{{"version": "{version}", "channel": "stable", "date": "2026-11-06", "url": "https://rtm.example/news/{version}/"}}]}}"#
+    );
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
+                break;
+            }
+        }
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).unwrap();
+    });
+    (url, server)
+}
+
+#[cfg(feature = "update-check")]
+const NOTICE: &str = "Rusty Todo.txt Manager 999.0.0 is available";
+
+/// Steps frames until the notice shows, for 5 s at most: the check runs on its own thread.
+#[cfg(feature = "update-check")]
+fn wait_for_notice(harness: &mut Harness<'_, App>) {
+    let start = Instant::now();
+    while harness.query_by_label(NOTICE).is_none() {
+        assert!(start.elapsed() < Duration::from_secs(5), "no notice");
+        std::thread::sleep(Duration::from_millis(10));
+        harness.step();
+    }
+}
+
+#[cfg(feature = "update-check")]
+#[test]
+fn a_newer_release_shows_the_notice_download_opens_it_and_close_hides_it() {
+    let dir = temp_dir("ui-update-notice");
+    let (url, server) = serve_release("999.0.0");
+    let mut harness = harness_at(&dir, "Alpha\n", url, |config| {
+        config.check_for_updates = true;
+    });
+    // Due at once instead of a few seconds after start.
+    harness.state_mut().updates.set(true, Instant::now());
+    wait_for_notice(&mut harness);
+    server.join().unwrap();
+
+    harness.get_by_label("Download").click();
+    harness.step();
+    let opened: Vec<_> = harness
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            egui::OutputCommand::OpenUrl(open) => Some(open.url.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(opened, ["https://rtm.example/news/999.0.0/"]);
+    harness.run();
+    // Download leaves the notice, so the page can be opened again.
+    harness.get_by_label(NOTICE);
+
+    harness.get_by_label("Close the update notice").click();
+    harness.run();
+    assert!(harness.query_by_label(NOTICE).is_none());
+    // A later answer does not bring it back in this run.
+    harness.state_mut().updates.notice = Some(Notice {
+        version: "999.0.1".to_owned(),
+        url: "https://rtm.example/news/999.0.1/".to_owned(),
+    });
+    harness.run();
+    assert!(harness.query_by_label_contains("is available").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[cfg(feature = "update-check")]
+#[test]
+fn settings_turns_the_check_on_and_picks_the_channel() {
+    let dir = temp_dir("ui-update-settings");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    open_menu(&mut harness);
+    entry(&harness, "Settings…").click();
+    harness.run();
+    assert!(
+        harness
+            .get_by_role_and_label(Role::RadioButton, "Beta")
+            .accesskit_node()
+            .is_disabled(),
+        "the channel waits for the check"
+    );
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Check for updates")
+        .click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Beta")
+        .click();
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert!(config.check_for_updates);
+    assert_eq!(config.update_channel, "beta");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[cfg(feature = "update-check")]
+#[test]
+fn turning_the_check_off_hides_the_notice() {
+    let dir = temp_dir("ui-update-off");
+    let mut harness = harness(&dir, "Alpha\n", |config| config.check_for_updates = true);
+    harness.state_mut().updates.notice = Some(Notice {
+        version: "999.0.0".to_owned(),
+        url: "https://rtm.example/news/999.0.0/".to_owned(),
+    });
+    harness.run();
+    harness.get_by_label(NOTICE);
+
+    open_menu(&mut harness);
+    entry(&harness, "Settings…").click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Check for updates")
+        .click();
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+
+    assert!(harness.query_by_label(NOTICE).is_none());
+    assert!(!AppConfig::load(&dir.join("config.toml")).check_for_updates);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[cfg(not(feature = "update-check"))]
+#[test]
+fn a_build_without_the_check_has_no_update_settings() {
+    let dir = temp_dir("ui-update-none");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    open_menu(&mut harness);
+    entry(&harness, "Settings…").click();
+    harness.run();
+    harness.get_by_label("Sync every");
+    assert!(harness.query_by_label("Check for updates").is_none());
     let _ = std::fs::remove_dir_all(dir);
 }

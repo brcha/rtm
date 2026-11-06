@@ -21,6 +21,11 @@ pub struct AppConfig {
     pub vcs: Option<String>,
     /// Minutes between background syncs (RTM-20); 0 syncs only on open, on exit and on demand.
     pub sync_interval_minutes: u64,
+    /// Check for a newer release at start and daily (RTM-138). On unless set to false.
+    pub check_for_updates: bool,
+    /// `"stable"` or `"beta"`: the releases the update check offers. Anything else counts as
+    /// stable.
+    pub update_channel: String,
     /// The saved session (RTM-124): the todo.txt files the app keeps; `file_name` names the active
     /// one and stays for older versions, which ignore this list. Last, so the plain keys are
     /// written before the tables.
@@ -50,6 +55,8 @@ impl Default for AppConfig {
             sync: true,
             vcs: None,
             sync_interval_minutes: 10,
+            check_for_updates: true,
+            update_channel: "stable".to_owned(),
             files: Vec::new(),
         }
     }
@@ -64,6 +71,11 @@ pub fn config_path() -> PathBuf {
 }
 
 impl AppConfig {
+    /// Whether the update check offers betas; an unknown channel counts as stable.
+    pub fn beta(&self) -> bool {
+        self.update_channel == "beta"
+    }
+
     /// Reads the config. A missing or invalid file gives the defaults. Nothing is written: a
     /// migrated config reaches the file on the next save.
     pub fn load(path: &Path) -> Self {
