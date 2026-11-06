@@ -89,7 +89,9 @@
   - The workflow token is read-only. The comments go out through the Claude GitHub App, which is
     installed on this repository only; the action gets the app's token in exchange for the run's
     OIDC token (`id-token: write`). Claude may only run the `gh` commands the plugin needs, which
-    read the pull request and post the review.
+    read the pull request and post the review. It may also start subagents (`Agent`, formerly
+    `Task`): the plugin runs several review agents in parallel and then checks their findings.
+    Without that tool it falls back to a quick single pass.
   - The action refuses to run while the workflow file differs from the copy on `main` ("Workflow
     validation failed"). So a pull request that changes `claude-review.yml` is not reviewed by
     it.
