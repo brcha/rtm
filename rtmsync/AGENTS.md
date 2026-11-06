@@ -19,9 +19,10 @@ per-change sync (RTM-20), the GUI's check on open (RTM-70).
 ```
 rtmsync/
 ├── src/
-│   ├── lib.rs                ← Vcs enum, detect(), root(), Vcs::{commit, sync, state, is_tracked,
-│   │                           is_conflicted, has_remote}, State, Error
-│   └── tests/                ← Unit tests: markers (lib_detect), timed calls (lib_process)
+│   ├── lib.rs                ← Vcs enum, detect(), root(), lock_target(), Vcs::{commit, sync,
+│   │                           state, is_tracked, is_conflicted, has_remote}, State, Error
+│   └── tests/                ← Unit tests: markers (lib_detect), timed calls (lib_process),
+│                               the lock target (lib_lock)
 └── tests/
     ├── sync_detect_tests.rs  ← detect() in repositories made by git init and pijul init
     ├── sync_git_tests.rs     ← Vcs::commit, Vcs::state and Vcs::sync with Git
@@ -40,6 +41,10 @@ rtmsync/
   subtasks that sync.
 - `root(path)` (RTM-126) returns that nearest directory (symlinks resolved as for `detect`), the
   repository's root as far as markers tell; rtmapp keys its per-repository sync by it.
+- `lock_target(path)` (RTM-142) is what a write locks with `todotxt::WriteLock`: `root(path)` when
+  the file is in a repository, else the path unchanged. A pull rewrites every file of the
+  repository, so every rtm process (rtmapp, rtmcli, the MCP server) locks the repository, whether
+  or not it syncs the file; one function keeps them from disagreeing.
 - `.git` is tested with `exists`, not `is_dir`: it is a file in linked worktrees and submodules.
 - The file's symlinks are resolved first, so a link into a repository counts as versioned. A file
   that does not exist yet is made absolute instead, so the walk still covers its parents.

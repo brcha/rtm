@@ -448,6 +448,14 @@ pub fn root(file: &Path) -> Option<PathBuf> {
     nearest(file).map(|(dir, _)| dir)
 }
 
+/// What a write of `file` locks (`todotxt::WriteLock`): its repository's directory, as `root`
+/// finds it, when it is in one, else the file itself. A pull rewrites every file of a repository,
+/// so locking only the file could not keep another process's pull out of a write. Markers only, so
+/// every rtm process computes the same path, whether or not it syncs the file.
+pub fn lock_target(file: &Path) -> PathBuf {
+    root(file).unwrap_or_else(|| file.to_path_buf())
+}
+
 /// The nearest directory holding a marker, and the VCSs whose markers it holds.
 fn nearest(file: &Path) -> Option<(PathBuf, Vec<Vcs>)> {
     let file = resolve(file);
@@ -468,3 +476,7 @@ mod detect_tests;
 #[cfg(test)]
 #[path = "tests/lib_process_tests.rs"]
 mod process_tests;
+
+#[cfg(test)]
+#[path = "tests/lib_lock_tests.rs"]
+mod lock_tests;
