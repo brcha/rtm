@@ -42,6 +42,9 @@ pkgs.mkShell {
     zola
     lychee
     jq
+    # The Pijul sync test, which signs through a scratch ssh-agent; without pijul it skips itself.
+    pijul
+    openssh
   ];
   # Start from empty values instead of whatever the calling session exports: a leaked
   # `-L/usr/lib` links against the system glibc instead of the shell's, and the binary
