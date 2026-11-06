@@ -52,3 +52,15 @@
   Publishing is not CI's job: Vercel's Git integration builds and deploys the site from
   `vercel.json` (RTM-90, see `site/AGENTS.md`); its preview status on pull requests is not a
   required check.
+- **Actions security (RTM-145):** every `uses:` names a full commit SHA, with the release it
+  stands for as a comment (`actions/checkout@<sha> # v7.0.1`), so a moved or replaced tag cannot
+  change what runs. The repository setting "Require actions to be pinned to a full-length commit
+  SHA" enforces it: a workflow with a tag or branch reference fails.
+  - Take each SHA from the action's own repository, never from a fork.
+    `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha` resolves an annotated tag to its commit.
+  - To update an action, look up the new release's SHA and change both the SHA and the comment.
+  - `dtolnay/rust-toolchain` has no releases, only branches named after toolchains. It is pinned
+    to a commit of its `stable` branch. That branch's `toolchain` input defaults to `stable`; the
+    workflows still pass `toolchain: stable`, so the choice shows next to the SHA.
+  - Workflows from fork pull requests wait for the maintainer's approval ("Require approval for
+    all external contributors"), not only those from first-time contributors.
