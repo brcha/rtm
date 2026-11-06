@@ -43,6 +43,10 @@ enum Commands {
         #[arg(value_enum)]
         filter: Option<Filter>,
     },
+    /// List the projects in the file with their number of open items
+    Projects,
+    /// List the contexts in the file with their number of open items
+    Contexts,
     /// Add a new item
     Add {
         /// Todo description in Todo.txt format
@@ -378,6 +382,30 @@ fn main() {
 
             if filtered_items.is_empty() {
                 println!("No items found.");
+            }
+        }
+        Commands::Projects | Commands::Contexts => {
+            if let Some(repo) = repo {
+                repo.sync();
+            }
+            if let Err(e) = lib.load() {
+                eprintln!("Error loading file '{}': {}", file_name, e);
+                std::process::exit(1);
+            }
+            let (kind, tags): (&str, Vec<(String, usize)>) =
+                if matches!(cli.command, Commands::Projects) {
+                    let tags = lib.projects().into_iter();
+                    ("Projects", tags.map(|(p, n)| (p.to_string(), n)).collect())
+                } else {
+                    let tags = lib.contexts().into_iter();
+                    ("Contexts", tags.map(|(c, n)| (c.to_string(), n)).collect())
+                };
+            println!("{} in '{}':", kind, file_name);
+            for (tag, open) in &tags {
+                println!("{tag} ({open})");
+            }
+            if tags.is_empty() {
+                println!("No {} found.", kind.to_lowercase());
             }
         }
         Commands::Add { description } => {

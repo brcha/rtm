@@ -18,6 +18,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ├── cli_filter_tests.rs    ← The due-date filters of list and complete
 ├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
 ├── cli_sync_tests.rs      ← Sync through git
+├── cli_tags_tests.rs      ← projects and contexts
 └── cli_update_tests.rs    ← check-update against a local HTTP server
 ```
 
@@ -28,6 +29,8 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 | Command        | Description                                              |
 |----------------|----------------------------------------------------------|
 | `list`         | List items, optionally filtered by completion and date   |
+| `projects`     | List the projects with their open-item counts (RTM-122)  |
+| `contexts`     | List the contexts with their open-item counts (RTM-122)  |
 | `add`          | Add a new item in Todo.txt format                        |
 | `complete`     | Complete items by filter, index, or UUID                 |
 | `delete`       | Delete an item and its sub-items, after confirmation     |
@@ -41,6 +44,9 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 - **Edition:** Rust 2024
 - File path resolved from: `-f <file>` flag → `$TODOTXT` env var → `todo.txt` (cwd fallback).
 - Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
+- `projects` / `contexts` sync first and load like `list`, then print `<tag> (<open items>)`
+  lines from `TodoLibrary::projects` / `contexts` (order, case merging and `(0)` for done-only
+  tags come from `todotxt`, see `todotxt/AGENTS.md`). They never write.
 - `complete` accepts: a filter name (optionally + index/UUID), an absolute index, or a UUID.
 - `delete` takes one item: a number as shown by `list` (with `-c`, as shown by `list -c`) or a
   UUID (open or completed; `-c` does not apply). It also removes the item's sub-items
