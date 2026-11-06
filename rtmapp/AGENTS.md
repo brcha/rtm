@@ -554,7 +554,9 @@ the binary, `Info.plist`, the icon and both licences.
   `APPIMAGE_TOOLS_DIR` to keep its downloads).
 - **dmg:** `scripts/build-macos.sh <binary> <version> <output.dmg>`, on a Mac only. Bundle
   `Rusty Todo.txt Manager.app`, executable `rtmapp`, metadata from `assets/Info.plist` (identifier
-  `com.brcha.rtm`, minimum macOS 11.0, `@VERSION@` replaced by the version), ad-hoc signature. The
+  `com.brcha.rtm`, minimum macOS 11.0, `@VERSION@` replaced by the version and `@BUNDLE_VERSION@`
+  by the bundle version, which differ for a beta: see "Versioning" in `doc/release-process.md`),
+  ad-hoc signature. The
   Release workflow passes a universal binary; a local `target/release/rtmapp` works too, for the host's
   architecture only. Gatekeeper blocks the first launch of a downloaded copy (see the README).
 - **MSI:** `wix/main.wxs`, built with `cargo wix -p rtmapp --no-build` on Windows. It replaces the Tauri

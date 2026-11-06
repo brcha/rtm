@@ -27,8 +27,12 @@ assets=$root/rtmapp/assets
 name="Rusty Todo.txt Manager"
 
 [[ -x $binary ]] || die "not an executable: $binary"
-# Info.plist versions are numeric; also keeps the sed below safe.
-[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must look like 1.2.3, got '$version'"
+# Info.plist versions are numeric, so a beta 1.2.0-beta.3 is 1.2.0 (short) and 1.2.0.3 (bundle);
+# the check also keeps the sed below safe.
+[[ $version =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-beta\.([0-9]+))?$ ]] ||
+    die "version must look like 1.2.3 or 1.2.0-beta.3, got '$version'"
+short_version=${BASH_REMATCH[1]}
+bundle_version=$short_version${BASH_REMATCH[3]:+.${BASH_REMATCH[3]}}
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -37,7 +41,8 @@ app=$work/dmg/$name.app
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary" "$app/Contents/MacOS/rtmapp"
 chmod 755 "$app/Contents/MacOS/rtmapp"
-sed "s/@VERSION@/$version/g" "$assets/Info.plist" > "$app/Contents/Info.plist"
+sed -e "s/@VERSION@/$short_version/g" -e "s/@BUNDLE_VERSION@/$bundle_version/g" \
+    "$assets/Info.plist" > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
 cp "$assets/icons/icon.icns" "$app/Contents/Resources/rtmapp.icns"
 cp "$root/LICENSE" "$assets/fonts/Inter-LICENSE.txt" "$app/Contents/Resources/"
