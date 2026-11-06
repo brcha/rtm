@@ -3,7 +3,7 @@
 
 use egui::{Key, Modifiers, accesskit::Role};
 use egui_kittest::Harness;
-use egui_kittest::kittest::{NodeT, Queryable};
+use egui_kittest::kittest::{NodeT, Queryable, by};
 
 use super::support_tests::*;
 use super::*;
@@ -862,19 +862,25 @@ fn a_build_without_the_check_has_no_update_settings() {
 
 // Projects and contexts in the sidebar (RTM-120).
 
-/// The sidebar's tag rows, as `<tag> <open count>`, in order: each tag label followed by its count.
+/// The sidebar's tag rows, as `<tag> <open count>`, in order: each tag button followed by its
+/// count label, with ` (selected)` while the tag filters the list.
 fn tag_rows(harness: &Harness<'_, App>) -> Vec<String> {
-    let texts: Vec<String> = harness
-        .get_all_by_role(Role::Label)
+    let widgets = by().predicate(|node| matches!(node.role(), Role::Button | Role::Label));
+    let texts: Vec<(String, bool)> = harness
+        .query_all(widgets)
         .filter_map(|node| {
             let node = node.accesskit_node();
-            node.label().or_else(|| node.value())
+            let text = node.label().or_else(|| node.value())?;
+            Some((text, node.toggled() == Some(egui::accesskit::Toggled::True)))
         })
         .collect();
     texts
         .windows(2)
-        .filter(|pair| pair[0].starts_with(['+', '@']) && pair[1].parse::<usize>().is_ok())
-        .map(|pair| format!("{} {}", pair[0], pair[1]))
+        .filter(|pair| pair[0].0.starts_with(['+', '@']) && pair[1].0.parse::<usize>().is_ok())
+        .map(|pair| {
+            let selected = if pair[0].1 { " (selected)" } else { "" };
+            format!("{} {}{selected}", pair[0].0, pair[1].0)
+        })
         .collect()
 }
 
@@ -951,5 +957,123 @@ fn a_long_tag_list_scrolls_above_the_total() {
     let total = harness.get_by_label("Total items: 80");
     let bottom = total.accesskit_node().bounding_box().unwrap().y1;
     assert!(bottom <= 650.0, "{bottom}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// Filtering from the sidebar (RTM-121).
+
+const TAGGED: &str = "Write the report +work @office\nCall the client +work @phone\n\
+                      Fix the fence +home @phone\nx 2026-01-01 Plant bulbs +garden\n";
+
+#[test]
+fn clicking_a_tag_filters_the_list_and_clicking_it_again_shows_all() {
+    let dir = temp_dir("ui-filter-tag");
+    let mut harness = harness(&dir, TAGGED, |_| {});
+    let config = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+
+    harness.get_by_label("+work").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Write the report", "Call the client"]);
+    assert!(tag_rows(&harness).contains(&"+work 2 (selected)".to_owned()));
+
+    harness.get_by_label("+work").click();
+    harness.run();
+    assert_eq!(
+        rows(&harness),
+        ["Write the report", "Call the client", "Fix the fence"]
+    );
+    // The selection is not saved.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("config.toml")).unwrap(),
+        config
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn every_selected_tag_must_match_and_clear_filter_shows_all() {
+    let dir = temp_dir("ui-filter-clear");
+    let mut harness = harness(&dir, TAGGED, |_| {});
+
+    harness.get_by_label("+work").click();
+    harness.run();
+    harness.get_by_label("@phone").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Call the client"]);
+
+    harness.get_by_label("Clear filter (2)").click();
+    harness.run();
+    assert_eq!(
+        rows(&harness),
+        ["Write the report", "Call the client", "Fix the fence"]
+    );
+    assert!(harness.query_by_label_contains("Clear filter").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_tag_filter_combines_with_the_view_settings() {
+    let dir = temp_dir("ui-filter-view");
+    let mut harness = harness(&dir, TAGGED, |_| {});
+
+    harness.get_by_label("+garden").click();
+    harness.run();
+    assert!(rows(&harness).is_empty());
+    harness.get_by_label("No items found.");
+
+    harness.get_by_label("Show completed items").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Plant bulbs"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn each_tab_keeps_its_own_selection() {
+    let dir = temp_dir("ui-filter-tabs");
+    let work = dir.join("work.txt");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(&work, "Slides +talk\nFlights +travel\n").unwrap();
+    let mut harness = harness(&dir, TAGGED, |config| {
+        let todo = config.file_name.clone().unwrap();
+        config.add_file(&todo);
+        config.add_file(&work.to_string_lossy());
+        config.files.last_mut().unwrap().name = Some("Work".into());
+    });
+
+    harness.get_by_label("+home").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Fix the fence"]);
+
+    tab(&harness, "Work").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Slides", "Flights"]);
+    assert!(harness.query_by_label_contains("Clear filter").is_none());
+
+    tab(&harness, "todo.txt").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Fix the fence"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_selected_tag_that_leaves_the_file_leaves_the_selection() {
+    let dir = temp_dir("ui-filter-prune");
+    let mut harness = harness(&dir, TAGGED, |_| {});
+
+    harness.get_by_label("+home").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Fix the fence"]);
+
+    harness
+        .get_by_role_and_label(Role::Label, "Fix the fence +home @phone")
+        .click();
+    harness.run();
+    harness.get_by_label("Delete item").click();
+    harness.run();
+    harness.get_by_label("Delete").click();
+    harness.run();
+
+    assert_eq!(rows(&harness), ["Write the report", "Call the client"]);
+    assert!(harness.query_by_label_contains("Clear filter").is_none());
     let _ = std::fs::remove_dir_all(dir);
 }

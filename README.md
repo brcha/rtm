@@ -234,7 +234,9 @@ and the argument disappears.
 
 The desktop app lists the projects and contexts of the shown file in its sidebar, with the same
 open-item counts, in Projects and Contexts sections that collapse from their headers (the app
-remembers which ones are collapsed).
+remembers which ones are collapsed). Click tags there to filter the list: an item must carry every
+selected tag, a second click removes a tag, and **Clear filter** shows everything again. Each
+tab keeps its own selection until the app closes.
 
 ## Syncing through Git or Pijul
 

@@ -7,7 +7,7 @@ use eframe::egui::{
     self, Align, Color32, Frame, Layout, Margin, RichText, Stroke, Ui,
     text::{LayoutJob, TextFormat},
 };
-use todotxt::{TodoItem, TodoLibrary};
+use todotxt::{TodoContext, TodoItem, TodoLibrary, TodoProject};
 
 use crate::config::{self, AppConfig};
 use crate::edit::{self, ConfirmMove, EditForm, MoveTarget, Outcome};
@@ -115,6 +115,10 @@ struct OpenFile {
     /// A pull changed the edit dialog's item, or what deleting it would remove; Save and Delete
     /// are refused.
     stale: bool,
+    /// The tags selected in the sidebar (RTM-121): the list shows only the items that carry all of
+    /// them. Kept for the run, not saved.
+    projects: Vec<TodoProject>,
+    contexts: Vec<TodoContext>,
 }
 
 impl App {
@@ -1172,41 +1176,85 @@ impl App {
     }
 
     /// The shown file's projects and contexts with their open-item counts (RTM-120), in sections
-    /// whose collapsed state is saved like the view settings.
+    /// whose collapsed state is saved like the view settings. A click on a tag toggles it in the
+    /// shown file's selection, which filters the list (RTM-121); Clear filter empties it.
     fn tags(&mut self, ui: &mut Ui, p: &Palette) {
-        let Some(library) = self.library() else {
+        // The file, not `file_mut`, so the config stays borrowable beside it.
+        let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
             return;
         };
-        let projects: Vec<_> = (library.projects().into_iter())
-            .map(|(t, n)| (t.to_string(), n))
+        let Some(library) = &file.library else {
+            return;
+        };
+        let projects = library.projects();
+        let contexts = library.contexts();
+        // A tag gone from the file (deleted, or removed by a pull) leaves the selection, so the
+        // list is never filtered by a tag the sidebar does not show.
+        let listed = |names: &[&str], name: &str| names.iter().any(|n| same_tag(n, name));
+        let project_names: Vec<&str> = projects.iter().map(|(t, _)| t.name.as_str()).collect();
+        let context_names: Vec<&str> = contexts.iter().map(|(t, _)| t.name.as_str()).collect();
+        file.projects.retain(|t| listed(&project_names, &t.name));
+        file.contexts.retain(|t| listed(&context_names, &t.name));
+        let project_rows: Vec<_> = (projects.iter())
+            .map(|(t, n)| {
+                (
+                    t.to_string(),
+                    *n,
+                    file.projects.iter().any(|s| same_tag(&s.name, &t.name)),
+                )
+            })
             .collect();
-        let contexts: Vec<_> = (library.contexts().into_iter())
-            .map(|(t, n)| (t.to_string(), n))
+        let context_rows: Vec<_> = (contexts.iter())
+            .map(|(t, n)| {
+                (
+                    t.to_string(),
+                    *n,
+                    file.contexts.iter().any(|s| same_tag(&s.name, &t.name)),
+                )
+            })
             .collect();
+        let count = file.projects.len() + file.contexts.len();
         let config = &mut self.config;
-        let mut changed = false;
+        let (mut collapsed, mut clear) = (false, false);
+        let (mut project, mut context) = (None, None);
         egui::ScrollArea::vertical()
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
-                changed |= tag_section(
+                if count > 0 {
+                    let label = RichText::new(format!("Clear filter ({count})")).size(12.6);
+                    clear = ui.button(label).clicked();
+                }
+                let (header, tag) = tag_section(
                     ui,
                     p,
                     "Projects",
-                    &projects,
+                    &project_rows,
                     p.project,
                     &mut config.projects_collapsed,
                 );
-                changed |= tag_section(
+                (collapsed, project) = (header, tag);
+                let (header, tag) = tag_section(
                     ui,
                     p,
                     "Contexts",
-                    &contexts,
+                    &context_rows,
                     p.context,
                     &mut config.contexts_collapsed,
                 );
+                (collapsed, context) = (collapsed || header, tag);
             });
-        if changed {
+        if clear {
+            file.projects.clear();
+            file.contexts.clear();
+        }
+        if let Some(i) = project {
+            toggle_tag(&mut file.projects, &projects[i].0, |t| &t.name);
+        }
+        if let Some(i) = context {
+            toggle_tag(&mut file.contexts, &contexts[i].0, |t| &t.name);
+        }
+        if collapsed {
             self.save_config();
         }
     }
@@ -1434,7 +1482,10 @@ impl App {
             .show(ui, |ui| {
                 // The list box fills the content area, as in the web app.
                 ui.set_min_size(ui.available_size());
-                let Some(library) = self.library() else {
+                let Some((file, library)) = self
+                    .file()
+                    .and_then(|file| Some((file, file.library.as_ref()?)))
+                else {
                     empty_state(
                         ui,
                         p,
@@ -1444,7 +1495,9 @@ impl App {
                     return None;
                 };
                 let today = chrono::Local::now().date_naive();
-                let visible = list::visible(&library.items, &self.config, today);
+                let mut visible = list::visible(&library.items, &self.config, today);
+                // The sidebar's selection (RTM-121), after the view settings.
+                visible.retain(|&i| library.items[i].matches(&file.projects, &file.contexts));
                 if visible.is_empty() {
                     // Also when every item is filtered out, as in the Tauri app.
                     empty_state(ui, p, "No items found.");
@@ -2040,17 +2093,19 @@ fn update_notice(ui: &mut Ui, p: &Palette, notice: &Notice) -> Option<NoticeActi
     clicked
 }
 
-/// One sidebar section (RTM-120): a header that collapses it and a row per tag, the tag in `color`
-/// (muted when no open item carries it) and its open-item count at the right. Returns whether the
-/// header was clicked, which flips `collapsed`.
+/// One sidebar section (RTM-120): a header that collapses it and a row per tag (its text, open-item
+/// count and whether it is selected), the tag a selectable button in `color` (muted when no open
+/// item carries it) and the count at the right. Returns whether the header was clicked, which
+/// flips `collapsed`, and the index of a clicked tag.
 fn tag_section(
     ui: &mut Ui,
     p: &Palette,
     title: &str,
-    tags: &[(String, usize)],
+    tags: &[(String, usize, bool)],
     color: Color32,
     collapsed: &mut bool,
-) -> bool {
+) -> (bool, Option<usize>) {
+    let mut clicked_tag = None;
     let section = egui::CollapsingHeader::new(RichText::new(title).size(12.6).strong())
         .id_salt(title)
         .open(Some(!*collapsed))
@@ -2059,7 +2114,7 @@ fn tag_section(
                 let none = format!("No {}", title.to_lowercase());
                 ui.label(RichText::new(none).size(12.6).color(p.muted));
             }
-            for (tag, open) in tags {
+            for (i, (tag, open, selected)) in tags.iter().enumerate() {
                 ui.horizontal(|ui| {
                     // Room for the count, so a long name is cut short instead of hiding it.
                     let width = ui.available_width() - 32.0;
@@ -2067,7 +2122,10 @@ fn tag_section(
                         ui.set_max_width(width);
                         let color = if *open == 0 { p.muted } else { color };
                         let name = RichText::new(tag).size(12.6).color(color);
-                        ui.add(egui::Label::new(name).truncate()).on_hover_text(tag);
+                        let button = egui::Button::selectable(*selected, name).truncate();
+                        if ui.add(button).on_hover_text(tag).clicked() {
+                            clicked_tag = Some(i);
+                        }
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(open.to_string()).size(12.6).color(p.muted));
@@ -2075,11 +2133,26 @@ fn tag_section(
                 });
             }
         });
-    let clicked = section.header_response.clicked();
-    if clicked {
+    let header = section.header_response.clicked();
+    if header {
         *collapsed = !*collapsed;
     }
-    clicked
+    (header, clicked_tag)
+}
+
+/// Whether two tag names are the same tag: case-insensitive, as in `todotxt`.
+fn same_tag(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
+}
+
+/// Removes `tag` from `selection` when it is there (by `name`, case-insensitively), else adds it.
+fn toggle_tag<T: Clone>(selection: &mut Vec<T>, tag: &T, name: fn(&T) -> &str) {
+    match selection.iter().position(|t| same_tag(name(t), name(tag))) {
+        Some(at) => {
+            selection.remove(at);
+        }
+        None => selection.push(tag.clone()),
+    }
 }
 
 /// What was clicked in the title bar.
