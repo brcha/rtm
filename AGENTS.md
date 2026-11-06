@@ -54,15 +54,20 @@ one that had them.
 ## Conventions
 
 - **Rust edition:** 2024 everywhere.
-- **No async** in the core library, the CLI or the desktop app; the one exception is rtmapp's file
-  dialogs (RTM-65, see `rtmapp/AGENTS.md`).
+- **Async** is allowed where a library needs it: rtmapp's file dialogs (RTM-65, see
+  `rtmapp/AGENTS.md`) and the MCP server's `rmcp` (RTM-115). It never delays a change reaching the
+  file and its repository (below).
 - **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file. `rtmapp`
   also has `sync` (default true), `sync_interval_minutes` (default 10), `check_for_updates`
   (default true), `update_channel` (`"stable"`/`"beta"`, default `"stable"`) and `[[files]]`, the
   saved list of todo.txt files with a per-file `vcs` (`"git"`/`"pijul"`), see `rtmapp/AGENTS.md`.
 - **Date format:** `%Y-%m-%d` everywhere (chrono `NaiveDate`).
 - **Priority encoding:** stored as `u8` (0 = A, 1 = B, …).
-- All `save()` calls happen immediately after mutations (no deferred/batched writes).
+- All `save()` calls happen immediately after mutations, and, for a synced file, each change is
+  committed right after it is saved, so merge conflicts stay unlikely. The one delay: rtmapp holds changes made while one
+  of its sync jobs runs until the job ends, then writes them in one commit (see `rtmapp/AGENTS.md`).
+  rtmcli (and the MCP server) pull before each change and push right after it; rtmapp's worker
+  pushes on its schedule (RTM-20).
 - **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`, or from
   `releases/vYY.M` for a PR against a release branch (see [Release Process](doc/release-process.md)).
   A cherry-pick of a merged change to a release branch goes on `cherry/RTM-NN/<slug>`, branched
