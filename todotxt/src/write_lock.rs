@@ -61,8 +61,9 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     })
 }
 
-/// The per-user directory holding the lock files, created when missing.
-fn lock_dir() -> io::Result<PathBuf> {
+/// The per-user directory holding the lock files, created when missing. Other rtm locks (the MCP
+/// server's one-server-per-client check) live here too.
+pub fn lock_dir() -> io::Result<PathBuf> {
     // The temporary directory is per user on macOS and Windows; on Linux it is shared, so the
     // runtime directory comes first and the fallback carries the user's name.
     // shortcut: two processes that disagree on XDG_RUNTIME_DIR use different locks; derive the

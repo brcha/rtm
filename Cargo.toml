@@ -8,6 +8,7 @@ members = [
 	"rtmapp",
 	"rtmsync",
 	"rtmupdate",
+	"rtmmcp",
 ]
 
 [profile.release]

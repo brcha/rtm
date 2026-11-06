@@ -93,7 +93,8 @@ todotxt/tests/
   next to the todo.txt, where its repository would see it. The hash is 64-bit FNV-1a, written out because `DefaultHasher` may
   change between Rust versions, of the canonical path (for a file not created yet, its
   directory's canonical path and its name), so every spelling and every rtm binary agree.
-  Processes that disagree on `XDG_RUNTIME_DIR` do not share the lock.
+  Processes that disagree on `XDG_RUNTIME_DIR` do not share the lock. `write_lock::lock_dir()` is
+  public, for the other rtm locks kept there (the MCP server's one-server-per-client check).
 - Business-day recurrence is currently approximated as daily (known limitation).
 - Monthly recurrence is approximated as 30 days; yearly as 365 days.
 
