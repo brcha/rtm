@@ -249,3 +249,74 @@ fn switching_waits_for_the_edit_dialog() {
     assert_eq!(app.file().unwrap().path, todo);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Renaming a tab (RTM-151).
+
+#[test]
+fn renaming_a_tab_labels_it_and_saves_the_name_in_its_entry() {
+    let dir = temp_dir("tabs rename");
+    let todo = write(&dir, "todo.txt", "Alpha\n");
+    let mut app = app_on_session(&dir, session(&[&todo], &todo));
+
+    app.start_rename(&todo);
+    assert_eq!(app.renaming, Some((todo.clone(), "todo.txt".to_owned())));
+    app.rename_tab(&todo, "  Personal ");
+
+    assert_eq!(app.renaming, None);
+    assert_eq!(app.files[0].name, "Personal");
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert_eq!(
+        config.entry(&todo).unwrap().name.as_deref(),
+        Some("Personal")
+    );
+    assert_eq!(std::fs::read_to_string(&todo).unwrap(), "Alpha\n");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_empty_name_gives_the_tab_its_file_name_back() {
+    let dir = temp_dir("tabs rename empty");
+    let todo = write(&dir, "todo.txt", "Alpha\n");
+    let mut config = session(&[&todo], &todo);
+    config.set_name(&todo.to_string_lossy(), Some("Personal"));
+    let mut app = app_on_session(&dir, config);
+    assert_eq!(app.files[0].name, "Personal");
+
+    app.rename_tab(&todo, "   ");
+
+    assert_eq!(app.files[0].name, "todo.txt");
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert_eq!(config.entry(&todo).unwrap().name, None);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_tab_whose_file_is_missing_can_be_renamed() {
+    let dir = temp_dir("tabs rename missing");
+    let todo = write(&dir, "todo.txt", "Alpha\n");
+    let missing = dir.join("missing.txt");
+    let mut app = app_on_session(&dir, session(&[&todo, &missing], &todo));
+
+    app.rename_tab(&missing, "Old");
+
+    assert_eq!(app.files[1].name, "Old");
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert_eq!(config.entry(&missing).unwrap().name.as_deref(), Some("Old"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn keeping_the_label_unchanged_writes_nothing() {
+    let dir = temp_dir("tabs rename unchanged");
+    let todo = write(&dir, "todo.txt", "Alpha\n");
+    let mut app = app_on_session(&dir, session(&[&todo], &todo));
+
+    app.start_rename(&todo);
+    app.rename_tab(&todo, "todo.txt");
+
+    assert_eq!(app.renaming, None);
+    assert_eq!(app.files[0].name, "todo.txt");
+    assert_eq!(app.config.entry(&todo).unwrap().name, None);
+    assert!(!dir.join("config.toml").exists());
+    let _ = std::fs::remove_dir_all(dir);
+}

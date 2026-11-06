@@ -1077,3 +1077,113 @@ fn a_selected_tag_that_leaves_the_file_leaves_the_selection() {
     assert!(harness.query_by_label_contains("Clear filter").is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Renaming a tab (RTM-151).
+
+/// Right-clicks the tab `name` and picks Rename tab from its context menu.
+fn start_rename(harness: &mut Harness<'_, App>, name: &str) {
+    tab(harness, name).click_secondary();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Rename tab")
+        .click();
+    harness.run();
+}
+
+/// The text field editing a tab's name, found by the name it holds: the quick-add input is a
+/// text field too.
+fn name_field<'h>(harness: &'h Harness<'_, App>, name: &'h str) -> egui_kittest::Node<'h> {
+    harness.get(by().role(Role::TextInput).value(name))
+}
+
+/// The `name` of the `[[files]]` entry of `file` in `dir`'s config.
+fn saved_name(dir: &Path, file: &str) -> Option<String> {
+    let config = AppConfig::load(&dir.join("config.toml"));
+    let path = dir.join(file).canonicalize().unwrap();
+    config.entry(&path).unwrap().name.clone()
+}
+
+#[test]
+fn rename_from_the_context_menu_relabels_the_tab_and_saves_the_name() {
+    let dir = temp_dir("ui-tabs-rename");
+    let mut harness = two_tabs(&dir, false);
+
+    start_rename(&mut harness, "todo.txt");
+    assert!(name_field(&harness, "todo.txt").is_focused());
+    // The name is selected, so typing replaces it.
+    name_field(&harness, "todo.txt").type_text("Personal");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    tab(&harness, "Personal");
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Tab, "todo.txt")
+            .is_none()
+    );
+    assert_eq!(saved_name(&dir, "todo.txt").as_deref(), Some("Personal"));
+    assert_eq!(file_lines(&dir), ["Alpha"]);
+    assert!(!dir.join("Personal").exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn escape_cancels_a_rename() {
+    let dir = temp_dir("ui-tabs-rename-escape");
+    let mut harness = two_tabs(&dir, false);
+
+    start_rename(&mut harness, "todo.txt");
+    name_field(&harness, "todo.txt").type_text("Personal");
+    harness.run();
+    harness.key_press(Key::Escape);
+    harness.run();
+
+    assert!(
+        harness
+            .query(by().role(Role::TextInput).value("Personal"))
+            .is_none()
+    );
+    tab(&harness, "todo.txt");
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Tab, "Personal")
+            .is_none()
+    );
+    assert_eq!(saved_name(&dir, "todo.txt"), None);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn clearing_the_name_shows_the_file_name_again() {
+    let dir = temp_dir("ui-tabs-rename-clear");
+    let mut harness = two_tabs(&dir, false);
+
+    start_rename(&mut harness, "Work");
+    // The name is selected, so Backspace clears it.
+    harness.key_press(Key::Backspace);
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    tab(&harness, "work.txt");
+    assert_eq!(saved_name(&dir, "work.txt"), None);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn clicking_another_tab_keeps_the_new_name_and_switches() {
+    let dir = temp_dir("ui-tabs-rename-switch");
+    let mut harness = two_tabs(&dir, false);
+
+    start_rename(&mut harness, "todo.txt");
+    name_field(&harness, "todo.txt").type_text("Personal");
+    harness.run();
+    tab(&harness, "Work").click();
+    harness.run();
+
+    tab(&harness, "Personal");
+    assert_eq!(saved_name(&dir, "todo.txt").as_deref(), Some("Personal"));
+    assert_eq!(rows(&harness), ["Report"]);
+    let _ = std::fs::remove_dir_all(dir);
+}

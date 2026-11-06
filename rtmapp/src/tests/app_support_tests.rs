@@ -33,6 +33,7 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         editing: None,
         settings: None,
         confirm_close: None,
+        renaming: None,
         reconnect: false,
         repos: Vec::new(),
         closing: Vec::new(),

@@ -138,6 +138,14 @@ impl AppConfig {
         }
     }
 
+    /// Sets the tab label of `file`, or clears it with `None`. A file without an entry is left
+    /// alone: every tab has one.
+    pub fn set_name(&mut self, file: &str, name: Option<&str>) {
+        if let Some(entry) = self.entry_mut(Path::new(file)) {
+            entry.name = name.map(str::to_owned);
+        }
+    }
+
     /// Adds `file` to the saved session, unless it is listed already.
     pub fn add_file(&mut self, file: &str) {
         if self.entry(Path::new(file)).is_none() {
