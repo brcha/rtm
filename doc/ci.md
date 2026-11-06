@@ -94,7 +94,7 @@
     Without that tool it falls back to a quick single pass.
   - The action refuses to run while the workflow file differs from the copy on `main` ("Workflow
     validation failed"). So a pull request that changes `claude-review.yml` is not reviewed by
-    it.
+    it. The check still shows as passed, so its green status proves nothing for such a PR.
   - It authenticates with the repository secret `CLAUDE_CODE_OAUTH_TOKEN`, a token from the
     maintainer's Claude subscription. `claude setup-token` creates it, valid for one year. When
     it expires, the review fails until the secret is replaced.
