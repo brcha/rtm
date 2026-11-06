@@ -152,7 +152,7 @@ one that had them.
   `rtmsync` tests drive, on Linux and macOS, installing the libraries it needs (OpenSSL and
   libsodium, from apt and Homebrew), and downloads a prebuilt `pijul.exe` on Windows. No crate
   links them, so they do not go into the Nix lists or the debs; in Nix they go into
-  `nativeCheckInputs` only, never `eguiDeps` (see [Nix Packaging](doc/nix-packaging.md)). See `rtmsync/AGENTS.md`.
+  `nativeCheckInputs` and the dev shell, never `eguiDeps` (see [Nix Packaging](doc/nix-packaging.md)). See `rtmsync/AGENTS.md`.
 
 ---
 

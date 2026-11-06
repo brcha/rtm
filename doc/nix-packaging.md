@@ -47,7 +47,9 @@
   point gets the same nixpkgs as `nix develop` and the Nix builds in CI (`rust.yml` uses the
   runner's rustup toolchain instead). `.envrc` uses `use_nix`; change to `use flake` if
   using nix-direnv ≥ 2.30 for a cached shell. It has `rustfmt`, `clippy`, `rust-analyzer`,
-  `git-cliff`, and `zola`, `lychee` and `jq` (the project website, `site/`, and its checks), sets
+  `git-cliff`, `zola`, `lychee` and `jq` (the project website, `site/`, and its checks), and
+  `pijul` and `openssh` (RTM-146), so `cargo test` in the shell runs the Pijul sync test instead of
+  skipping it. Like `nativeCheckInputs`, they are test tools, never `eguiDeps`. The shell sets
   `LD_LIBRARY_PATH` to `eguiDeps` on Linux only (the libraries do not exist on macOS), and sets `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and
   `RUSTC_WRAPPER` to empty: a calling session that exports `-L/usr/lib` otherwise links against the
   system glibc instead of the shell's (the binary then fails with `GLIBC_2.xx not found`), and a
