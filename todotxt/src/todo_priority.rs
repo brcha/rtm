@@ -30,6 +30,11 @@ impl TodoPriority {
             Err(TodoPriorityParseError::InvalidLetter)
         }
     }
+
+    /// Raises the priority by one letter (B becomes A). An item without a priority keeps none.
+    pub fn raise(&mut self) {
+        self.priority = self.priority.map(|p| p - 1);
+    }
 }
 
 impl FromStr for TodoPriority {
