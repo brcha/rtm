@@ -87,9 +87,11 @@ todotxt/tests/
   until dropped. Every rtm process holds it whenever it writes the file, a pull included: around
   the pull, load, change, save and commit of one change (and the push, where it follows at once),
   and around every pull on its own. So two processes (the app, the CLI, MCP servers of different
-  clients) never lose each other's change, nor a change a pull brought. The path may also be a
-  directory. `WriteLock::try_acquire(path)` (RTM-142) takes it only if no one holds it (`Ok(None)`
-  otherwise), for rtmapp's UI thread, which must not wait out another process's pull. It is
+  clients) never lose each other's change, nor a change a pull brought. Writers lock the file's
+  repository directory when it is in one (`rtmsync::lock_target`, RTM-142: a pull rewrites every
+  file there), else the file, so the path may also be a directory. `WriteLock::try_acquire(path)`
+  (RTM-142) takes it only if no one holds it (`Ok(None)` otherwise), for rtmapp's UI thread, which
+  must not wait out another process's pull. It is
   `std::fs::File::lock` (Rust 1.89) on `<hash>.lock` in `$XDG_RUNTIME_DIR/rtm`, else `rtm-<user>`
   in the temp directory (per user on macOS and Windows), created with mode 0700 on Unix: never
   next to the todo.txt, where its repository would see it. The hash is 64-bit FNV-1a, written out
