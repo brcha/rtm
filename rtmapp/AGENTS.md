@@ -19,7 +19,7 @@ untracked todo.txt on open (RTM-70); "New File" (RTM-55); file dialogs that do n
 per-file state with its own error line (RTM-125) and sync with one worker per repository, the
 check on open included (RTM-126), the open files as tabs (RTM-127) and moving an item to another
 open file (RTM-128), for several open files (RTM-66); the title bar's menu and the Settings dialog
-(RTM-134).
+(RTM-134); the projects and contexts in the sidebar (RTM-120).
 
 ---
 
@@ -39,7 +39,8 @@ rtmapp/
     ├── main.rs             ← Window options, eframe::run_native
     ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, the
     │                         title bar's menu and shortcuts, the tab strip, New File and Load
-    │                         File, closing and switching files, filters,
+    │                         File, closing and switching files, filters, the sidebar's
+    │                         projects and contexts,
     │                         quick-add, complete/uncomplete, saving an edit, deleting
     ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
@@ -99,7 +100,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
   Keys added for the update check (RTM-138): `check_for_updates` (default true) and
   `update_channel` (`"stable"` or `"beta"`, default `"stable"`; anything else counts as stable,
-  `AppConfig::beta`).
+  `AppConfig::beta`). Keys added for the sidebar (RTM-120): `projects_collapsed` and
+  `contexts_collapsed` (default false).
   - **The file list (RTM-124, epic RTM-66):** `[[files]]` tables, the saved session, written last
     (after the plain keys). Each has `path`, an optional `name` (the tab label, set by hand) and an
     optional `vcs` (`"git"` or `"pijul"`, any case, the answer when the file's directory has both;
@@ -125,6 +127,17 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   without a due date first, then dated items, with priority as the tie-break (none last). **One
   deliberate difference:** dates run earliest first and `reverse_sort` gives latest first; the Tauri
   app had it the other way round, so the saved `reverse_sort` setting now gives the opposite order.
+- **Projects and contexts (RTM-120, epic RTM-118):** the sidebar shows the shown tab's
+  `TodoLibrary::projects` and `contexts` below the view checkboxes (`App::tags`, `tag_section`):
+  a collapsing header per section ("Projects", "Contexts") and a row per tag, in the list's
+  project or context colour (muted when no open item carries it), with its open-item count at the
+  right; the order, case merging and counts come from `todotxt` (see `todotxt/AGENTS.md`), so they
+  match `rtmcli projects`. An empty section says "No projects" / "No contexts"; no sections while
+  no file is shown or its tab is not loaded. Drawn each frame from the library, so they follow
+  every change, reload and tab switch. A click on a header flips `projects_collapsed` /
+  `contexts_collapsed` and saves the config, like the view checkboxes. The `Total items` footer is
+  laid out first (bottom-up) and the sections scroll above it. The rows are labels; filtering by
+  them is RTM-121.
 - **Item rows** show the visible items in that order. A done item is struck through entirely, as the
   CSS did. Recurrence is shown through `TodoRecurrence`'s `Display` (`rec:+1m` appears as `rec:+m`).
   The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had

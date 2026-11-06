@@ -1165,7 +1165,50 @@ impl App {
                     .size(11.9)
                     .color(p.muted),
             );
+            // Above the footer, which is laid out first, so a long list scrolls instead of
+            // pushing it off the panel.
+            ui.with_layout(Layout::top_down(Align::Min), |ui| self.tags(ui, p));
         });
+    }
+
+    /// The shown file's projects and contexts with their open-item counts (RTM-120), in sections
+    /// whose collapsed state is saved like the view settings.
+    fn tags(&mut self, ui: &mut Ui, p: &Palette) {
+        let Some(library) = self.library() else {
+            return;
+        };
+        let projects: Vec<_> = (library.projects().into_iter())
+            .map(|(t, n)| (t.to_string(), n))
+            .collect();
+        let contexts: Vec<_> = (library.contexts().into_iter())
+            .map(|(t, n)| (t.to_string(), n))
+            .collect();
+        let config = &mut self.config;
+        let mut changed = false;
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                changed |= tag_section(
+                    ui,
+                    p,
+                    "Projects",
+                    &projects,
+                    p.project,
+                    &mut config.projects_collapsed,
+                );
+                changed |= tag_section(
+                    ui,
+                    p,
+                    "Contexts",
+                    &contexts,
+                    p.context,
+                    &mut config.contexts_collapsed,
+                );
+            });
+        if changed {
+            self.save_config();
+        }
     }
 
     /// Completes or uncompletes the item at file index `index`, as the Tauri app did.
@@ -1994,6 +2037,48 @@ fn update_notice(ui: &mut Ui, p: &Palette, notice: &Notice) -> Option<NoticeActi
                 });
             });
         });
+    clicked
+}
+
+/// One sidebar section (RTM-120): a header that collapses it and a row per tag, the tag in `color`
+/// (muted when no open item carries it) and its open-item count at the right. Returns whether the
+/// header was clicked, which flips `collapsed`.
+fn tag_section(
+    ui: &mut Ui,
+    p: &Palette,
+    title: &str,
+    tags: &[(String, usize)],
+    color: Color32,
+    collapsed: &mut bool,
+) -> bool {
+    let section = egui::CollapsingHeader::new(RichText::new(title).size(12.6).strong())
+        .id_salt(title)
+        .open(Some(!*collapsed))
+        .show(ui, |ui| {
+            if tags.is_empty() {
+                let none = format!("No {}", title.to_lowercase());
+                ui.label(RichText::new(none).size(12.6).color(p.muted));
+            }
+            for (tag, open) in tags {
+                ui.horizontal(|ui| {
+                    // Room for the count, so a long name is cut short instead of hiding it.
+                    let width = ui.available_width() - 32.0;
+                    ui.scope(|ui| {
+                        ui.set_max_width(width);
+                        let color = if *open == 0 { p.muted } else { color };
+                        let name = RichText::new(tag).size(12.6).color(color);
+                        ui.add(egui::Label::new(name).truncate()).on_hover_text(tag);
+                    });
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(RichText::new(open.to_string()).size(12.6).color(p.muted));
+                    });
+                });
+            }
+        });
+    let clicked = section.header_response.clicked();
+    if clicked {
+        *collapsed = !*collapsed;
+    }
     clicked
 }
 

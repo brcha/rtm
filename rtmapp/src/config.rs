@@ -26,6 +26,9 @@ pub struct AppConfig {
     /// `"stable"` or `"beta"`: the releases the update check offers. Anything else counts as
     /// stable.
     pub update_channel: String,
+    /// The sidebar's Projects and Contexts sections are collapsed (RTM-120).
+    pub projects_collapsed: bool,
+    pub contexts_collapsed: bool,
     /// The saved session (RTM-124): the todo.txt files the app keeps; `file_name` names the active
     /// one and stays for older versions, which ignore this list. Last, so the plain keys are
     /// written before the tables.
@@ -57,6 +60,8 @@ impl Default for AppConfig {
             sync_interval_minutes: 10,
             check_for_updates: true,
             update_channel: "stable".to_owned(),
+            projects_collapsed: false,
+            contexts_collapsed: false,
             files: Vec::new(),
         }
     }

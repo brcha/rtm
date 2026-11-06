@@ -232,6 +232,10 @@ $ rtmcli list +work @phone today
 In PowerShell, quote contexts (`'@phone'`): an unquoted `@phone` is read as a PowerShell variable
 and the argument disappears.
 
+The desktop app lists the projects and contexts of the shown file in its sidebar, with the same
+open-item counts, in Projects and Contexts sections that collapse from their headers (the app
+remembers which ones are collapsed).
+
 ## Syncing through Git or Pijul
 
 `rtmcli` and the desktop app sync your todo.txt when it is tracked in a Git or Pijul repository.
