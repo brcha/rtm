@@ -83,6 +83,9 @@
     commit and passed to the action as a local path. The plugin's frontmatter grants the tools it
     may use, so the pin keeps an upstream change from widening them. To update it, change the
     commit SHA and its comment, as for an action.
+  - Claude Code accepts the marketplace's own name only for copies fetched from Anthropic's
+    GitHub organisation, and it rejects names that look official. The workflow therefore renames
+    the local copy to `rtm-review`, and the plugin is installed as `code-review@rtm-review`.
   - The workflow token is read-only. The comments go out through the Claude GitHub App, which is
     installed on this repository only; the action gets the app's token in exchange for the run's
     OIDC token (`id-token: write`). Claude may only run the `gh` commands the plugin needs, which

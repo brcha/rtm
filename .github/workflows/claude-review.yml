@@ -43,6 +43,15 @@ jobs:
         path: .claude-plugins-official
         persist-credentials: false
 
+    # Claude Code reserves the marketplace name "claude-plugins-official" for copies fetched from
+    # Anthropic's GitHub organisation and rejects names that look like it, so the pinned local copy
+    # gets a plain name of its own.
+    - name: Rename the pinned marketplace
+      run: |
+        manifest=.claude-plugins-official/.claude-plugin/marketplace.json
+        jq '.name = "rtm-review"' "$manifest" > "$RUNNER_TEMP/marketplace.json"
+        mv "$RUNNER_TEMP/marketplace.json" "$manifest"
+
     # Claude's earlier inline comments, so that a review after a push does not repeat them. The
     # review's own tools cannot list inline comments, and giving it `gh api` would hand it the
     # app's write token for any API call; this step reads them with the read-only workflow token.
@@ -59,7 +68,7 @@ jobs:
       with:
         claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         plugin_marketplaces: ./.claude-plugins-official
-        plugins: code-review@claude-plugins-official
+        plugins: code-review@rtm-review
         # The plugin checks the changes against CLAUDE.md files; rtm's are named AGENTS.md.
         prompt: |
           /code-review:code-review --comment
