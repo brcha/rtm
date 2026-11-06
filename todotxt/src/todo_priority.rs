@@ -31,9 +31,10 @@ impl TodoPriority {
         }
     }
 
-    /// Raises the priority by one letter (B becomes A). An item without a priority keeps none.
+    /// Raises the priority by one letter (B becomes A); A stays A. An item without a priority
+    /// keeps none.
     pub fn raise(&mut self) {
-        self.priority = self.priority.map(|p| p - 1);
+        self.priority = self.priority.map(|p| p.saturating_sub(1));
     }
 }
 
