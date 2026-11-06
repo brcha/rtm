@@ -233,7 +233,8 @@ In PowerShell, quote contexts (`'@phone'`): an unquoted `@phone` is read as a Po
 and the argument disappears.
 
 The desktop app lists the projects and contexts of the shown file in its sidebar, with the same
-open-item counts, in Projects and Contexts sections that collapse from their headers.
+open-item counts, in Projects and Contexts sections that collapse from their headers (the app
+remembers which ones are collapsed).
 
 ## Syncing through Git or Pijul
 
