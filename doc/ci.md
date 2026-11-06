@@ -67,10 +67,14 @@
 - **Claude review (RTM-147):** `claude-review.yml` runs Anthropic's `claude-code-action` with the
   official `code-review` plugin. It reviews a pull request against `main` or `releases/**` and
   posts the findings as comments from `claude[bot]`.
-  - It runs when a pull request is opened, reopened or marked ready for review. It does not run
-    on every push, and it skips drafts and pull requests from forks, which get no secrets. The
-    plugin also stops when Claude has already commented on the pull request, so reopening does
-    not start a second review.
+  - It runs when a pull request is opened, reopened or marked ready for review, and again after
+    every push to it. A newer push cancels a review that is still running.
+  - Only pull requests from branches of this repository get a review. Pushing a branch here takes
+    write access. Drafts and pull requests from forks are skipped; forks get no secrets anyway.
+  - The plugin normally stops once Claude has commented on a pull request. The prompt overrides
+    that, and tells it to report only issues its earlier comments have not raised. A later review
+    that finds nothing new says so in one comment.
+  - Each push costs a full review against the maintainer's subscription limits.
   - It only comments: it never pushes, approves or blocks. It is not a required check, so a
     failed or skipped review never holds up a merge.
   - The plugin checks the changes against `CLAUDE.md` files. The prompt tells it that rtm's are
