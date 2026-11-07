@@ -15,8 +15,14 @@ fn a_file_in_a_repository_locks_the_repository() {
     std::fs::create_dir(dir.join(".git")).unwrap();
     let target = lock_target(&dir.join("sub/todo.txt"));
     assert_eq!(target, root(&dir.join("sub/todo.txt")).unwrap());
-    // Every file of the repository, an existing one or not, shares it.
-    assert_eq!(lock_target(&dir.join("other.txt")), target);
+    // Every file of the repository, an existing one or not, shares it. Compared canonical, as
+    // `WriteLock` names the lock: a file not created yet is only made absolute, so a symlink on
+    // the way (macOS's `/var` to `/private/var`) stays in its spelling.
+    let canonical = |path: PathBuf| path.canonicalize().unwrap();
+    assert_eq!(
+        canonical(lock_target(&dir.join("other.txt"))),
+        canonical(target)
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
