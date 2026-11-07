@@ -356,6 +356,44 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     deleting or moving it would take changed, `stale` makes Save, Delete and Move refuse. The header
     shows the shown file's repository: "Syncing…", or "Not synced: …" (git's first line; the rest
     on hover) after a failed pull or push; for a file outside any repository, why it does not sync.
+  - **Changes made by another program** (RTM-142: the MCP server, rtmcli, an editor) are read
+    the same way. Each `OpenFile` keeps the file's modification time and size after the app's own
+    last load or write (`seen`, set in `OpenFile::loaded`, `OpenFile::flush` and
+    `OpenFile::reload`); different values mean someone else wrote it (`changed_on_disk`). Before
+    a write, `OpenFile::flush` reloads such a file and redoes the pending changes on it, so the app
+    never writes over them; when that read fails, or the file changed again during it (the state
+    is taken before the read), the changes stay pending and nothing is written. While the window shows (not minimized or occluded), `watch_files`
+    checks every open file every 2 s (`DISK_CHECK`) and when the window gains the focus, and
+    reloads the changed ones (`reload_changed`), except while their repository has a job
+    outstanding (its result may reload them) or their check on open runs. A missing or unreadable
+    file counts as unchanged; the next load or write reports it.
+    A **synced** file that changed is not simply reloaded: the check on open runs again
+    (`OpenFile::recheck`, unless the outside-changes question is already open), and its result
+    reloads it as on open. A change already committed (rtmcli and the MCP server commit theirs)
+    reloads and syncs; an edit nobody committed (an editor, `--no-sync`) brings up the RTM-57
+    question ("Commit them" / "Don't open") before the app's next commit could take it. The
+    app's pending changes wait for the check, then are redone on the file. The check job takes
+    `todotxt::WriteLock` on the worker thread (`rtmsync::lock_target`), so another rtm process
+    caught between its save and its commit is waited for instead of being asked about. A tab whose
+    changes are still pending (waiting for that check, or for a file that could not be read)
+    refuses to close, so they are not lost with it.
+  - **The write lock** (`todotxt::WriteLock` on `rtmsync::lock_target(file)`, the repository's
+    directory, else the file; RTM-142) is shared with rtmcli and the MCP server. `OpenFile::flush`
+    takes it first, then checks for outside changes, then saves: never the other way round, or
+    another process could save in between. The UI thread never waits for it (another process may
+    hold it for a whole pull): `try_lock_briefly` tries for about 10 ms (a lock just released can
+    look held while another thread's child process, git, still has the lock file open until it
+    runs), and when it is held the changes stay pending (`locked_out`) and are tried again every
+    200 ms (`LOCK_RETRY`). The lock goes with the `Commit` job and the worker releases it after the
+    commit; without a commit queued (no repository, the outside-changes question open, a recheck
+    queued instead) it is released at the end of `flush`. The worker takes it itself, blocking on
+    its own thread, around every `Sync` and `Check` and a `Commit` that brought none (the answers to
+    the outside-changes and untracked questions). It waits for a lock the UI holds only until
+    `flush` returns (a recheck queued from it): the UI writes only while the worker is idle, and
+    hands its lock to the commit it queues. The periodic reload takes the lock too, briefly, and
+    skips a file whose lock is held, so it never reads one half-written. On exit
+    (`write_through_lock`), a held lock is waited for up to `SAVE_TIMEOUT`, then the changes are
+    written without it rather than lost.
   - **A conflict from a job closes every open file of that repository**, as on open: a reload would
     read the markers as items. Each keeps its place among the open files, and its error line counts
     the pending changes that could not be saved; the repository's worker stops.

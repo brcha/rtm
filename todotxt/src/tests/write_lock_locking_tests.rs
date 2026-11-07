@@ -69,3 +69,30 @@ fn test_lock_name_is_stable() {
     assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
     assert_eq!(fnv1a(b"foobar"), 0x8594_4171_f739_67e8);
 }
+
+#[test]
+fn test_try_acquire_does_not_wait() {
+    let dir = scratch();
+    let todo = dir.join("todo.txt");
+    let held = WriteLock::acquire_in(&dir, &todo).unwrap();
+    assert!(WriteLock::try_acquire_in(&dir, &todo).unwrap().is_none());
+    drop(held);
+    let taken = WriteLock::try_acquire_in(&dir, &todo).unwrap();
+    assert!(taken.is_some());
+    // And it excludes the next one in turn.
+    assert!(WriteLock::try_acquire_in(&dir, &todo).unwrap().is_none());
+    drop(taken);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn test_a_directory_can_be_locked() {
+    // Writers lock a file's repository directory.
+    let dir = scratch();
+    let repo = dir.join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    let held = WriteLock::acquire_in(&dir, &repo).unwrap();
+    assert!(WriteLock::try_acquire_in(&dir, &repo).unwrap().is_none());
+    drop(held);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

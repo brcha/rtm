@@ -207,10 +207,11 @@ pub(crate) fn delete_item(source: &Source, number: usize, text: &str) -> Result<
     })
 }
 
-/// One change: holds the write lock from before the repository check (another rtm process between
-/// its save and its commit would look like an outside change) until after the push; pulls, loads,
-/// applies `change`, saves, commits and pushes. `change` returns the commit message and the result,
-/// or a refusal. With `may_create`, a missing file starts empty.
+/// One change: holds the write lock (on the file's repository, `rtmsync::lock_target`) from before
+/// the repository check (another rtm process between its save and its commit would look like an
+/// outside change) until after the push; pulls, loads, applies `change`, saves, commits and pushes.
+/// `change` returns the commit message and the result, or a refusal. With `may_create`, a missing
+/// file starts empty.
 fn write(
     source: &Source,
     may_create: bool,
@@ -218,8 +219,10 @@ fn write(
 ) -> Result<String, String> {
     // Everything up to the save refuses the change and leaves the file as it was.
     let refused = |e: String| format!("{e} Nothing was changed.");
-    let _lock = WriteLock::acquire(&source.path)
-        .map_err(|e| refused(format!("Cannot lock '{}': {e}.", source.path.display())))?;
+    // The repository's, not only the file's: a pull rewrites every file of the repository.
+    let target = rtmsync::lock_target(&source.path);
+    let _lock = WriteLock::acquire(&target)
+        .map_err(|e| refused(format!("Cannot lock '{}': {e}.", target.display())))?;
     let mut repo = RepoWrite::find(source).map_err(refused)?;
     repo.pull().map_err(refused)?;
     let mut lib = if may_create && !source.path.exists() {

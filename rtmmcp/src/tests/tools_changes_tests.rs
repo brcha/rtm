@@ -201,3 +201,63 @@ fn test_outside_changes_refuse_a_change_and_leave_the_file() {
     assert_eq!(lines(&source), ["Buy milk", "Edited by hand"]);
     remove(source);
 }
+
+#[test]
+fn test_a_write_waits_for_the_repository_lock() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    // Two files of one repository; detection reads markers, so an empty .git is enough.
+    let source = source_with("Buy milk\n");
+    let dir = source.path.parent().unwrap().to_owned();
+    std::fs::create_dir(dir.join(".git")).unwrap();
+    let work = Source {
+        path: dir.join("work.txt"),
+        ..source.clone()
+    };
+    std::fs::write(&work.path, "Write report\n").unwrap();
+
+    // Another process writing todo.txt holds the repository's lock.
+    let held = WriteLock::acquire(&rtmsync::lock_target(&source.path)).unwrap();
+    let released = Arc::new(AtomicBool::new(false));
+    let writer = {
+        let (work, released) = (work.clone(), released.clone());
+        std::thread::spawn(move || {
+            add_item(&work, "2026-01-01 Send report").unwrap();
+            released.load(Ordering::SeqCst)
+        })
+    };
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    released.store(true, Ordering::SeqCst);
+    drop(held);
+    assert!(
+        writer.join().unwrap(),
+        "work.txt was written while its repository was locked"
+    );
+    assert_eq!(lines(&work), ["Write report", "2026-01-01 Send report"]);
+    remove(source);
+}
+
+#[test]
+fn test_files_outside_any_repository_do_not_wait_for_each_other() {
+    let home = source_with("Buy milk\n");
+    let work = source_with("Write report\n");
+    // Another process writing home.txt holds its lock; work.txt has a lock of its own.
+    let _held = WriteLock::acquire(&rtmsync::lock_target(&home.path)).unwrap();
+    let (done, finished) = std::sync::mpsc::channel();
+    {
+        let work = work.clone();
+        std::thread::spawn(move || {
+            done.send(add_item(&work, "2026-01-01 Send report"))
+                .unwrap();
+        });
+    }
+    // A timeout, not a hang, if the write ever waits for the other file's lock.
+    let result = finished
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the write waited for another file's lock");
+    result.unwrap();
+    assert_eq!(lines(&work), ["Write report", "2026-01-01 Send report"]);
+    remove(home);
+    remove(work);
+}

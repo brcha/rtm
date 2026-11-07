@@ -66,12 +66,14 @@ rtmmcp/
   it (`TodoItem`'s `Display`, not the raw file line): the item at the number if its line matches,
   else the one item with that line (a pull or another program may have moved it), else a refusal,
   showing the item's new line when its `uuid` still exists.
-- **A write (`tools::write`):** `todotxt::WriteLock` from before the repository check (another rtm
-  process between its save and its commit would look like an outside change) until after the push;
-  `RepoWrite::find`, pull, load, change, save, commit, pull and push. Every refusal in that sequence
-  before the save ends with "Nothing was changed." (an invalid line or an unknown `file`, refused
-  before it starts, also changes nothing); after the save nothing fails the tool (a client might repeat a
-  change that landed): a failed commit or push, and a conflict, are notes in the result.
+- **A write (`tools::write`):** `todotxt::WriteLock` on `rtmsync::lock_target(file)`, the file's
+  repository directory (a pull rewrites every file there; RTM-142), else the file, from before the
+  repository check (another rtm process between its save and its commit would look like an outside
+  change) until after the push; `RepoWrite::find`, pull, load, change, save, commit, pull and
+  push. Every refusal in that sequence before the save ends with "Nothing was changed." (an
+  invalid line or an unknown `file`, refused before it starts, also changes nothing); after the
+  save nothing fails the tool (a client might repeat a change that landed): a failed commit or
+  push, and a conflict, are notes in the result.
 - **Sync (`sync.rs`)** follows rtmcli (`rtmcli/AGENTS.md`), returning messages instead of
   exiting: sync off, no repository or an ignored file → not synced; an untracked file → changed
   without sync, with a note (no `--commit-changes` equivalent); both Git and Pijul without a
@@ -93,7 +95,7 @@ rtmmcp/
   `.pijul` directory, as detection looks at markers.
 - The tool tests take the real `todotxt::WriteLock`, so their lock files land in the lock directory
   (`$XDG_RUNTIME_DIR/rtm` on a Linux desktop), not in the scratch directory; they are empty files
-  named after a hash of the scratch path.
+  named after a hash of the scratch file's path, or of its scratch repository's directory.
 - The claim test sleeps through the 2 s retry, so `cargo test -p rtmmcp` takes about 2 s.
 - The Nix `rtmcli` package runs this crate's tests (`cargoTestFlags` in `default.nix`).
 - Run with `cargo test -p rtmmcp`.
