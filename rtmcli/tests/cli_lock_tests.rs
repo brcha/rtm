@@ -1,8 +1,6 @@
 //! rtmcli and the write lock it shares with rtmapp and the MCP server (RTM-158): held while a
-//! command reads, pulls and changes the file, released while `delete` asks.
-//!
-//! The tests keep the environment's `XDG_RUNTIME_DIR`, so the lock directory is the same for the
-//! test and the rtmcli it starts.
+//! command reads, pulls and changes the file, released while `delete` asks. The lock directory does
+//! not depend on the environment, so the test and the rtmcli it starts share it.
 
 use std::fs;
 use std::io::{Read, Write};

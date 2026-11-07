@@ -7,6 +7,9 @@ description = "How to install the rtm desktop app and CLI on GNU/Linux, Nix and 
 downloads = true
 +++
 
+Once installed, rtm can also serve your todo.txt to an AI assistant: see
+[Use rtm with AI assistants](@/mcp.md).
+
 <!-- A copy of the "Installing" section of README.md (headings one level up). Change both together. -->
 
 Download the files from the latest [GitHub Release](https://github.com/brcha/rtm/releases).

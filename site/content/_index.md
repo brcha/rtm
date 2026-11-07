@@ -13,4 +13,6 @@ other Todo.txt tool can read. Use the desktop app, the command line, or both on 
   them; the CLI lists what is due today, this week or overdue.
 - **Sync through Git or Pijul.** Keep the file in a repository and rtm pulls, commits and pushes
   for you, with your own SSH keys and credential helpers.
+- **Works with AI assistants.** Claude Desktop, Claude Code and other MCP clients can list, add
+  and complete your tasks through `rtmcli` or the desktop app ([how](@/mcp.md)).
 - **GNU/Linux, macOS and Windows.** Built and packaged for each.

@@ -18,6 +18,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ├── cli_filter_tests.rs    ← The due-date filters of list and complete
 ├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
 ├── cli_lock_tests.rs      ← The write lock shared with rtmapp and the MCP server
+├── cli_mcp_tests.rs       ← mcp: the MCP server over stdio
 ├── cli_sync_tests.rs      ← Sync through git
 ├── cli_tags_tests.rs      ← projects and contexts, and filtering list by them
 └── cli_update_tests.rs    ← check-update against a local HTTP server
@@ -37,6 +38,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 | `delete`       | Delete an item and its sub-items, after confirmation     |
 | `sync`         | Pull and push the repository holding the file            |
 | `check-update` | Check whether a newer release of rtm exists              |
+| `mcp`          | Serve the file to MCP clients over stdio (RTM-116)       |
 
 ---
 
@@ -44,6 +46,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 
 - **Edition:** Rust 2024
 - File path resolved from: `-f <file>` flag → `$TODOTXT` env var → `todo.txt` (cwd fallback).
+  `-f` is global: it may come before or after the subcommand.
 - Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
 - `list` takes any number of filter terms, in any order (RTM-123): at most one date filter, plus
   `+project` and `@context` terms. An item must match all of them (`TodoItem::matches`, see
@@ -76,6 +79,19 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   it (`buildNoDefaultFeatures`, see `doc/nix-packaging.md`); there `check-update` says the build
   has no update check and to update through the package manager, exit 0. `cli_update_tests.rs`
   covers both builds (`cargo test -p rtmcli --no-default-features`).
+
+## MCP server (RTM-116)
+
+- `mcp` runs the MCP server (`rtmmcp::serve`, see `rtmmcp/AGENTS.md`) on one file over stdin and
+  stdout until the client closes stdin, then exits 0; a server error is printed on stderr, exit 1.
+- The file comes from `-f` or `$TODOTXT` only, with no `todo.txt` fallback (the client's working
+  directory is arbitrary); without either, exit 2. It is made absolute (`std::path::absolute`).
+  Changes are synced unless `--no-sync` / `RTM_NO_SYNC`; `--vcs` / `RTM_VCS` picks the VCS.
+- It is handled in `main()` right after `check-update`, before the write lock and `Repo::find`:
+  the server takes the lock around each change itself (a lock held for its lifetime would stop
+  every other rtm process), and `Repo::find` could exit or commit.
+- Tests: `tests/cli_mcp_tests.rs`. Only one test there completes the handshake: servers with the
+  same parent process count as one client, and a second one at the same time offers no tools.
 
 ## Sync (RTM-21, RTM-63)
 
@@ -110,18 +126,17 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   covered in `rtmsync`; the CLI logic does not depend on the VCS.
 - **The write lock (RTM-158)** is the one rtmapp and the MCP server take (`todotxt::WriteLock` on
   `rtmsync::lock_target(file)`: the file's repository directory by its markers, whether or not it
-  syncs, else the file; RTM-142). Every command that touches the file (all but `check-update`)
-  takes it in `main` before `Repo::find`, which may commit and reads the file's state (another rtm
-  process between its save and its commit would otherwise look like an outside change), and holds
-  it until it ends, its commit and push included. rtmcli waits for it. `delete` releases it while
+  syncs, else the file; RTM-142). Every command that touches the file (all but `check-update` and
+  `mcp`, whose server locks each change itself) takes it in `main` before `Repo::find`, which may
+  commit and reads the file's state (another rtm process between its save and its commit would
+  otherwise look like an outside change), and holds it until it ends, its commit and push included. rtmcli waits for it. `delete` releases it while
   it asks `Delete? [y/N]`, so no other process waits on a person; after a yes it takes it again,
   runs `Repo::find` again (an editor may have left changes, or a pull a conflict, meanwhile: exit 1
   unless `--commit-changes`, as at the start), reads the file again and finds the item again
   (`find_again`), and deletes nothing (exit 1) when the item or its sub-items changed meanwhile. A
   lock that cannot be taken: a file whose directory does not exist goes on without it (the command
   reports its usual error); a command that writes, or may pull (sync on and the file in a
-  repository), exits 1; any other read only warns. Tests: `tests/cli_lock_tests.rs` (they keep
-  `XDG_RUNTIME_DIR`, so test and rtmcli share the lock directory).
+  repository), exits 1; any other read only warns. Tests: `tests/cli_lock_tests.rs`.
 
 ---
 

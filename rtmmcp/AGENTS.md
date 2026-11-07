@@ -94,7 +94,7 @@ rtmmcp/
   local paths, no network. Pijul is covered by `rtmsync`; the both-VCS case needs only an empty
   `.pijul` directory, as detection looks at markers.
 - The tool tests take the real `todotxt::WriteLock`, so their lock files land in the lock directory
-  (`$XDG_RUNTIME_DIR/rtm` on a Linux desktop), not in the scratch directory; they are empty files
+  (`/tmp/rtm-<uid>` on Unix), not in the scratch directory; they are empty files
   named after a hash of the scratch file's path, or of its scratch repository's directory.
 - The claim test sleeps through the 2 s retry, so `cargo test -p rtmmcp` takes about 2 s.
 - The Nix `rtmcli` package runs this crate's tests (`cargoTestFlags` in `default.nix`).

@@ -17,9 +17,11 @@ site/
 ├── content/
 │   ├── _index.md         ← the landing page's text: tagline (front matter), intro and features
 │   ├── install.md        ← the install guide, a copy of README.md's "Installing" section
+│   ├── mcp.md            ← using rtm with AI assistants, from README.md's MCP section (RTM-116)
 │   └── news/             ← one post per release (`X.Y.Z.md`), listed newest first
 ├── templates/
-│   ├── base.html         ← skeleton: head, header (Install, Download, News, GitHub), footer
+│   ├── base.html         ← skeleton: head, header (Install, AI assistants, Download, News,
+│   │                       GitHub), footer
 │   ├── index.html        ← the landing page: hero (with the latest release notice), screenshots
 │   │                       and their viewer, features, downloads
 │   ├── macros.html       ← the download links and the latest release's version
@@ -93,9 +95,15 @@ in `vercel.json`:
   its `###` headings raised to `##`; to compare, from the repository root (no output means equal):
 
   ```sh
-  diff <(sed -n '/^## Installing/,/^## Syncing/p' README.md | sed '1,4d;$d' | sed '$d' | sed 's/^###/##/') \
+  diff <(awk '/^## /{p=/^## Installing$/} p' README.md | sed '1,4d;$d' | sed 's/^###/##/') \
        <(sed '1,/^<!--/d' site/content/install.md | sed '1d')
   ```
+
+  The awk takes the section up to the next `##` heading, whatever it is. The line pointing to the
+  AI assistants page comes before the copy marker, outside the comparison.
+- `content/mcp.md` is README.md's "Using rtm with AI assistants (MCP)" section, its `###` headings
+  raised to `##` and its links adapted to the site (`@/install.md`, the README's Syncing section
+  on GitHub); keep the two in step.
 - Release changes appear in each release's post (`content/news/X.Y.Z.md`, its `CHANGELOG.md`
   section, headings one level up). The post opens with the downloads of its own release, taken from
   its file name (`news-post.html`, set as `page_template` in `content/news/_index.md`); the landing

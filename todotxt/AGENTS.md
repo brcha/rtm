@@ -30,7 +30,7 @@ todotxt/tests/
 
 - **Edition:** Rust 2024
 - **External dependencies:** `chrono` (dates), `uuid` (item identity), `thiserror` (parse
-  error types).
+  error types), `libc` on Unix (the user ID naming the lock directory).
 - Parse errors are `thiserror` enums that preserve their source via `#[from]`; they derive
   `Clone, Debug, Eq, PartialEq` alongside `thiserror::Error`.
 - `TodoItem` implements `FromStr` (parse from a todo.txt line) and `Display` (serialize back).
@@ -91,15 +91,22 @@ todotxt/tests/
   repository directory when it is in one (`rtmsync::lock_target`, RTM-142: a pull rewrites every
   file there), else the file, so the path may also be a directory. `WriteLock::try_acquire(path)`
   (RTM-142) takes it only if no one holds it (`Ok(None)` otherwise), for rtmapp's UI thread, which
-  must not wait out another process's pull. It is
-  `std::fs::File::lock` (Rust 1.89) on `<hash>.lock` in `$XDG_RUNTIME_DIR/rtm`, else `rtm-<user>`
-  in the temp directory (per user on macOS and Windows), created with mode 0700 on Unix: never
-  next to the todo.txt, where its repository would see it. The hash is 64-bit FNV-1a, written out
+  must not wait out another process's pull. It is `std::fs::File::lock` (Rust 1.89) on
+  `<hash>.lock` in `write_lock::lock_dir()`: never next to the todo.txt, where its repository would
+  see it, and never depending on the environment (RTM-116), as MCP clients start servers without
+  `XDG_RUNTIME_DIR` or `TMPDIR` and a server locking elsewhere would not exclude the app. On Unix
+  it is `/tmp/rtm-<uid>` (`libc::getuid`), created with mode 0700 and refused unless it is a real
+  directory owned by the user with no group or other permissions (`/tmp` is shared); on Windows
+  the temporary directory's `rtm`, which is per user. Each acquire refreshes the lock file's
+  modification time, as `/tmp` is cleaned of old files (systemd-tmpfiles, macOS's daily cleanup)
+  and a lock file deleted while held would let the next process lock a new file of the same name;
+  only the MCP server's claim, held for the server's lifetime, can age that long. Another local
+  user who creates `/tmp/rtm-<uid>` first makes every rtm write fail (refused, never shared): a
+  denial of service on a shared machine, accepted for the environment-independent place. The hash is 64-bit FNV-1a, written out
   because `DefaultHasher` may change between Rust versions, of the canonical path (for a file not
   created yet, its directory's canonical path and its name), so every spelling and every rtm
-  binary agree.
-  Processes that disagree on `XDG_RUNTIME_DIR` do not share the lock. `write_lock::lock_dir()` is
-  public, for the other rtm locks kept there (the MCP server's one-server-per-client check).
+  binary agree. `write_lock::lock_dir()` is public, for the other rtm locks kept there (the MCP
+  server's one-server-per-client check).
 - Business-day recurrence is currently approximated as daily (known limitation).
 - Monthly recurrence is approximated as 30 days; yearly as 365 days.
 
