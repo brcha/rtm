@@ -17,6 +17,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ├── cli_commands_tests.rs  ← add, list, complete, delete
 ├── cli_filter_tests.rs    ← The due-date filters of list and complete
 ├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
+├── cli_lock_tests.rs      ← The write lock shared with rtmapp and the MCP server
 ├── cli_sync_tests.rs      ← Sync through git
 ├── cli_tags_tests.rs      ← projects and contexts, and filtering list by them
 └── cli_update_tests.rs    ← check-update against a local HTTP server
@@ -107,6 +108,20 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 - Tests: `tests/cli_sync_tests.rs`, against scratch bare git remotes and clones (local paths, no
   network) with local config that keeps the user's identity, signing, hooks and rerere out. Pijul is
   covered in `rtmsync`; the CLI logic does not depend on the VCS.
+- **The write lock (RTM-158)** is the one rtmapp and the MCP server take (`todotxt::WriteLock` on
+  `rtmsync::lock_target(file)`: the file's repository directory by its markers, whether or not it
+  syncs, else the file; RTM-142). Every command that touches the file (all but `check-update`)
+  takes it in `main` before `Repo::find`, which may commit and reads the file's state (another rtm
+  process between its save and its commit would otherwise look like an outside change), and holds
+  it until it ends, its commit and push included. rtmcli waits for it. `delete` releases it while
+  it asks `Delete? [y/N]`, so no other process waits on a person; after a yes it takes it again,
+  runs `Repo::find` again (an editor may have left changes, or a pull a conflict, meanwhile: exit 1
+  unless `--commit-changes`, as at the start), reads the file again and finds the item again
+  (`find_again`), and deletes nothing (exit 1) when the item or its sub-items changed meanwhile. A
+  lock that cannot be taken: a file whose directory does not exist goes on without it (the command
+  reports its usual error); a command that writes, or may pull (sync on and the file in a
+  repository), exits 1; any other read only warns. Tests: `tests/cli_lock_tests.rs` (they keep
+  `XDG_RUNTIME_DIR`, so test and rtmcli share the lock directory).
 
 ---
 
