@@ -64,6 +64,7 @@ main > section, main > article {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 1rem;
   max-width: 1040px;
   margin: 0 auto;
@@ -80,7 +81,8 @@ main > section, main > article {
   text-decoration: none;
 }
 
-.site-header nav { display: flex; gap: 1.25rem; }
+/* Wraps on phones rather than running off the screen. */
+.site-header nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; }
 .site-header nav a { color: var(--muted); text-decoration: none; }
 .site-header nav a:hover { color: var(--fg); }
 
