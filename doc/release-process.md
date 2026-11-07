@@ -96,7 +96,7 @@
   against `main` or `releases/**` (`pr-title.yml` checks those too); on those it builds and tests the packages (publishes nothing)
   only when they touch the crates (`rtmsync` included since RTM-21, `rtmupdate` since RTM-136, `rtmmcp` since RTM-115), `Cargo.toml`/`Cargo.lock`,
   `LICENSE`, `scripts/build-appimage.sh`, `scripts/build-macos.sh`,
-  `scripts/check-macos-quit.sh` or the workflow, Markdown
+  `scripts/check-macos-quit.sh`, `scripts/check-mcp.sh` or the workflow, Markdown
   excluded (its `changes` job, see "Which changes start which build" in [CI](ci.md)). It has no
   `v*` tag trigger (RTM-102): publishing a draft creates its tag, and a run started by that tag
   would rebuild the packages and publish them over the release, which could turn it back into a
@@ -205,7 +205,12 @@
   starts the installed `rtmapp.exe` with a sample `todo.txt` (config in `%APPDATA%\rtm`) and expects it
   running after 5 s, then stops it by its PID; it only warns on failure, since the runner's desktop
   session and adapter (WARP) are not under our control. Its stderr (`RUST_LOG=info`) is in the
-  `msi-logs` artifact.
+  `msi-logs` artifact. Then the MCP check (RTM-116), which fails the job: a PowerShell
+  `System.Diagnostics.Process` with stdin and stdout on pipes, as an MCP client starts a server,
+  runs the installed `rtmapp.exe mcp` on that config (this proves stdio works in the `windows`
+  subsystem build) and the staged `rtmcli.exe -f <todo.txt> mcp`, one after the other. Each must
+  answer `initialize`, `tools/list` and a `list_files` call within 30 s (named `rtm`, a `list_items`
+  tool, the sample file's path) and exit once its stdin closes.
 
 ## Linux (RTM-8)
 
@@ -247,7 +252,19 @@
   under a headless Weston (non-blocking, a warning on failure). Then both debs are purged, the
   previous release's debs installed and the new ones over them (`dpkg-query` must report the new
   version; skipped with a notice when the release lacks a deb). v0.1.3 is not skipped here: it is the
-  Tauri deb, also named `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked.
+  Tauri deb, also named `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked,
+  and its `AppRun mcp` passes the MCP check. Before the smoke launches, the MCP check (below) runs
+  on the installed binaries.
+- **The MCP check (RTM-116)** runs in `linux-deb`, `linux-deb-install`, each `linux-rpm` container and
+  `macos`: `scripts/check-mcp.sh <expected path> <command…>` (bash 3.2, for macOS; no python, jq or
+  `timeout`, which some containers lack) sends `initialize`, `notifications/initialized`,
+  `tools/list` and a `list_files` call, keeps stdin open until the last reply, and checks the
+  replies for the name `rtm`, a `list_items` tool and the expected path, which proves the file came
+  from `-f` or from rtmapp's config in the platform's place. A watchdog kills a server that does
+  not exit within 30 s. It runs `rtmcli -f <todo.txt> mcp`, then `rtmapp mcp` with a scratch config
+  (`XDG_CONFIG_HOME`, or `HOME` on macOS), never both at once: servers with the same parent count
+  as one client. The Linux test jobs check out no sources, so the `linux` job uploads the script as
+  the `check-mcp` artifact (one day's retention; `publish` takes only `dist-*`).
 - **Which systems are tested:** the two ends of each package family, since an install test catches a
   package missing on the oldest release or renamed or dropped on the newest, and the releases in
   between follow from the ends. debs: Ubuntu 22.04 (`linux-deb`'s runner, the oldest) and the
@@ -257,10 +274,12 @@
   repositories and zypper. The moving tags need no bumps. Fedora 43 and 44, AlmaLinux 10,
   Tumbleweed, Debian 12, 13 and testing and Ubuntu 24.04 and 26.10 also passed once (RTM-9).
 - **Tests (`linux-deb-install`):** an `ubuntu:latest` job container installs both debs with
-  `apt-get`, resolving every `Depends` from the default repositories, with the same file checks.
+  `apt-get`, resolving every `Depends` from the default repositories, with the same file checks and
+  the MCP check.
 - **Tests (`linux-rpm`):** a matrix of job containers (the three RPM images above;
   `fail-fast: false`) installs both RPMs with `dnf` or `zypper`, resolving every `Requires` from the
-  default repositories, with the same file checks and a check for the versioned glibc requirement.
+  default repositories, with the same file checks, a check for the versioned glibc requirement and
+  the MCP check.
   On `fedora:latest` the previous release's RPMs are installed and the new ones over them (skipped
   with a notice when the release has none, true until the second release with RPMs).
 - **Apt hardening is reused, not reinvented.** `linux-deb` pins the `archive.ubuntu.com` mirror and
@@ -293,7 +312,10 @@
   workflow; its `rtmcli` is signed ad hoc there.
 - **Tests in the job:** the dmg is mounted and the app copied to `/Applications`; then the Info.plist
   values, the resources, `codesign --verify --strict` on the app and `rtmcli`, both slices and their
-  `minos` (`vtool`), `rtmcli --help` natively and under Rosetta (skipped with a notice without it).
+  `minos` (`vtool`), `rtmcli --help` natively and under Rosetta (skipped with a notice without it),
+  and the MCP check on the tarball's `rtmcli` and the bundle's `Contents/MacOS/rtmapp`, also under
+  Rosetta when it is installed. (`rtmapp mcp` returns before eframe starts, so it never registers
+  as an application.)
   Then a smoke launch through Launch Services (`open -a`) with a sample `todo.txt` in the runner's own
   config path, expected running after 5 s. It proves only that the process stays up: there is no window
   check (`osascript` would need Accessibility permission), and `open --stderr` captured no log in the

@@ -310,7 +310,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   default, with its tab name, its Git-or-Pijul choice (`sync::chosen`) and the config's `sync`. The
   config is read again at every tool call (it is small), so files added or renamed in the app reach
   the client without a restart; a config with no files gives the client an error. On Windows the
-  release build's `windows` subsystem still uses the stdin and stdout pipes the client passes.
+  release build's `windows` subsystem still uses the stdin and stdout pipes the client passes
+  (the Release workflow checks it on the MSI, see `doc/release-process.md`).
   Tests: `tests/mcp_sources_tests.rs`.
 - **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::place`, then `sync::check`): `sync = false`,
   no repository or an ignored file → no sync and no commits; both Git and Pijul → the Git-or-Pijul

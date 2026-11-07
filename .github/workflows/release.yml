@@ -49,7 +49,7 @@ jobs:
           # HEAD is the pull request's merge commit, HEAD^1 the base it merges into. --no-renames
           # lists both paths of a rename, so renaming a source file to .md still counts as code.
           files=$(git diff --name-only --no-renames HEAD^1 HEAD)
-          inputs='^(rtmapp|rtmcli|rtmmcp|rtmsync|rtmupdate|todotxt)/|^(Cargo\.toml|Cargo\.lock|LICENSE|scripts/build-appimage\.sh|scripts/build-macos\.sh|scripts/check-macos-quit\.sh|\.github/workflows/release\.yml)$'
+          inputs='^(rtmapp|rtmcli|rtmmcp|rtmsync|rtmupdate|todotxt)/|^(Cargo\.toml|Cargo\.lock|LICENSE|scripts/build-appimage\.sh|scripts/build-macos\.sh|scripts/check-macos-quit\.sh|scripts/check-mcp\.sh|\.github/workflows/release\.yml)$'
           # No -q at the end: grep -q exits early, and pipefail would read the first grep's
           # SIGPIPE as "no code".
           if grep -E "$inputs" <<< "$files" | grep -v '\.md$' > /dev/null; then
@@ -357,7 +357,7 @@ jobs:
 
       # Building an MSI is not evidence it installs. A fresh, silent install of the new MSI (both
       # shortcut features are on by default), its files, the shortcuts' AppUserModelID and the exe's
-      # embedded version information, then an uninstall.
+      # embedded version information, a smoke launch, the MCP check, then an uninstall.
       - name: Verify MSI install
         shell: pwsh
         env:
@@ -381,6 +381,50 @@ jobs:
             @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
               Where-Object { $_.DisplayName -eq 'Rusty Todo.txt Manager' } |
               ForEach-Object { [pscustomobject]@{ Code = [string]$_.PSChildName; Version = [string]$_.DisplayVersion } })
+          }
+
+          # Runs an MCP server with stdin and stdout on pipes, as a client does, and checks its answers
+          # to the handshake: named rtm, a list_items tool, and list_files naming $expected (RTM-116).
+          # Fails after 30 s without the replies, or when the server does not exit once stdin closes.
+          function Test-Mcp([string] $exe, [string[]] $arguments, [string] $expected) {
+            $utf8 = [System.Text.UTF8Encoding]::new($false)
+            $psi = [System.Diagnostics.ProcessStartInfo]::new($exe)
+            foreach ($a in $arguments) { $psi.ArgumentList.Add($a) }
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardInput = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.StandardInputEncoding = $utf8
+            $psi.StandardOutputEncoding = $utf8
+            $p = [System.Diagnostics.Process]::Start($psi)
+            try {
+              $p.StandardInput.NewLine = "`n"
+              @(
+                '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check-mcp","version":"0"}}}',
+                '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+                '{"jsonrpc":"2.0","id":2,"method":"tools/list"}',
+                '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_files","arguments":{}}}'
+              ) | ForEach-Object { $p.StandardInput.WriteLine($_) }
+              $p.StandardInput.Flush()
+              $out = ''
+              $deadline = (Get-Date).AddSeconds(30)
+              while ($out -notmatch '"id":3') {
+                $line = $p.StandardOutput.ReadLineAsync()
+                $left = [int][math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+                if (-not $line.Wait($left)) { throw "$exe $arguments did not reply to every request within 30 s. Output: $out" }
+                if ($null -eq $line.Result) { throw "$exe $arguments closed its output before replying to every request. Output: $out" }
+                $out += $line.Result + "`n"
+              }
+              $p.StandardInput.Close()
+              if (-not $p.WaitForExit(10000)) { throw "$exe $arguments did not exit after its stdin closed." }
+              if ($p.ExitCode -ne 0) { throw "$exe $arguments exited with code $($p.ExitCode)." }
+              # The path inside a JSON string: its backslashes are escaped.
+              foreach ($want in @('"name":"rtm"', '"list_items"', $expected.Replace('\', '\\'))) {
+                if (-not $out.Contains($want)) { throw "$exe $arguments did not answer with $want. Output: $out" }
+              }
+              Write-Host "MCP check passed: $exe $arguments serves $expected"
+            } finally {
+              if (-not $p.HasExited) { $p.Kill() }
+            }
           }
 
           Invoke-Msiexec @('/i', (Resolve-Path "dist/rtmapp_${env:VERSION}_x64_en-US.msi").Path) 'install-fresh.log'
@@ -425,9 +469,22 @@ jobs:
             if (Test-Path 'smoke-windows.log') { Get-Content 'smoke-windows.log' }
           }
 
+          # The installed rtmapp.exe (windows subsystem, no console) on the config written above, then
+          # the staged rtmcli.exe on -f; one after the other, as servers with the same parent count as
+          # one client. A failure is raised after the uninstall, so the upgrade checks below still
+          # start from a clean machine.
+          $mcpError = $null
+          try {
+            Test-Mcp $exe @('mcp') $todo
+            Test-Mcp (Resolve-Path "dist/rtmcli-${env:VERSION}-x64.exe").Path @('-f', $todo, 'mcp') $todo
+          } catch {
+            $mcpError = $_
+          }
+
           Invoke-Msiexec @('/x', $products[0].Code) 'uninstall-fresh.log'
           if ((Get-Installed).Count -ne 0) { throw 'The product is still registered after uninstalling.' }
           if (Test-Path -LiteralPath $exe) { throw "Still present after uninstalling: $exe" }
+          if ($mcpError) { throw $mcpError }
 
       # The new MSI must replace a Tauri install instead of sitting beside it, and keep its folder:
       # installs v0.1.3 into a custom folder, then the new MSI over it without naming a folder, and
@@ -688,6 +745,15 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+      # For the package jobs' MCP check; not a release artifact (publish takes dist-* only).
+      - name: Upload the MCP check script
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: check-mcp
+          path: scripts/check-mcp.sh
+          if-no-files-found: error
+          retention-days: 1
+
   # The debs on the oldest Ubuntu they target, from the binaries built in the linux job; the X11
   # and Wayland smoke launches start the binary every Linux package ships. Then the AppImage.
   linux-deb:
@@ -700,6 +766,12 @@ jobs:
         with:
           name: dist-linux
           path: dist
+
+      # The MCP check script: these jobs check out no sources.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: check-mcp
+          path: check-mcp
 
       # Nothing is built here. The package index is refreshed because the install check below
       # resolves the debs' Depends from it. Same hardened apt pattern as before (RTM-28) -- pin the
@@ -764,6 +836,21 @@ jobs:
             echo "::error::No installed XDG portal backend implements the file chooser."
             exit 1
           fi
+
+      # Both installed binaries answer the MCP handshake (RTM-116): rtmcli on -f, rtmapp on the files
+      # of its config, from a scratch XDG_CONFIG_HOME. One after the other: servers with the same
+      # parent count as one client.
+      - name: Check the MCP servers
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/mcp"
+          mkdir -p "$scratch/config/rtm"
+          printf 'Buy milk\n' > "$scratch/todo.txt"
+          printf 'file_name = "%s"\n' "$scratch/todo.txt" > "$scratch/config/rtm/config.toml"
+          bash check-mcp/check-mcp.sh "$scratch/todo.txt" /usr/bin/rtmcli -f "$scratch/todo.txt" mcp
+          XDG_CONFIG_HOME="$scratch/config" bash check-mcp/check-mcp.sh "$scratch/todo.txt" /usr/bin/rtmapp mcp
 
       # Smoke launch of the installed app on X11 (the fallback without WAYLAND_DISPLAY), under Xvfb
       # with Mesa software rendering: lavapipe for Vulkan, llvmpipe for GL. Still running after 5 s
@@ -923,6 +1010,10 @@ jobs:
             fi
           done
 
+          # The MCP server through the AppImage's entry point, on the config of the MCP check above.
+          scratch="$RUNNER_TEMP/mcp"
+          XDG_CONFIG_HOME="$scratch/config" bash ../check-mcp/check-mcp.sh "$scratch/todo.txt" squashfs-root/AppRun mcp
+
   # The debs on the newest Ubuntu LTS, from the packages built in the linux job; linux-deb covers
   # the oldest target (Ubuntu 22.04). The two ends catch what an install test can: a package
   # missing on the oldest release, or renamed or dropped on the newest. Ubuntu shares Debian's
@@ -939,6 +1030,12 @@ jobs:
         with:
           name: dist-linux
           path: dist
+
+      # The MCP check script: these jobs check out no sources.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: check-mcp
+          path: check-mcp
 
       - name: Verify debs install
         shell: bash
@@ -989,6 +1086,21 @@ jobs:
             exit 1
           fi
 
+      # Both installed binaries answer the MCP handshake (RTM-116): rtmcli on -f, rtmapp on the files
+      # of its config, from a scratch XDG_CONFIG_HOME. One after the other: servers with the same
+      # parent count as one client.
+      - name: Check the MCP servers
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/mcp"
+          mkdir -p "$scratch/config/rtm"
+          printf 'Buy milk\n' > "$scratch/todo.txt"
+          printf 'file_name = "%s"\n' "$scratch/todo.txt" > "$scratch/config/rtm/config.toml"
+          bash check-mcp/check-mcp.sh "$scratch/todo.txt" /usr/bin/rtmcli -f "$scratch/todo.txt" mcp
+          XDG_CONFIG_HOME="$scratch/config" bash check-mcp/check-mcp.sh "$scratch/todo.txt" /usr/bin/rtmapp mcp
+
   # The RPMs in one job container per image, from the packages built in the linux job. They name
   # their libraries by soname (and the portal packages by names the distributions share), so one
   # package serves Fedora, RHEL and openSUSE. As for the debs, the two ends of the Fedora/RHEL
@@ -1012,6 +1124,12 @@ jobs:
         with:
           name: dist-linux
           path: dist
+
+      # The MCP check script: these jobs check out no sources.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: check-mcp
+          path: check-mcp
 
       # Installing both from the image's default repositories resolves every Requires; then the
       # files. The smoke launches in linux-deb start the same binary.
@@ -1073,6 +1191,21 @@ jobs:
             echo "::error::No installed XDG portal backend implements the file chooser."
             exit 1
           fi
+
+      # Both installed binaries answer the MCP handshake (RTM-116): rtmcli on -f, rtmapp on the files
+      # of its config, from a scratch XDG_CONFIG_HOME. One after the other: servers with the same
+      # parent count as one client.
+      - name: Check the MCP servers
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/mcp"
+          mkdir -p "$scratch/config/rtm"
+          printf 'Buy milk\n' > "$scratch/todo.txt"
+          printf 'file_name = "%s"\n' "$scratch/todo.txt" > "$scratch/config/rtm/config.toml"
+          bash check-mcp/check-mcp.sh "$scratch/todo.txt" /usr/bin/rtmcli -f "$scratch/todo.txt" mcp
+          XDG_CONFIG_HOME="$scratch/config" bash check-mcp/check-mcp.sh "$scratch/todo.txt" /usr/bin/rtmapp mcp
 
       # The same skip logic as the deb upgrade in linux-deb, on Fedora only (gh is packaged there). Installing
       # the newer RPM over the older one with dnf upgrades it in place. No release before RTM-9 has
@@ -1182,7 +1315,8 @@ jobs:
 
       # Installs the app from the dmg the way a user does (copy to /Applications), then checks the
       # bundle: Info.plist values, both slices, the deployment target, the signature and the
-      # resources. Then the tarball's rtmcli runs, natively and under Rosetta when it is installed.
+      # resources. Then the tarball's rtmcli runs, natively and under Rosetta when it is installed,
+      # and both binaries answer the MCP handshake.
       - name: Verify packages
         timeout-minutes: 10
         env:
@@ -1247,6 +1381,21 @@ jobs:
             arch -x86_64 "$cli/rtmcli" --help
           else
             echo '::notice::Rosetta is not installed: the x86_64 slice of rtmcli was not run.'
+          fi
+
+          # Both binaries answer the MCP handshake (RTM-116), one after the other (servers with the
+          # same parent count as one client): rtmcli on -f, rtmapp on the files of its config, read
+          # from a scratch HOME (dirs::config_dir() is under it). Under Rosetta too when installed.
+          mcp=$(cd "$(mktemp -d)" && pwd -P)
+          mkdir -p "$mcp/home/Library/Application Support/rtm"
+          printf 'Buy milk\n' > "$mcp/todo.txt"
+          printf 'file_name = "%s"\n' "$mcp/todo.txt" > "$mcp/home/Library/Application Support/rtm/config.toml"
+          rtmapp="$app/Contents/MacOS/rtmapp"
+          scripts/check-mcp.sh "$mcp/todo.txt" "$cli/rtmcli" -f "$mcp/todo.txt" mcp
+          HOME="$mcp/home" scripts/check-mcp.sh "$mcp/todo.txt" "$rtmapp" mcp
+          if arch -x86_64 /usr/bin/true 2> /dev/null; then
+            scripts/check-mcp.sh "$mcp/todo.txt" arch -x86_64 "$cli/rtmcli" -f "$mcp/todo.txt" mcp
+            HOME="$mcp/home" scripts/check-mcp.sh "$mcp/todo.txt" arch -x86_64 "$rtmapp" mcp
           fi
 
       # Starts the installed app through Launch Services with a sample todo.txt (the runner's home is
