@@ -96,3 +96,62 @@ fn test_a_directory_can_be_locked() {
     drop(held);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[cfg(unix)]
+mod lock_dir_tests {
+    use super::*;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    fn uid() -> u32 {
+        // SAFETY: getuid has no preconditions and cannot fail.
+        unsafe { libc::getuid() }
+    }
+
+    #[test]
+    fn test_a_missing_directory_is_created_private() {
+        let base = scratch();
+        let dir = private_dir(&base.join("rtm"), uid()).unwrap();
+        let metadata = std::fs::metadata(&dir).unwrap();
+        assert_eq!(metadata.mode() & 0o777, 0o700);
+        // And accepted as it is the next time.
+        assert_eq!(private_dir(&dir, uid()).unwrap(), dir);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn test_a_directory_open_to_others_is_refused() {
+        let base = scratch();
+        let dir = base.join("rtm");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = private_dir(&dir, uid()).unwrap_err();
+        assert!(error.to_string().contains("open to other users"), "{error}");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn test_a_symlink_is_refused() {
+        let base = scratch();
+        let target = base.join("elsewhere");
+        std::fs::create_dir(&target).unwrap();
+        std::os::unix::fs::symlink(&target, base.join("rtm")).unwrap();
+        let error = private_dir(&base.join("rtm"), uid()).unwrap_err();
+        assert!(error.to_string().contains("not a directory"), "{error}");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn test_a_directory_of_another_user_is_refused() {
+        let base = scratch();
+        let error = private_dir(&base, uid() + 1).unwrap_err();
+        assert!(error.to_string().contains("another user"), "{error}");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn test_the_lock_directory_ignores_the_environment() {
+        // MCP clients start servers without XDG_RUNTIME_DIR or TMPDIR: the place must not move.
+        let dir = lock_dir().unwrap();
+        assert_eq!(dir, Path::new("/tmp").join(format!("rtm-{}", uid())));
+    }
+}

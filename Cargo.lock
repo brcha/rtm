@@ -4140,6 +4140,7 @@ name = "todotxt"
 version = "26.2.0"
 dependencies = [
  "chrono",
+ "libc",
  "thiserror 2.0.21",
  "uuid",
 ]

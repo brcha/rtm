@@ -120,8 +120,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   (`find_again`), and deletes nothing (exit 1) when the item or its sub-items changed meanwhile. A
   lock that cannot be taken: a file whose directory does not exist goes on without it (the command
   reports its usual error); a command that writes, or may pull (sync on and the file in a
-  repository), exits 1; any other read only warns. Tests: `tests/cli_lock_tests.rs` (they keep
-  `XDG_RUNTIME_DIR`, so test and rtmcli share the lock directory).
+  repository), exits 1; any other read only warns. Tests: `tests/cli_lock_tests.rs`.
 
 ---
 
