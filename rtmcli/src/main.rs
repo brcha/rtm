@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use todotxt::TodoItem;
 use todotxt::TodoLibrary;
+use todotxt::WriteLock;
 use todotxt::{TodoContext, TodoProject};
 
 #[derive(Parser)]
@@ -284,6 +285,27 @@ fn conflicted(file: &Path) -> ! {
     std::process::exit(1);
 }
 
+/// The write lock rtmapp and the MCP server share (RTM-142, RTM-158), on the file's repository, or
+/// on the file outside one: held while this command reads, pulls, changes and commits it, so no other
+/// rtm process writes the file meanwhile. Waits for it. A file whose directory does not exist has
+/// nothing to protect (the command reports it); any other failure exits when the command writes or
+/// pulls (`needed`), and is only a warning for a plain read.
+fn lock(file: &str, needed: bool) -> Option<WriteLock> {
+    let target = rtmsync::lock_target(Path::new(file));
+    match WriteLock::acquire(&target) {
+        Ok(lock) => Some(lock),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) if needed => {
+            eprintln!("Cannot lock '{}': {e}", target.display());
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Warning: cannot lock '{}': {e}", target.display());
+            None
+        }
+    }
+}
+
 /// Pulls (when `repo` has a remote), then reloads `lib` so it holds what the pull brought.
 fn pull_and_reload(repo: Option<&Repo>, lib: &mut TodoLibrary, file_name: &str) {
     if repo.is_some_and(Repo::sync)
@@ -294,14 +316,15 @@ fn pull_and_reload(repo: Option<&Repo>, lib: &mut TodoLibrary, file_name: &str) 
     }
 }
 
-/// The index of `target` in `lib` after a pull, or exits: the pull changed or removed it, and the
-/// change the user asked for no longer applies to what they saw.
+/// The index of `target` in `lib` after a pull or a question, or exits: the pull or another program
+/// changed or removed it meanwhile, and the change the user asked for no longer applies to what
+/// they saw.
 fn find_again(lib: &TodoLibrary, target: &TodoItem, taken: &[usize]) -> usize {
     let items = lib.list_items();
     if let Some(i) = (0..items.len()).find(|i| items[*i] == *target && !taken.contains(i)) {
         return i;
     }
-    eprintln!("The sync changed or removed '{target}'; nothing was changed.");
+    eprintln!("'{target}' was changed or removed meanwhile; nothing was changed.");
     if let Some(fresh) = target
         .uuid
         .and_then(|uuid| items.iter().find(|item| item.uuid == Some(uuid)))
@@ -375,6 +398,15 @@ fn main() {
         .unwrap_or_else(|| std::env::var("TODOTXT").unwrap_or_else(|_| "todo.txt".to_string()));
 
     let mut lib = TodoLibrary::new(file_name.clone());
+    // Before the repository check, which may commit and reads the file's state: another rtm
+    // process between its save and its commit would look like an outside change. A read that
+    // cannot pull (sync off, or no repository) only needs it to see a whole file.
+    let writes = matches!(
+        cli.command,
+        Commands::Add { .. } | Commands::Complete { .. } | Commands::Delete { .. } | Commands::Sync
+    );
+    let may_pull = !cli.no_sync && rtmsync::root(Path::new(&file_name)).is_some();
+    let mut held = lock(&file_name, writes || may_pull);
     let repo = Repo::find(&file_name, cli.no_sync, cli.vcs, cli.commit_changes);
     let repo = repo.as_ref();
 
@@ -639,7 +671,14 @@ fn main() {
                 println!("  {}", item);
             }
 
+            // After the question the repository is checked again: an editor may have left changes,
+            // or a pull a conflict, while it waited.
+            let mut rechecked = None;
+            let asked = !yes;
             if !yes {
+                // No other rtm process waits on a person: the lock is released while asking, and the
+                // file is read again afterwards.
+                drop(held.take());
                 print!("Delete? [y/N] ");
                 std::io::stdout().flush().ok();
                 let mut answer = String::new();
@@ -649,6 +688,21 @@ fn main() {
                     println!("Nothing deleted.");
                     return;
                 }
+                held = lock(&file_name, true);
+                rechecked = Repo::find(&file_name, cli.no_sync, cli.vcs, cli.commit_changes);
+                if let Err(e) = lib.load() {
+                    eprintln!("Error loading file '{}': {}", file_name, e);
+                    std::process::exit(1);
+                }
+                let index = find_again(&lib, &target, &[]);
+                let mut again = lib.remove_item(index).unwrap();
+                again.remove(again.iter().position(|item| *item == target).unwrap());
+                if again != removed {
+                    eprintln!(
+                        "The sub-items of '{target}' were changed meanwhile; nothing was deleted."
+                    );
+                    std::process::exit(1);
+                }
             }
 
             if let Err(e) = lib.save() {
@@ -656,6 +710,7 @@ fn main() {
                 std::process::exit(1);
             }
             println!("Deleted {} item(s) from '{}'", removed.len() + 1, file_name);
+            let repo = if asked { rechecked.as_ref() } else { repo };
             if let Some(repo) = repo {
                 repo.commit_and_sync(&format!("rtm: delete {target}"));
             }
@@ -676,4 +731,6 @@ fn main() {
         },
         Commands::CheckUpdate { .. } => unreachable!("handled before the file is resolved"),
     }
+    // Held until the command is done, its commit and push included.
+    drop(held);
 }
