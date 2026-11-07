@@ -3484,6 +3484,7 @@ version = "26.2.0"
 dependencies = [
  "chrono",
  "clap",
+ "rtmmcp",
  "rtmsync",
  "rtmupdate",
  "todotxt",
