@@ -49,7 +49,9 @@
   using nix-direnv ≥ 2.30 for a cached shell. It has `rustfmt`, `clippy`, `rust-analyzer`,
   `git-cliff`, `zola`, `lychee` and `jq` (the project website, `site/`, and its checks), and
   `pijul` and `openssh` (RTM-146), so `cargo test` in the shell runs the Pijul sync test instead of
-  skipping it. Like `nativeCheckInputs`, they are test tools, never `eguiDeps`. The shell sets
+  skipping it, and `nodejs_24` for the LLM eval of the MCP tools (RTM-159, `scripts/mcp-eval.sh`,
+  which installs promptfoo from `rtmmcp/eval`'s lock file). Like `nativeCheckInputs`, they are
+  test tools, never `eguiDeps`. The shell sets
   `LD_LIBRARY_PATH` to `eguiDeps` on Linux only (the libraries do not exist on macOS), and sets `NIX_LDFLAGS`, `NIX_CFLAGS_LINK`, `NIX_CFLAGS_COMPILE` and `PKG_CONFIG_PATH` empty and
   `RUSTC_WRAPPER` to empty: a calling session that exports `-L/usr/lib` otherwise links against the
   system glibc instead of the shell's (the binary then fails with `GLIBC_2.xx not found`), and a
