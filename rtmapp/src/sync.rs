@@ -206,10 +206,15 @@ impl Worker {
             for job in job_rx {
                 let sync = matches!(job, Job::Sync(_));
                 let done = match job {
-                    Job::Check { root, file } => Done::Checked {
-                        found: check(vcs, root, &file),
-                        file,
-                    },
+                    Job::Check { root, file } => {
+                        // Another rtm process between its save and its commit would look like
+                        // an outside change; its lock is held until it has committed (RTM-142).
+                        let _lock = todotxt::WriteLock::acquire(&rtmsync::lock_target(&file));
+                        Done::Checked {
+                            found: check(vcs, root, &file),
+                            file,
+                        }
+                    }
                     Job::Commit { file, message } => match vcs.commit(&file, &message) {
                         Ok(()) => Done::Committed,
                         Err(e) => Done::NotCommitted {

@@ -104,3 +104,18 @@ fn an_unreadable_change_is_not_written_over() {
     assert!(app.file().unwrap().error.is_some());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_tab_with_changes_that_could_not_be_written_stays_open() {
+    let dir = temp_dir("reload close pending");
+    let mut app = app_with(&dir, "Alpha\n");
+    std::fs::write(dir.join("todo.txt"), [0xff, 0xfe, 0x00, b'\n']).unwrap();
+    app.toggle(0);
+    let path = app.file().unwrap().path.clone();
+
+    app.close(&path);
+
+    let file = app.file().expect("the tab stays");
+    assert_eq!(file.pending.len(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}

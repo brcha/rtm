@@ -594,14 +594,15 @@ impl App {
         }
     }
 
-    /// Reads again every open file another program changed, so the list shows it (RTM-142). A file
-    /// whose repository has a job outstanding waits for it, as its result may reload the file, and
-    /// so does one being checked on open.
+    /// Reads again every open file another program changed, so the list shows it (RTM-142); a
+    /// synced one is checked as on open first (`OpenFile::recheck`). A file whose repository has a
+    /// job outstanding waits for it, as its result may reload the file, and so does one being
+    /// checked.
     fn reload_changed(&mut self) {
         for file in &mut self.files {
-            let busy = find_repo(&mut self.repos, file.repo.as_ref())
-                .is_some_and(|repo| repo.worker.busy());
-            if !busy && !file.checking && file.changed_on_disk() {
+            let repo = find_repo(&mut self.repos, file.repo.as_ref());
+            let busy = repo.as_ref().is_some_and(|repo| repo.worker.busy());
+            if !busy && !file.checking && file.changed_on_disk() && !file.recheck(repo) {
                 file.reload(self.editing.as_mut());
             }
         }
@@ -946,7 +947,8 @@ impl App {
 
     /// Closes the tab of the open file at `path`: its pending changes are written and committed
     /// first, and its entry leaves the config. Refused while the edit dialog is open, while its
-    /// check on open runs or its repository has a job outstanding, and when the write fails.
+    /// check on open runs or its repository has a job outstanding, and when the write fails or
+    /// does not happen (changes still pending).
     /// Closing the last open file of a repository syncs it once more, so its commits reach the
     /// remote.
     fn close(&mut self, path: &Path) {
@@ -961,8 +963,13 @@ impl App {
             return;
         };
         let mut repo = find_repo(&mut self.repos, file.repo.as_ref());
-        // Closing is refused while the edit dialog is open, so there is no form to keep.
-        if !file.flush(repo.as_deref_mut(), &mut self.delivered, None) {
+        // Closing is refused while the edit dialog is open, so there is no form to keep. Changes
+        // still pending (waiting for a check after an outside change, or for a file that could
+        // not be read) would be lost with the tab, so it stays.
+        if !file.flush(repo.as_deref_mut(), &mut self.delivered, None)
+            || file.checking
+            || !file.pending.is_empty()
+        {
             return;
         }
         let key = file.repo.clone();
@@ -1699,6 +1706,21 @@ impl OpenFile {
         file
     }
 
+    /// Runs the check on open again on `repo`, the file's repository, after another program
+    /// changed a synced file (RTM-142): its result reloads the file, and asks first when the
+    /// change was not committed (`App::checked`), as on open. Not while the outside-changes
+    /// question is already open. True when the check was queued; the pending changes wait for it.
+    fn recheck(&mut self, repo: Option<&mut RepoSync>) -> bool {
+        let (Some(repo), Some(key), None, Some(path)) =
+            (repo, &self.repo, &self.asking, self.loaded_path())
+        else {
+            return false;
+        };
+        repo.worker.check(key.root.clone(), path);
+        self.checking = true;
+        true
+    }
+
     /// Whether another program changed the loaded file since the app last read or wrote it. A
     /// file that is gone or unreadable counts as unchanged: the next load or write reports it.
     fn changed_on_disk(&self) -> bool {
@@ -1794,7 +1816,7 @@ impl OpenFile {
     /// moves are added once written. False when the write failed.
     fn flush(
         &mut self,
-        repo: Option<&mut RepoSync>,
+        mut repo: Option<&mut RepoSync>,
         delivered: &mut Vec<u64>,
         form: Option<&mut EditForm>,
     ) -> bool {
@@ -1807,8 +1829,12 @@ impl OpenFile {
             return true;
         }
         // Another program changed the file: the changes are redone on what it wrote, as after a
-        // pull, instead of writing over it.
+        // pull, instead of writing over it. A synced file is checked as on open first, so an
+        // edit nobody committed is asked about before the app's commit would take it.
         if self.changed_on_disk() {
+            if self.recheck(repo.as_deref_mut()) {
+                return true;
+            }
             self.reload(form);
             // A failed read, or a file written again during it: no save over what was not read.
             if self.pending.is_empty() || self.changed_on_disk() {

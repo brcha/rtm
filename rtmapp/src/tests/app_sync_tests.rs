@@ -1132,3 +1132,76 @@ fn the_source_cannot_be_closed_until_its_moved_item_reached_the_target() {
     let _ = std::fs::remove_dir_all(one);
     let _ = std::fs::remove_dir_all(two);
 }
+
+// Changes another program makes to an open synced file (RTM-142).
+
+#[test]
+fn a_committed_outside_change_is_reloaded_without_asking() {
+    let dir = remote_and_clones("outside committed", "Alpha\n");
+    let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+    // rtmcli or the MCP server: written and committed.
+    std::fs::write(dir.join("a/todo.txt"), "Alpha\nFrom the CLI\n").unwrap();
+    git(
+        &dir.join("a"),
+        &["commit", "--quiet", "-am", "rtm: add From the CLI"],
+    );
+
+    app.reload_changed();
+    wait(&mut app);
+
+    assert!(app.file().unwrap().asking.is_none());
+    assert_eq!(descriptions(&app), ["Alpha", "From the CLI"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_uncommitted_outside_edit_is_asked_about_before_a_commit_takes_it() {
+    let dir = remote_and_clones("outside uncommitted", "Alpha\n");
+    let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+    // An editor: written, not committed.
+    std::fs::write(dir.join("a/todo.txt"), "Alpha\nBy hand\n").unwrap();
+
+    app.new_item = "Bravo".to_owned();
+    app.add_item();
+    wait(&mut app);
+
+    assert!(matches!(
+        app.file().unwrap().asking,
+        Some((_, Question::Modified))
+    ));
+    // Nothing committed yet; the edit and the app's change are both kept, on disk too.
+    assert_eq!(subjects(&dir.join("a"), 1), "start");
+    assert_eq!(descriptions(&app), ["Alpha", "By hand", "Bravo"]);
+    let lines = file_lines(&dir.join("a"));
+    assert_eq!(&lines[..2], ["Alpha", "By hand"]);
+    assert!(lines[2].ends_with("Bravo"), "{lines:?}");
+
+    app.answer(true);
+    wait(&mut app);
+    assert_eq!(subjects(&dir.join("a"), 1), "rtm: commit outside changes");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn another_rtm_process_between_its_save_and_commit_is_not_asked_about() {
+    let dir = remote_and_clones("outside mid-write", "Alpha\n");
+    let file = dir.join("a/todo.txt");
+    let mut app = synced_app(&dir, &file);
+    // rtmcli or the MCP server holds the lock from before its save until after its commit.
+    let held = todotxt::WriteLock::acquire(&rtmsync::lock_target(&file)).unwrap();
+    std::fs::write(&file, "Alpha\nFrom the CLI\n").unwrap();
+    // The check is queued, and waits for the lock. Without it the check would run in this pause,
+    // see the uncommitted write and ask; with it the result does not depend on the pause.
+    app.reload_changed();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    git(
+        &dir.join("a"),
+        &["commit", "--quiet", "-am", "rtm: add From the CLI"],
+    );
+    drop(held);
+    wait(&mut app);
+
+    assert!(app.file().unwrap().asking.is_none());
+    assert_eq!(descriptions(&app), ["Alpha", "From the CLI"]);
+    let _ = std::fs::remove_dir_all(dir);
+}

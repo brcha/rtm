@@ -367,6 +367,16 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     reloads the changed ones (`reload_changed`), except while their repository has a job
     outstanding (its result may reload them) or their check on open runs. A missing or unreadable
     file counts as unchanged; the next load or write reports it.
+    A **synced** file that changed is not simply reloaded: the check on open runs again
+    (`OpenFile::recheck`, unless the outside-changes question is already open), and its result
+    reloads it as on open. A change already committed (rtmcli and the MCP server commit theirs)
+    reloads and syncs; an edit nobody committed (an editor, `--no-sync`) brings up the RTM-57
+    question ("Commit them" / "Don't open") before the app's next commit could take it. The
+    app's pending changes wait for the check, then are redone on the file. The check job takes
+    `todotxt::WriteLock` on the worker thread (`rtmsync::lock_target`), so another rtm process
+    caught between its save and its commit is waited for instead of being asked about. A tab whose
+    changes are still pending (waiting for that check, or for a file that could not be read)
+    refuses to close, so they are not lost with it.
   - **A conflict from a job closes every open file of that repository**, as on open: a reload would
     read the markers as items. Each keeps its place among the open files, and its error line counts
     the pending changes that could not be saved; the repository's worker stops.
