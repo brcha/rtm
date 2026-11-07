@@ -356,6 +356,17 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     deleting or moving it would take changed, `stale` makes Save, Delete and Move refuse. The header
     shows the shown file's repository: "Syncing…", or "Not synced: …" (git's first line; the rest
     on hover) after a failed pull or push; for a file outside any repository, why it does not sync.
+  - **Changes made by another program** (RTM-142: the MCP server, rtmcli, an editor) are read
+    the same way. Each `OpenFile` keeps the file's modification time and size after the app's own
+    last load or write (`seen`, set in `OpenFile::loaded`, `OpenFile::flush` and
+    `OpenFile::reload`); different values mean someone else wrote it (`changed_on_disk`). Before
+    a write, `OpenFile::flush` reloads such a file and redoes the pending changes on it, so the app
+    never writes over them; when that read fails, or the file changed again during it (the state
+    is taken before the read), the changes stay pending and nothing is written. While the window shows (not minimized or occluded), `watch_files`
+    checks every open file every 2 s (`DISK_CHECK`) and when the window gains the focus, and
+    reloads the changed ones (`reload_changed`), except while their repository has a job
+    outstanding (its result may reload them) or their check on open runs. A missing or unreadable
+    file counts as unchanged; the next load or write reports it.
   - **A conflict from a job closes every open file of that repository**, as on open: a reload would
     read the markers as items. Each keeps its place among the open files, and its error line counts
     the pending changes that could not be saved; the repository's worker stops.

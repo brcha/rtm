@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, TryRecvError};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui::{
     self, Align, Color32, Frame, Layout, Margin, RichText, Stroke, Ui,
@@ -20,6 +20,10 @@ use crate::update::{self, Notice, UpdateCheck};
 /// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
 /// push, 60 s each at most, and a little more.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(125);
+
+/// How often the open files are checked for changes made by another program while the window
+/// shows (RTM-142).
+const DISK_CHECK: Duration = Duration::from_secs(2);
 
 /// What to do with the path a file dialog returned: `App::open_file` or `App::create_file`.
 type OnPath = fn(&mut App, &Path);
@@ -70,6 +74,10 @@ pub struct App {
     dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
     /// The update check and its notice (RTM-138).
     updates: UpdateCheck,
+    /// When the open files are next checked for outside changes, and whether the window had the
+    /// focus at the last frame (gaining it checks at once).
+    next_disk_check: Instant,
+    focused: bool,
     ctx: egui::Context,
 }
 
@@ -121,6 +129,9 @@ struct OpenFile {
     /// them. Kept for the run, not saved.
     projects: Vec<TodoProject>,
     contexts: Vec<TodoContext>,
+    /// The file's modification time and size after the app's last load or write: anything else
+    /// means another program changed it (RTM-142).
+    seen: Option<(SystemTime, u64)>,
 }
 
 impl App {
@@ -158,6 +169,8 @@ impl App {
             delivered: Vec::new(),
             dialog: None,
             updates,
+            next_disk_check: Instant::now(),
+            focused: false,
             ctx: cc.egui_ctx.clone(),
         };
         app.connect_all();
@@ -318,7 +331,7 @@ impl App {
             for file in &mut self.files {
                 // A failed write is in the file's line.
                 let repo = find_repo(&mut self.repos, file.repo.as_ref());
-                let _ = file.flush(repo, &mut self.delivered);
+                let _ = file.flush(repo, &mut self.delivered, self.editing.as_mut());
             }
             // Again when a pass wrote a move's arriving half (its source may come before its
             // target), or a failed move's item was put back (its edit is pending).
@@ -578,6 +591,43 @@ impl App {
                     self.close_editor();
                 }
             }
+        }
+    }
+
+    /// Reads again every open file another program changed, so the list shows it (RTM-142). A file
+    /// whose repository has a job outstanding waits for it, as its result may reload the file, and
+    /// so does one being checked on open.
+    fn reload_changed(&mut self) {
+        for file in &mut self.files {
+            let busy = find_repo(&mut self.repos, file.repo.as_ref())
+                .is_some_and(|repo| repo.worker.busy());
+            if !busy && !file.checking && file.changed_on_disk() {
+                file.reload(self.editing.as_mut());
+            }
+        }
+    }
+
+    /// Checks the open files for outside changes every `DISK_CHECK` while the window shows, and at
+    /// once when it gains the focus.
+    fn watch_files(&mut self, ctx: &egui::Context, now: Instant) {
+        let (focused, hidden) = ctx.input(|i| {
+            let viewport = i.viewport();
+            (
+                i.focused,
+                viewport.minimized == Some(true) || viewport.occluded == Some(true),
+            )
+        });
+        let gained = focused && !self.focused;
+        self.focused = focused;
+        if hidden {
+            return;
+        }
+        if gained || now >= self.next_disk_check {
+            self.reload_changed();
+            self.next_disk_check = now + DISK_CHECK;
+        }
+        if self.files.iter().any(|file| file.library.is_some()) {
+            ctx.request_repaint_after(self.next_disk_check.saturating_duration_since(now));
         }
     }
 
@@ -911,7 +961,8 @@ impl App {
             return;
         };
         let mut repo = find_repo(&mut self.repos, file.repo.as_ref());
-        if !file.flush(repo.as_deref_mut(), &mut self.delivered) {
+        // Closing is refused while the edit dialog is open, so there is no form to keep.
+        if !file.flush(repo.as_deref_mut(), &mut self.delivered, None) {
             return;
         }
         let key = file.repo.clone();
@@ -1644,7 +1695,14 @@ impl OpenFile {
     fn loaded(library: TodoLibrary, name: Option<String>) -> Self {
         let mut file = OpenFile::new(PathBuf::from(&library.file_name), name);
         file.library = Some(library);
+        file.seen = disk_state(&file.path);
         file
+    }
+
+    /// Whether another program changed the loaded file since the app last read or wrote it. A
+    /// file that is gone or unreadable counts as unchanged: the next load or write reports it.
+    fn changed_on_disk(&self) -> bool {
+        self.library.is_some() && disk_state(&self.path).is_some_and(|now| Some(now) != self.seen)
     }
 
     /// The file's path, while it is loaded: only a loaded file is placed, checked or synced.
@@ -1734,7 +1792,12 @@ impl OpenFile {
     /// are redone on what it brings. An item moved out of the file is removed from it on disk only
     /// after its target was written: the move's id is in `delivered`, to which this file's arriving
     /// moves are added once written. False when the write failed.
-    fn flush(&mut self, repo: Option<&mut RepoSync>, delivered: &mut Vec<u64>) -> bool {
+    fn flush(
+        &mut self,
+        repo: Option<&mut RepoSync>,
+        delivered: &mut Vec<u64>,
+        form: Option<&mut EditForm>,
+    ) -> bool {
         // During the check on open a write would look like an outside change.
         if self.pending.is_empty()
             || self.checking
@@ -1742,6 +1805,15 @@ impl OpenFile {
             || self.waits_for_move(delivered)
         {
             return true;
+        }
+        // Another program changed the file: the changes are redone on what it wrote, as after a
+        // pull, instead of writing over it.
+        if self.changed_on_disk() {
+            self.reload(form);
+            // A failed read, or a file written again during it: no save over what was not read.
+            if self.pending.is_empty() || self.changed_on_disk() {
+                return true;
+            }
         }
         let Some(library) = &mut self.library else {
             return true;
@@ -1756,6 +1828,7 @@ impl OpenFile {
             self.error = Some(format!("{}: {e}", library.file_name));
             return false;
         }
+        self.seen = disk_state(&self.path);
         delivered.extend(changes.iter().filter_map(|change| match change {
             Change::MoveIn { id, .. } => Some(*id),
             _ => None,
@@ -1775,10 +1848,13 @@ impl OpenFile {
         let Some(library) = &mut self.library else {
             return;
         };
+        // Taken before the read: a write by another program during it is then still noticed.
+        let state = disk_state(&self.path);
         if let Err(e) = library.load() {
             self.error = Some(format!("{}: {e}", library.file_name));
             return;
         }
+        self.seen = state;
         let mut dropped = Vec::new();
         self.pending.retain(|change| {
             let redone = change.redo(library);
@@ -1839,7 +1915,8 @@ impl eframe::App for App {
     }
 
     /// Runs before each `ui`, and also while the window is hidden (when a repaint was requested).
-    fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.watch_files(ctx, Instant::now());
         self.sync_results();
         self.reconnect_when_idle();
         self.show_question();
@@ -2123,6 +2200,13 @@ fn open_session(config: &mut AppConfig) -> (Vec<OpenFile>, Option<PathBuf>) {
     let active = files.iter().find(named).or(files.first());
     let active = active.map(|file| file.path.clone());
     (files, active)
+}
+
+/// A file's modification time and size, to notice a change another program made; `None` when it
+/// cannot be read.
+fn disk_state(path: &Path) -> Option<(SystemTime, u64)> {
+    let metadata = std::fs::metadata(path).ok()?;
+    Some((metadata.modified().ok()?, metadata.len()))
 }
 
 /// Loads a todo.txt file. The path is canonicalized first, as the Tauri app did; `path` is the
@@ -2564,3 +2648,7 @@ mod tabs_tests;
 #[cfg(test)]
 #[path = "tests/app_move_tests.rs"]
 mod move_tests;
+
+#[cfg(test)]
+#[path = "tests/app_reload_tests.rs"]
+mod reload_tests;
