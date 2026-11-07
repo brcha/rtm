@@ -63,7 +63,8 @@ fn wait(app: &mut App) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
         app.sync_results();
-        if !app.busy() {
+        // A write that found the lock held is tried again by the next frames, as here.
+        if !app.busy() && !app.files.iter().any(|file| file.locked_out) {
             return;
         }
         assert!(
@@ -1203,5 +1204,52 @@ fn another_rtm_process_between_its_save_and_commit_is_not_asked_about() {
 
     assert!(app.file().unwrap().asking.is_none());
     assert_eq!(descriptions(&app), ["Alpha", "From the CLI"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_pull_waits_while_another_process_holds_the_lock() {
+    let dir = remote_and_clones("sync lock", "Alpha\n");
+    let file = dir.join("a/todo.txt");
+    let mut app = synced_app(&dir, &file);
+    push_from_b(&dir, "Alpha\nFrom b\n");
+    let held = todotxt::WriteLock::acquire(&rtmsync::lock_target(&file)).unwrap();
+
+    sync(&mut app);
+    // Long enough for an unlocked pull to land.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(file_lines(&dir.join("a")), ["Alpha"]);
+
+    drop(held);
+    wait(&mut app);
+    assert_eq!(file_lines(&dir.join("a")), ["Alpha", "From b"]);
+    assert_eq!(descriptions(&app), ["Alpha", "From b"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn exit_writes_once_a_job_waiting_for_the_same_lock_is_done() {
+    let dir = remote_and_clones("sync lock exit", "Alpha\n");
+    let file = dir.join("a/todo.txt");
+    let mut app = synced_app(&dir, &file);
+    let held = todotxt::WriteLock::acquire(&rtmsync::lock_target(&file)).unwrap();
+    app.new_item = "Bravo".to_owned();
+    app.add_item();
+    // A timer sync queued meanwhile waits for the same lock in the worker.
+    sync(&mut app);
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        drop(held);
+    });
+
+    let start = Instant::now();
+    app.write_through_lock(start + std::time::Duration::from_secs(5));
+    wait(&mut app);
+    releaser.join().unwrap();
+
+    assert!(start.elapsed() < std::time::Duration::from_secs(4));
+    let lines = file_lines(&dir.join("a"));
+    assert!(lines.len() == 2 && lines[1].ends_with("Bravo"), "{lines:?}");
+    assert_eq!(subjects(&dir.join("a"), 1), "rtm: add Bravo");
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -142,13 +142,13 @@ pub fn check(vcs: Vcs, root: PathBuf, file: &Path) -> Found {
 
 enum Job {
     /// The check on open, run here so it never meets a pull of the same repository half-way.
-    Check {
-        root: PathBuf,
-        file: PathBuf,
-    },
+    Check { root: PathBuf, file: PathBuf },
+    /// `lock`: the write lock the app took for the write being committed; the worker takes it
+    /// itself when there is none.
     Commit {
         file: PathBuf,
         message: String,
+        lock: Option<todotxt::WriteLock>,
     },
     /// Pull and push; the files are the repository's open ones, whose changes are reported.
     Sync(Vec<PathBuf>),
@@ -215,13 +215,25 @@ impl Worker {
                             file,
                         }
                     }
-                    Job::Commit { file, message } => match vcs.commit(&file, &message) {
-                        Ok(()) => Done::Committed,
-                        Err(e) => Done::NotCommitted {
-                            file,
-                            error: e.to_string(),
-                        },
-                    },
+                    Job::Commit {
+                        file,
+                        message,
+                        lock,
+                    } => {
+                        // Held until the commit is done, then released.
+                        let lock = lock.or_else(|| {
+                            todotxt::WriteLock::acquire(&rtmsync::lock_target(&file)).ok()
+                        });
+                        let committed = vcs.commit(&file, &message);
+                        drop(lock);
+                        match committed {
+                            Ok(()) => Done::Committed,
+                            Err(e) => Done::NotCommitted {
+                                file,
+                                error: e.to_string(),
+                            },
+                        }
+                    }
                     Job::Sync(files) => sync_files(vcs, &files),
                 };
                 if result_tx.send((sync, done)).is_err() {
@@ -252,8 +264,18 @@ impl Worker {
     }
 
     /// Queues a commit of the saved `file` with `message`. Local only: the next sync pushes it.
-    pub fn commit(&mut self, file: PathBuf, message: String) {
-        if self.jobs.send(Job::Commit { file, message }).is_ok() {
+    /// `lock` is the write lock taken for the write, released once the commit is done; without
+    /// one the worker takes it.
+    pub fn commit(&mut self, file: PathBuf, message: String, lock: Option<todotxt::WriteLock>) {
+        if self
+            .jobs
+            .send(Job::Commit {
+                file,
+                message,
+                lock,
+            })
+            .is_ok()
+        {
             self.pending += 1;
         }
     }
@@ -341,6 +363,8 @@ fn sync_files(vcs: Vcs, files: &[PathBuf]) -> Done {
             changed: Vec::new(),
         };
     };
+    // A pull rewrites the repository's files: no other rtm process may be writing one meanwhile.
+    let _lock = todotxt::WriteLock::acquire(&rtmsync::lock_target(first));
     let before: Vec<_> = files.iter().map(|file| std::fs::read(file).ok()).collect();
     let result = vcs.sync(first);
     if matches!(result, Err(rtmsync::Error::Conflict))

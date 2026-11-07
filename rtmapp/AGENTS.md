@@ -377,6 +377,23 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     caught between its save and its commit is waited for instead of being asked about. A tab whose
     changes are still pending (waiting for that check, or for a file that could not be read)
     refuses to close, so they are not lost with it.
+  - **The write lock** (`todotxt::WriteLock` on `rtmsync::lock_target(file)`, the repository's
+    directory, else the file; RTM-142) is shared with rtmcli and the MCP server. `OpenFile::flush`
+    takes it first, then checks for outside changes, then saves: never the other way round, or
+    another process could save in between. The UI thread never waits for it (another process may
+    hold it for a whole pull): `try_lock_briefly` tries for about 10 ms (a lock just released can
+    look held while another thread's child process, git, still has the lock file open until it
+    runs), and when it is held the changes stay pending (`locked_out`) and are tried again every
+    200 ms (`LOCK_RETRY`). The lock goes with the `Commit` job and the worker releases it after the
+    commit; without a commit queued (no repository, the outside-changes question open, a recheck
+    queued instead) it is released at the end of `flush`. The worker takes it itself, blocking on
+    its own thread, around every `Sync` and `Check` and a `Commit` that brought none (the answers to
+    the outside-changes and untracked questions). It waits for a lock the UI holds only until
+    `flush` returns (a recheck queued from it): the UI writes only while the worker is idle, and
+    hands its lock to the commit it queues. The periodic reload takes the lock too, briefly, and
+    skips a file whose lock is held, so it never reads one half-written. On exit
+    (`write_through_lock`), a held lock is waited for up to `SAVE_TIMEOUT`, then the changes are
+    written without it rather than lost.
   - **A conflict from a job closes every open file of that repository**, as on open: a reload would
     read the markers as items. Each keeps its place among the open files, and its error line counts
     the pending changes that could not be saved; the repository's worker stops.

@@ -7,7 +7,7 @@ use eframe::egui::{
     self, Align, Color32, Frame, Layout, Margin, RichText, Stroke, Ui,
     text::{LayoutJob, TextFormat},
 };
-use todotxt::{TodoContext, TodoItem, TodoLibrary, TodoProject};
+use todotxt::{TodoContext, TodoItem, TodoLibrary, TodoProject, WriteLock};
 
 use crate::config::{self, AppConfig};
 use crate::edit::{self, ConfirmMove, EditForm, MoveTarget, Outcome};
@@ -20,6 +20,9 @@ use crate::update::{self, Notice, UpdateCheck};
 /// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
 /// push, 60 s each at most, and a little more.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(125);
+
+/// How soon a write is tried again while another rtm process holds the write lock (RTM-142).
+const LOCK_RETRY: Duration = Duration::from_millis(200);
 
 /// How often the open files are checked for changes made by another program while the window
 /// shows (RTM-142).
@@ -78,6 +81,9 @@ pub struct App {
     /// focus at the last frame (gaining it checks at once).
     next_disk_check: Instant,
     focused: bool,
+    /// Set on exit once the wait for another process's write lock is over: the changes are written
+    /// without it rather than lost.
+    write_unlocked: bool,
     ctx: egui::Context,
 }
 
@@ -132,6 +138,8 @@ struct OpenFile {
     /// The file's modification time and size after the app's last load or write: anything else
     /// means another program changed it (RTM-142).
     seen: Option<(SystemTime, u64)>,
+    /// The last write found the write lock held by another rtm process; the changes wait.
+    locked_out: bool,
 }
 
 impl App {
@@ -171,6 +179,7 @@ impl App {
             updates,
             next_disk_check: Instant::now(),
             focused: false,
+            write_unlocked: false,
             ctx: cc.egui_ctx.clone(),
         };
         app.connect_all();
@@ -286,7 +295,8 @@ impl App {
             if let Some(joined) = find_repo(&mut self.repos, file.repo.as_ref()) {
                 joined.worker.found_remote(repo.remote());
                 if let Some(path) = path {
-                    joined.worker.commit(path, message);
+                    // The worker takes the lock itself.
+                    joined.worker.commit(path, message, None);
                 }
             }
             self.sync_repo(&repo.key(), Instant::now());
@@ -331,13 +341,17 @@ impl App {
             for file in &mut self.files {
                 // A failed write is in the file's line.
                 let repo = find_repo(&mut self.repos, file.repo.as_ref());
-                let _ = file.flush(repo, &mut self.delivered, self.editing.as_mut());
+                let unlocked = self.write_unlocked;
+                let _ = file.flush(repo, &mut self.delivered, self.editing.as_mut(), unlocked);
             }
             // Again when a pass wrote a move's arriving half (its source may come before its
             // target), or a failed move's item was put back (its edit is pending).
             if self.delivered.len() == delivered && !self.restore_lost_moves() {
                 break;
             }
+        }
+        if self.files.iter().any(|file| file.locked_out) {
+            self.ctx.request_repaint_after(LOCK_RETRY);
         }
     }
 
@@ -602,7 +616,14 @@ impl App {
         for file in &mut self.files {
             let repo = find_repo(&mut self.repos, file.repo.as_ref());
             let busy = repo.as_ref().is_some_and(|repo| repo.worker.busy());
-            if !busy && !file.checking && file.changed_on_disk() && !file.recheck(repo) {
+            if busy || file.checking || !file.changed_on_disk() || file.recheck(repo) {
+                continue;
+            }
+            // Not while another rtm process writes it: the read could see half a file.
+            let Some(path) = file.loaded_path() else {
+                continue;
+            };
+            if let Ok(Some(_lock)) = try_lock_briefly(&rtmsync::lock_target(&path)) {
                 file.reload(self.editing.as_mut());
             }
         }
@@ -669,6 +690,23 @@ impl App {
                 self.handle(&key, done);
                 self.flush();
             }
+        }
+    }
+
+    /// On exit: waits until `until` for the write lock other rtm processes hold over pending
+    /// changes, then writes them without it, as before the lock existed: in a rare case that
+    /// overwrites another process's change, rather than losing the user's.
+    fn write_through_lock(&mut self, until: Instant) {
+        while self.files.iter().any(|file| file.locked_out) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(100));
+            // Picks up the workers' results too, so a job that was outstanding no longer holds
+            // the write back.
+            self.sync_results();
+        }
+        if self.files.iter().any(|file| file.locked_out) {
+            self.write_unlocked = true;
+            self.flush();
+            self.write_unlocked = false;
         }
     }
 
@@ -966,7 +1004,7 @@ impl App {
         // Closing is refused while the edit dialog is open, so there is no form to keep. Changes
         // still pending (waiting for a check after an outside change, or for a file that could
         // not be read) would be lost with the tab, so it stays.
-        if !file.flush(repo.as_deref_mut(), &mut self.delivered, None)
+        if !file.flush(repo.as_deref_mut(), &mut self.delivered, None, false)
             || file.checking
             || !file.pending.is_empty()
         {
@@ -1819,7 +1857,10 @@ impl OpenFile {
         mut repo: Option<&mut RepoSync>,
         delivered: &mut Vec<u64>,
         form: Option<&mut EditForm>,
+        unlocked: bool,
     ) -> bool {
+        // Set again below if the lock is still held; a file skipped here is not waiting for it.
+        self.locked_out = false;
         // During the check on open a write would look like an outside change.
         if self.pending.is_empty()
             || self.checking
@@ -1828,6 +1869,24 @@ impl OpenFile {
         {
             return true;
         }
+        // The lock first, then the check for outside changes: another rtm process could otherwise
+        // save in between. The UI thread never waits for it (a pull may hold it for a minute); the
+        // changes stay pending and are tried again. `unlocked` writes without it (on exit).
+        let lock = match self.loaded_path() {
+            Some(_) if unlocked => None,
+            Some(path) => match try_lock_briefly(&rtmsync::lock_target(&path)) {
+                Ok(Some(lock)) => Some(lock),
+                Ok(None) => {
+                    self.locked_out = true;
+                    return true;
+                }
+                Err(e) => {
+                    self.error = Some(format!("Cannot lock {}: {e}", path.display()));
+                    return false;
+                }
+            },
+            None => return true,
+        };
         // Another program changed the file: the changes are redone on what it wrote, as after a
         // pull, instead of writing over it. A synced file is checked as on open first, so an
         // edit nobody committed is asked about before the app's commit would take it.
@@ -1861,9 +1920,11 @@ impl OpenFile {
         }));
         // While the outside-changes question is open, a commit would take those changes (or add
         // the untracked file) before the user answers; the write alone keeps the edit.
+        // The lock goes with the commit and is released once it is done; with no commit queued it
+        // is released here.
         if let Some(repo) = repo.filter(|_| self.asking.is_none()) {
             let path = PathBuf::from(&library.file_name);
-            repo.worker.commit(path, commit_message(&changes));
+            repo.worker.commit(path, commit_message(&changes), lock);
         }
         true
     }
@@ -1919,6 +1980,7 @@ impl eframe::App for App {
     fn on_exit(&mut self) {
         let deadline = Instant::now() + Duration::from_secs(5);
         self.finish_jobs(deadline);
+        self.write_through_lock(Instant::now() + SAVE_TIMEOUT);
         self.sync_now(Instant::now());
         self.finish_jobs(deadline);
         // A closed repository's commit gets as long as an open one's; its sync, the exit limit.
@@ -2226,6 +2288,20 @@ fn open_session(config: &mut AppConfig) -> (Vec<OpenFile>, Option<PathBuf>) {
     let active = files.iter().find(named).or(files.first());
     let active = active.map(|file| file.path.clone());
     (files, active)
+}
+
+/// The write lock on `target` if it can be had within about 10 ms, without waiting longer: `None`
+/// while another rtm process holds it. A lock just released can look held for a moment, while a
+/// process another thread is starting (git, for a worker) still has the lock file open until it
+/// runs its program, so a few quick attempts are made.
+fn try_lock_briefly(target: &Path) -> std::io::Result<Option<WriteLock>> {
+    for _ in 0..10 {
+        if let Some(lock) = WriteLock::try_acquire(target)? {
+            return Ok(Some(lock));
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    WriteLock::try_acquire(target)
 }
 
 /// A file's modification time and size, to notice a change another program made; `None` when it
@@ -2678,3 +2754,7 @@ mod move_tests;
 #[cfg(test)]
 #[path = "tests/app_reload_tests.rs"]
 mod reload_tests;
+
+#[cfg(test)]
+#[path = "tests/app_lock_tests.rs"]
+mod lock_tests;
