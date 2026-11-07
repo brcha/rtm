@@ -1,8 +1,32 @@
 # Rusty Todo Manager
 
-This is a [Todo.txt](https://github.com/todotxt/todo.txt) managment app, written in Rust. Very early development, but a few things already work.
+[![Rust](https://github.com/brcha/rtm/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/brcha/rtm/actions/workflows/rust.yml?query=branch%3Amain)
+[![Nix](https://github.com/brcha/rtm/actions/workflows/nix.yml/badge.svg?branch=main)](https://github.com/brcha/rtm/actions/workflows/nix.yml?query=branch%3Amain)
+[![Site](https://github.com/brcha/rtm/actions/workflows/site.yml/badge.svg?branch=main)](https://github.com/brcha/rtm/actions/workflows/site.yml?query=branch%3Amain)
+[![Latest release](https://img.shields.io/github/v/release/brcha/rtm)](https://github.com/brcha/rtm/releases)
+[![License](https://img.shields.io/github/license/brcha/rtm)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/brcha/rtm/total)](https://github.com/brcha/rtm/releases)
+[![Dependency status](https://deps.rs/repo/github/brcha/rtm/status.svg)](https://deps.rs/repo/github/brcha/rtm)
+[![Built with Nix](https://img.shields.io/badge/built%20with-Nix-5277C3?logo=nixos&logoColor=white)](#nix-and-nixos)
+[![Website](https://img.shields.io/website?url=https%3A%2F%2Frtm.brcha.com)](https://rtm.brcha.com)
+
+A [Todo.txt](https://github.com/todotxt/todo.txt) management app written in Rust, with a desktop
+app and a command-line program for GNU/Linux, macOS and Windows. It is released and in daily use,
+and still under active development.
 
 Website: <https://rtm.brcha.com>.
+
+What works today:
+
+- A desktop app (`rtmapp`, egui) and a CLI (`rtmcli`), built on one shared library (`todotxt`).
+- [Several todo.txt files](#several-files-in-the-desktop-app) open at once in the desktop app, one
+  tab each.
+- [Projects and contexts](#projects-and-contexts): listed with their open-item counts and used as
+  filters, in both programs.
+- [Syncing](#syncing-through-git-or-pijul) a todo.txt through its Git or Pijul repository.
+- [Update checks](#updates) against the website, with stable and beta channels.
+- [Packages](#installing): deb, RPM and AppImage for GNU/Linux, a DMG for macOS, an MSI for
+  Windows, and a [Nix flake](#nix-and-nixos).
 
 Here are screenshots of the GUI, in the light and the dark theme:
 
@@ -274,8 +298,9 @@ title bar), or set it to 0 to sync only on open, on close and on demand; it is s
 
 ## General plan
 
-- [x] Implement basic functionality of the Todo.txt manager with CLI and desktop GUI (for GNU/Linux, Mac OS X and Windows, since I use all of those).
+- [x] Implement basic functionality of the Todo.txt manager with CLI and desktop GUI (for GNU/Linux, macOS and Windows, since I use all of those).
 - [x] Create cloud synchronisation for the Todo.txt files (ideas welcome, my plan is to setup a private git repo, which is what I currently use anyway). Done through Git or Pijul, see [Syncing through Git or Pijul](#syncing-through-git-or-pijul).
+- [ ] MCP server for AI assistants (in progress).
 - [ ] Make a mobile GUI for the library (Android centric, but hopefully cross platform).
 - [ ] Add subtasks as a concept (already provided uuid and sub tags for todo.txt items, needs implementation in cli/ui)
 - [ ] Add comments for items (using uuid and some comment storage, probably specific subdir of the todotxt git-managed directory)
