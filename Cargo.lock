@@ -3468,6 +3468,7 @@ dependencies = [
  "log",
  "pollster 1.0.1",
  "rfd",
+ "rtmmcp",
  "rtmsync",
  "rtmupdate",
  "serde",
@@ -3484,6 +3485,7 @@ version = "26.2.0"
 dependencies = [
  "chrono",
  "clap",
+ "rtmmcp",
  "rtmsync",
  "rtmupdate",
  "todotxt",
@@ -4140,6 +4142,7 @@ name = "todotxt"
 version = "26.2.0"
 dependencies = [
  "chrono",
+ "libc",
  "thiserror 2.0.21",
  "uuid",
 ]

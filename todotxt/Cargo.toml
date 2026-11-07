@@ -12,3 +12,7 @@ thiserror = "2"
 [dependencies.uuid]
 version = "1.5.0"
 features = ["v4", "fast-rng", "macro-diagnostics"]
+
+[target.'cfg(unix)'.dependencies]
+# The user ID names the lock directory, which must not depend on the environment.
+libc = "0.2"

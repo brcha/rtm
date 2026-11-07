@@ -13,7 +13,7 @@ use todotxt::{TodoContext, TodoProject};
 #[command(about = "Rusty Todo.txt Manager CLI")]
 struct Cli {
     /// Todo.txt file name
-    #[arg(short = 'f', long)]
+    #[arg(short = 'f', long, global = true)]
     file: Option<String>,
 
     /// Do not commit, pull or push, even in a repository
@@ -84,6 +84,8 @@ enum Commands {
         #[arg(long, value_enum, default_value_t = UpdateChannel::Stable)]
         channel: UpdateChannel,
     },
+    /// Serve the file to MCP clients (AI assistants) over stdin and stdout
+    Mcp,
 }
 
 #[derive(ValueEnum, Clone, Copy, PartialEq)]
@@ -139,6 +141,33 @@ fn check_update(_channel: UpdateChannel) -> ! {
         "This build of rtmcli has no update check; update it through the package manager that \
          installed it (for Nix, the flake input)."
     );
+    std::process::exit(0);
+}
+
+/// Serves the file from `-f` or `$TODOTXT` to an MCP client over stdio, then exits. There is no
+/// `todo.txt` fallback: the client's working directory is arbitrary.
+fn mcp(file: Option<String>, no_sync: bool, vcs: Option<VcsName>) -> ! {
+    let Some(file) = file.or_else(|| std::env::var("TODOTXT").ok()) else {
+        eprintln!("rtmcli mcp needs the todo.txt file: pass -f FILE or set TODOTXT");
+        std::process::exit(2);
+    };
+    let path = match std::path::absolute(&file) {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Error: '{file}': {e}");
+            std::process::exit(2);
+        }
+    };
+    let source = rtmmcp::Source {
+        path,
+        name: None,
+        sync: !no_sync,
+        vcs: vcs.map(VcsName::vcs),
+    };
+    if let Err(e) = rtmmcp::serve(std::sync::Arc::new(move || Ok(vec![source.clone()]))) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
     std::process::exit(0);
 }
 
@@ -387,6 +416,11 @@ fn main() {
     // Before the file and its repository are looked at: the check reads no file and syncs nothing.
     if let Commands::CheckUpdate { channel } = cli.command {
         check_update(channel);
+    }
+    // Before the lock and the repository check: the server locks each change itself, and a lock
+    // held for its lifetime would stop every other rtm process.
+    if let Commands::Mcp = cli.command {
+        mcp(cli.file, cli.no_sync, cli.vcs);
     }
     // Before the repository is looked at, so a usage error never commits, syncs or hints first.
     let list_filters = match &cli.command {
@@ -729,7 +763,9 @@ fn main() {
                 file_name
             ),
         },
-        Commands::CheckUpdate { .. } => unreachable!("handled before the file is resolved"),
+        Commands::CheckUpdate { .. } | Commands::Mcp => {
+            unreachable!("handled before the file is resolved")
+        }
     }
     // Held until the command is done, its commit and push included.
     drop(held);

@@ -46,13 +46,17 @@ impl WriteLock {
     }
 }
 
-/// The lock file for `path` in `dir`, opened for locking.
+/// The lock file for `path` in `dir`, opened for locking. Its modification time is refreshed: `/tmp`
+/// is cleaned of old files, and a lock file deleted while held would let the next process lock a
+/// new file of the same name.
 fn open(dir: &Path, path: &Path) -> io::Result<File> {
-    OpenOptions::new()
+    let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(lock_path(dir, path)?)
+        .open(lock_path(dir, path)?)?;
+    file.set_modified(std::time::SystemTime::now())?;
+    Ok(file)
 }
 
 /// The lock file for `path` in `dir`.
@@ -85,35 +89,57 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 
 /// The per-user directory holding the lock files, created when missing. Other rtm locks (the MCP
 /// server's one-server-per-client check) live here too.
+///
+/// It must not depend on the environment: MCP clients start servers with a trimmed one (no
+/// `XDG_RUNTIME_DIR`, no `TMPDIR`), and a server locking elsewhere than the app would not exclude
+/// it. On Unix it is `/tmp/rtm-<uid>`; on Windows the temporary directory, which is per user.
 pub fn lock_dir() -> io::Result<PathBuf> {
-    // The temporary directory is per user on macOS and Windows; on Linux it is shared, so the
-    // runtime directory comes first and the fallback carries the user's name.
-    // shortcut: two processes that disagree on XDG_RUNTIME_DIR use different locks; derive the
-    // directory from the user ID instead if that ever shows up.
-    let dir = match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(runtime) if !runtime.is_empty() => PathBuf::from(runtime).join("rtm"),
-        _ => {
-            let user = std::env::var("USER")
-                .or_else(|_| std::env::var("USERNAME"))
-                .unwrap_or_default();
-            std::env::temp_dir().join(format!("rtm-{user}"))
-        }
-    };
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
+        // SAFETY: getuid has no preconditions and cannot fail.
+        let uid = unsafe { libc::getuid() };
+        private_dir(&Path::new("/tmp").join(format!("rtm-{uid}")), uid)
     }
-    builder.create(&dir)?;
-    if !std::fs::symlink_metadata(&dir)?.is_dir() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!("'{}' is not a directory", dir.display()),
-        ));
+    #[cfg(not(unix))]
+    {
+        let dir = std::env::temp_dir().join("rtm");
+        std::fs::create_dir_all(&dir)?;
+        if !std::fs::symlink_metadata(&dir)?.is_dir() {
+            return Err(not_private(&dir, "not a directory"));
+        }
+        Ok(dir)
     }
-    Ok(dir)
+}
+
+/// `dir`, created with mode 0700 when missing, once it is known to be a directory of its own owned
+/// by `uid` and closed to everyone else: `/tmp` is shared, so another user could have created it
+/// (or a symlink by its name) first.
+#[cfg(unix)]
+fn private_dir(dir: &Path, uid: u32) -> io::Result<PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    let metadata = std::fs::symlink_metadata(dir)?;
+    if !metadata.is_dir() {
+        return Err(not_private(dir, "not a directory"));
+    }
+    if metadata.uid() != uid {
+        return Err(not_private(dir, "owned by another user"));
+    }
+    if metadata.mode() & 0o077 != 0 {
+        return Err(not_private(dir, "open to other users"));
+    }
+    Ok(dir.to_path_buf())
+}
+
+fn not_private(dir: &Path, why: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        format!("'{}' cannot hold rtm's locks: {why}", dir.display()),
+    )
 }
 
 #[cfg(test)]

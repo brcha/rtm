@@ -11,6 +11,7 @@ repository = "https://github.com/brcha/rtm"
 [dependencies]
 todotxt = { path = "../todotxt" }
 rtmsync = { path = "../rtmsync" }
+rtmmcp = { path = "../rtmmcp" }
 chrono = "0.4.31"
 clap = { version = "4.0", features = ["derive", "env"] }
 uuid = "1.18.1"
