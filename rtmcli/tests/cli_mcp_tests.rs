@@ -16,8 +16,10 @@ fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmcli-mcp-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
-    // The spelling the child's working directory has (/private/var rather than /var on macOS).
-    dir.canonicalize().unwrap()
+    // The spelling the child's working directory has (/private/var rather than /var on macOS),
+    // without the verbatim prefix (\\?\) that Windows adds to a canonical path.
+    let dir = dir.canonicalize().unwrap();
+    PathBuf::from(dir.to_str().unwrap().trim_start_matches(r"\\?\"))
 }
 
 /// rtmcli started in `dir`, with the environment that would change the outcome cleared.
