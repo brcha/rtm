@@ -9,6 +9,7 @@ repository = "https://github.com/brcha/rtm"
 [dependencies]
 todotxt = { path = "../todotxt" }
 rtmsync = { path = "../rtmsync" }
+rtmmcp = { path = "../rtmmcp" }
 eframe = "0.37"
 chrono = "0.4.31"
 serde = { version = "1", features = ["derive"] }

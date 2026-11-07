@@ -7,6 +7,7 @@ mod calendar;
 mod config;
 mod edit;
 mod list;
+mod mcp;
 mod settings;
 mod sync;
 mod theme;
@@ -32,6 +33,10 @@ fn set_app_user_model_id() -> windows_sys::core::HRESULT {
 }
 
 fn main() -> eframe::Result {
+    // First: the MCP server opens no window and must keep stdout for the protocol.
+    if std::env::args_os().nth(1).is_some_and(|arg| arg == "mcp") {
+        mcp::run();
+    }
     // rfd reports file dialog failures (no portal, no zenity) only through `log`.
     env_logger::init();
     // Before the first window: the taskbar reads the ID when the window appears.

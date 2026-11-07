@@ -37,7 +37,7 @@ rtmapp/
 │   ├── Info.plist          ← macOS bundle metadata (scripts/build-macos.sh)
 │   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
-    ├── main.rs             ← Window options, eframe::run_native
+    ├── main.rs             ← `rtmapp mcp`, else window options and eframe::run_native
     ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, the
     │                         title bar's menu and shortcuts, the tab strip, New File and Load
     │                         File, closing and switching files, filters, the sidebar's
@@ -48,6 +48,7 @@ rtmapp/
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
     ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`) and
     │                         their clickable tags
+    ├── mcp.rs              ← `rtmapp mcp`: the MCP server on the configured files
     ├── settings.rs         ← Settings dialog: the form (`SettingsForm`) and the modal
     ├── sync.rs             ← Sync through the file's repository: `find`, the worker thread
     ├── theme.rs            ← Palettes, fonts, egui styling
@@ -64,6 +65,7 @@ rtmapp/
 | eframe 0.37         | Window, event loop, egui integration               |
 | todotxt (path)      | Parsing, serialization, `TodoLibrary`              |
 | rtmsync (path)      | Commit, pull and push through Git or Pijul         |
+| rtmmcp (path)       | The MCP server of `rtmapp mcp`                     |
 | rfd 0.16            | Native file dialog (`xdg-portal` backend on Linux) |
 | serde, toml 0.8     | Config file                                        |
 | dirs 5              | OS config directory                                |
@@ -87,7 +89,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 
 - **Rust edition:** 2024. Async only where a library needs it (root `AGENTS.md`): the file
   dialogs (RTM-65) are `rfd::AsyncFileDialog` futures, each awaited with `pollster::block_on` on a
-  thread of its own (see File dialog). The UI and sync code are synchronous.
+  thread of its own (see File dialog), and `rtmapp mcp` runs `rmcp` on the tokio runtime of
+  `rtmmcp::serve`. The UI and sync code are synchronous.
 - **Identity:** crate, binary, Nix package and eframe app name are `rtmapp`. The app name is also the
   Wayland app id and the X11 `WM_CLASS`, so it must match the desktop entry's file name and its
   `StartupWMClass`; `Exec=rtmapp` and `Icon=rtmapp` match the binary and the installed icons, and
@@ -300,6 +303,15 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   Tauri app did, so no console window opens behind the GUI. The window opens centred at 900 × 650.
   Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
   uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
+- **`rtmapp mcp` (RTM-116)** serves the files of the config (`mcp.rs`) to an MCP client over stdin
+  and stdout (`rtmmcp::serve`, see `rtmmcp/AGENTS.md`), whether or not the app is running.
+  `main` checks for it first, before the logger, the AppUserModelID and eframe: no window opens and
+  nothing else writes to stdout. Every `[[files]]` entry is served, `file_name`'s first as the
+  default, with its tab name, its Git-or-Pijul choice (`sync::chosen`) and the config's `sync`. The
+  config is read again at every tool call (it is small), so files added or renamed in the app reach
+  the client without a restart; a config with no files gives the client an error. On Windows the
+  release build's `windows` subsystem still uses the stdin and stdout pipes the client passes.
+  Tests: `tests/mcp_sources_tests.rs`.
 - **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::place`, then `sync::check`): `sync = false`,
   no repository or an ignored file → no sync and no commits; both Git and Pijul → the Git-or-Pijul
   dialog (or "Don't sync", which asks again next time); a conflicted repository (`is_conflicted`) →
