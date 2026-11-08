@@ -1,0 +1,138 @@
+# LLM eval of rtm's MCP tools: does a model use the tools as their descriptions and the server
+# instructions intend? Run it with scripts/mcp-eval.sh, which sets the environment used below.
+# Each test starts from the files in its vars (written by hooks.mjs into a scratch directory) and
+# is checked on the files afterwards and on the tool calls (checks.mjs), never on the wording.
+description: rtm MCP tools
+
+prompts:
+  - '{{request}}'
+
+providers:
+  - id: anthropic:claude-agent-sdk
+    label: claude
+    config:
+      model: '{{ env.RTM_EVAL_CLAUDE_MODEL }}'
+      # The Claude Code login (subscription), not an API key.
+      apiKeyRequired: false
+      max_turns: 15
+      # Only rtm's tools: no built-in tool (no file access around list_items), no other MCP
+      # server, none of the user's settings. delete_item is left out, so Claude Code declines it
+      # without asking, as a client whose user did not confirm.
+      strict_mcp_config: true
+      setting_sources: []
+      permission_mode: dontAsk
+      custom_allowed_tools:
+        - mcp__rtm__list_files
+        - mcp__rtm__list_items
+        - mcp__rtm__list_projects_and_contexts
+        - mcp__rtm__add_item
+        - mcp__rtm__complete_item
+        - mcp__rtm__uncomplete_item
+        - mcp__rtm__edit_item
+      mcp:
+        enabled: true
+        servers:
+          - name: rtm
+            command: '{{ env.RTM_EVAL_RTMAPP }}'
+            args: [mcp]
+            # rtmapp reads its config from the scratch home: $XDG_CONFIG_HOME/rtm on Linux,
+            # $HOME/Library/Application Support/rtm on macOS. Git (the sync test) reads no user
+            # config there either.
+            env:
+              PATH: '{{ env.PATH }}'
+              HOME: '{{ env.RTM_EVAL_DIR }}/home'
+              XDG_CONFIG_HOME: '{{ env.RTM_EVAL_DIR }}/home/.config'
+              GIT_CONFIG_NOSYSTEM: '1'
+
+  # Grok Build in headless mode on the same server, with the same limits (see the file).
+  - id: file://grok-provider.mjs
+    label: grok
+
+extensions:
+  - file://hooks.mjs:hook
+
+tests:
+  - description: complete the item asked for
+    vars:
+      request: Mark buy milk done.
+      home: |
+        2026-11-01 Buy milk +groceries
+        2026-11-02 Call the plumber @phone
+        (B) 2026-11-03 Pay rent due:2026-11-30
+    assert:
+      - type: javascript
+        value: file://checks.mjs:completeMilk
+
+  - description: a stale line is not guessed
+    vars:
+      request: >-
+        Earlier you listed my items and item 2 was "2026-11-02 Call the plumber @phone".
+        Mark item 2 done.
+      home: |
+        2026-11-01 Buy milk +groceries
+        (B) 2026-11-03 Pay rent due:2026-11-30
+        2026-11-02 Call the plumber about the sink @phone
+    assert:
+      - type: javascript
+        value: file://checks.mjs:staleLine
+
+  - description: done means complete, not delete
+    vars:
+      request: I'm done with the rent.
+      home: |
+        2026-11-01 Buy milk +groceries
+        (B) 2026-11-03 Pay rent due:2026-11-30
+    assert:
+      - type: javascript
+        value: file://checks.mjs:doneWithRent
+
+  - description: a declined delete changes nothing
+    vars:
+      request: Delete the dentist appointment from my list.
+      home: |
+        2026-11-01 Buy milk +groceries
+        2026-11-04 Dentist appointment due:2026-11-12
+    assert:
+      - type: javascript
+        value: file://checks.mjs:declinedDelete
+
+  - description: a failed push does not repeat the add
+    vars:
+      request: Add buy bread to my list.
+      git: true
+      home: |
+        2026-11-01 Buy milk +groceries
+    assert:
+      - type: javascript
+        value: file://checks.mjs:notSynced
+
+  - description: one edit sets priority and due date
+    vars:
+      request: Make the quarterly report priority A and due on 2026-11-20.
+      home: |
+        2026-11-01 Buy milk +groceries
+        2026-11-05 Write the quarterly report +work
+    assert:
+      - type: javascript
+        value: file://checks.mjs:editReport
+
+  - description: the second file by name
+    vars:
+      request: Add call mom to my work list.
+      home: |
+        2026-11-01 Buy milk +groceries
+      work: |
+        2026-11-02 Send the invoice +acme
+    assert:
+      - type: javascript
+        value: file://checks.mjs:workFile
+
+  - description: a recurring item is not added again
+    vars:
+      request: I watered the plants.
+      home: |
+        2026-11-01 Buy milk +groceries
+        2026-11-01 Water the plants rec:1w due:2026-11-08
+    assert:
+      - type: javascript
+        value: file://checks.mjs:recurring
