@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# Announces a stable release on X and the project's Facebook Page through Buffer's API, with the
-# texts under [extra.announce] in the release's website post, each followed by the post's URL. See
-# "Announcement" in doc/release-process.md; run by .github/workflows/announce.yml.
+# Announces a stable release on X through Buffer's API, with the text under [extra.announce] in the
+# release's website post, followed by the post's URL. See "Announcement" in doc/release-process.md;
+# run by .github/workflows/announce.yml.
 #
 # Usage: scripts/announce.sh [--check | --dry-run] <site/content/news/X.Y.Z.md>
 #
-#   --check    check the texts and print the posts, without network access (pull requests)
+#   --check    check the text and print the post, without network access (pull requests)
 #   --dry-run  also wait until the post is live, then print the requests instead of sending them
 #
 # A beta's post is skipped. A real run waits until the website's releases.json lists the version
-# (the site is deployed by Vercel, not by the workflow), then posts. It needs BUFFER_API_KEY,
-# BUFFER_CHANNEL_X and BUFFER_CHANNEL_FACEBOOK. ANNOUNCE_NETWORKS (default "x facebook") limits the
-# networks posted to, for a retry after one of them failed.
+# (the site is deployed by Vercel, not by the workflow), then posts. It needs BUFFER_API_KEY and
+# BUFFER_CHANNEL_X.
 #
 # Needs curl, jq and python3 3.11 or later (tomllib reads the front matter).
 
@@ -39,12 +38,8 @@ version=$(basename "$post" .md)
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] ||
     die "$post: expected a release post named X.Y.Z.md or X.Y.0-beta.N.md"
 
-read -ra networks <<<"${ANNOUNCE_NETWORKS:-x facebook}"
-for network in "${networks[@]}"; do
-    [[ $network == x || $network == facebook ]] ||
-        die "ANNOUNCE_NETWORKS: unknown network '$network' (x, facebook)"
-done
-((${#networks[@]} > 0)) || die "ANNOUNCE_NETWORKS names no network"
+# Each network has its text under [extra.announce] and its Buffer channel in BUFFER_CHANNEL_<NAME>.
+networks=(x)
 
 # The TOML front matter, between the first two +++ lines, as JSON (dates as strings).
 meta=$(awk '/^\+\+\+$/ { if (n++) exit; next } n' "$post" |
@@ -55,9 +50,8 @@ if [[ $(jq -r '.extra.channel // "stable"' <<<"$meta") != stable ]]; then
     exit 0
 fi
 
-# Both texts are required even when ANNOUNCE_NETWORKS names one network: the post is the record.
 declare -A text
-for network in x facebook; do
+for network in "${networks[@]}"; do
     text[$network]=$(jq -r --arg n "$network" '.extra.announce[$n] // "" | strings' <<<"$meta")
     [[ -n ${text[$network]} ]] || die "$post: no $network text under [extra.announce]"
 done
@@ -69,10 +63,10 @@ x_length=$(jq -r '.extra.announce.x | length' <<<"$meta")
         "(at most $((x_limit - 2 - x_link)))"
 
 if [[ $mode == check ]]; then
-    for network in x facebook; do
+    for network in "${networks[@]}"; do
         printf -- '--- %s ---\n%s\n\n<the post URL>\n\n' "$network" "${text[$network]}"
     done
-    echo "The announcement texts for $version are ready."
+    echo "The announcement for $version is ready."
     exit 0
 fi
 
@@ -112,14 +106,14 @@ for network in "${networks[@]}"; do
     channel_var=BUFFER_CHANNEL_${network^^}
     channel=${!channel_var:-<$channel_var>}
     body=$(jq -n --arg query "$query" --arg text "${text[$network]}"$'\n\n'"$url" \
-        --arg channel "$channel" --arg network "$network" '{
+        --arg channel "$channel" '{
             query: $query,
-            variables: {input: ({
+            variables: {input: {
                 text: $text,
                 channelId: $channel,
                 schedulingType: "automatic",
                 mode: "shareNow"
-            } + if $network == "facebook" then {metadata: {facebook: {type: "post"}}} else {} end)}
+            }}
         }')
     if [[ $mode == dry-run ]]; then
         printf -- '--- %s ---\n%s\n' "$network" "$body"
@@ -145,7 +139,7 @@ for network in "${networks[@]}"; do
 done
 
 if ((${#failed[@]} > 0)); then
-    die "not announced on: ${failed[*]}; retry with ANNOUNCE_NETWORKS=\"${failed[*]}\""
+    die "not announced on: ${failed[*]}"
 fi
 if [[ $mode == dry-run ]]; then
     echo "Dry run: nothing was posted."
