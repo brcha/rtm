@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Writes a release's section of CHANGELOG.md with git-cliff (cliff.toml). Run it on the release
 # branch (releases/vYY.M) in the release's PR, then commit CHANGELOG.md; see
-# doc/release-process.md. git-cliff is in the Nix dev shell.
+# doc/release-process.md. git-cliff is in the Nix dev shell. The new section opens with a TODO line
+# for the summary of the release's finished epics, written by hand before committing; the
+# generated list follows under "### Changes".
 #
 # Usage: scripts/changelog.sh <version>
 #
@@ -94,4 +96,5 @@ awk -v h="## [$version]" '
     in_section && /^- / { found = 1; exit }
     END { exit !found }' CHANGELOG.md ||
     die "git-cliff wrote no entries for $version; is anything new on this branch?"
-echo "CHANGELOG.md has the $version section; review and commit it."
+echo "CHANGELOG.md has the $version section; replace its TODO line with the summary of the finished"
+echo "epics, then review and commit it."

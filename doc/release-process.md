@@ -14,7 +14,8 @@
        next minor, `YY.(M+1).0`, or the next year's first version (`27.1.0`) when no further
        minor release is wanted this year.
     3. On the branch, a PR `docs(release): changelog for YY.M.0 -- RTM-NN` with the `CHANGELOG.md`
-       written by `scripts/changelog.sh YY.M.0`.
+       written by `scripts/changelog.sh YY.M.0`, its TODO line replaced by the summary (see
+       "`CHANGELOG.md`" below).
     4. Run the Release workflow on `releases/vYY.M`.
     5. Once the release is published, open the website post PR (see "Website post" below).
   - **Minor release with betas, `YY.M.0-beta.N` then `YY.M.0` (RTM-139):** betas exist only for
@@ -23,7 +24,7 @@
        a minor release.
     2. On the branch, a PR `build(release): set version to YY.M.0-beta.1 -- RTM-NN`:
        `set-version`, `cargo update --workspace` and `scripts/changelog.sh YY.M.0-beta.1` (a new
-       `CHANGELOG.md` since the cut).
+       `CHANGELOG.md` since the cut), with the summary in place of the TODO line.
     3. Run the Release workflow on `releases/vYY.M`. The draft is a prerelease and never Latest;
        publish it, then open the website post PR (`channel = "beta"`).
     4. Each further beta: the same PR for `YY.M.0-beta.N` (its section covers the commits since
@@ -47,7 +48,7 @@
        Several fixes can go in before a release.
     2. On the branch, a PR `build(release): set version to YY.M.P -- RTM-NN`: `set-version`,
        `cargo update --workspace` and `scripts/changelog.sh YY.M.P`, which needs the previous
-       patch's tag, so its draft must be published first.
+       patch's tag, so its draft must be published first; the summary replaces the TODO line.
     3. Run the Release workflow on `releases/vYY.M`.
     4. Once the release is published, open the website post PR (see "Website post" below).
   - **The release run:** a `workflow_dispatch` of Release on a release branch builds and tests the
@@ -71,7 +72,8 @@
     and no automatic links. A PR against `main`, `docs(site): website post for X.Y.Z -- RTM-NN` (the
     release issue's key), that
     - adds `site/content/news/X.Y.Z.md` with the version's `CHANGELOG.md` section (from the release
-      branch, or the release's body);
+      branch, or the release's body), the summary and then `## Changes` (headings one level up),
+      and a one-sentence `description` in its front matter;
     - for a patch on an older line (published with "Set as the latest release" unticked) sets
       `older_line = true` under `[extra]` in the post's front matter;
     - for a beta, `A.B.0-beta.N.md`, sets `channel = "beta"` under `[extra]`;
@@ -92,6 +94,18 @@
     tags ignored), prepended above the betas'. If the release branch moves while the changelog or version PR
     is open, update the PR from the branch and run the script again. Release branches are never
     deleted: the next minor release's range starts at the previous one's cut.
+
+    From 26.2 on, each section is `## [X.Y.Z] - <date>`, a summary, then `### Changes` with
+    git-cliff's groups (`#### Features`, ...); the script uses the release branch's own
+    `cliff.toml`, so an older line keeps its branch's layout. The script writes a TODO line where the summary goes; replace it before
+    committing (a forgotten one shows in the draft release's body, which is checked before
+    publishing). The summary is written for users, not copied from issue titles:
+    - its epics are the release epic's "depends on" links in YouTrack (see "Release epics");
+    - an opening sentence, then a short paragraph or bullet per epic saying what users can now do;
+    - a patch's summary names its fixes in a sentence or two; a beta's covers the epics it has so
+      far; a release after betas covers everything since the cut;
+    - it stays neutral about other software: it never names or compares with other todo.txt apps or
+      sync and file-sharing tools.
   - **The first CalVer release** was 26.1.0 (RTM-98): its release issue first set `main` from
     0.1.4, which was never released, to 26.1.0 by PR, then followed the minor-release steps.
 - **Workflow:** `.github/workflows/release.yml` (named `Release`) — triggers on manual
@@ -174,7 +188,8 @@
 - **Merges are squashes.** One PR becomes exactly one commit on its target branch, so PR titles are
   the changelog, and `.github/workflows/pr-title.yml` forces them to be conventional, scoped (the
   scopes are listed under "Commit subjects" in `AGENTS.md`) and RTM-tagged.
-  git-cliff turns them into `CHANGELOG.md` on the release branches (RTM-74), the release body.
+  git-cliff turns them into `CHANGELOG.md` on the release branches (RTM-74), the release body,
+  below the hand-written summary (RTM-154).
 - **No raw platform binaries are published redundantly with their installer.** `rtmapp.exe` is not
   staged on Windows — the MSI installs the identical binary. `rtmcli.exe` **is** staged, because
   neither the MSI nor (on Linux) the `rtmapp` deb packages the CLI; it is the only channel for
