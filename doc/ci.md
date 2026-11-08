@@ -55,15 +55,14 @@
 - **Announcement (RTM-171):** `announce.yml` (named `Announce`) runs `scripts/announce.sh` for the
   release posts a change adds under `site/content/news/` (`git diff --diff-filter=A`, so editing a
   published post never announces it again).
-  - On pull requests against `main` it only checks the texts (`--check`) and reads no secrets.
-  - On pushes to `main` it waits for the deployed post and posts to X and the Facebook Page
-    through Buffer. On manual dispatch it does the same for a named version; that is a dry run
+  - On pull requests against `main` it only checks the text (`--check`) and reads no secrets.
+  - On pushes to `main` it waits for the deployed post and posts to X through Buffer. On manual dispatch it does the same for a named version; that is a dry run
     unless `dry-run` is false.
   - It is not a required check, so its trigger filters by `paths`.
   - It has no `concurrency` group: a group keeps one waiting run and cancels older waiting ones,
     which could drop a release's announcement.
-  - Buffer access: the repository secret `BUFFER_API_KEY` and the variables `BUFFER_CHANNEL_X` and
-    `BUFFER_CHANNEL_FACEBOOK` (RTM-168 to RTM-170), passed only to the posting step. See
+  - Buffer access: the repository secret `BUFFER_API_KEY` and the variable `BUFFER_CHANNEL_X`
+    (RTM-168, RTM-169), passed only to the posting step. See
     "Announcement" in [Release Process](release-process.md).
 - **Actions security (RTM-145):** every `uses:` names a full commit SHA, with the release it
   stands for as a comment (`actions/checkout@<sha> # v7.0.1`), so a moved or replaced tag cannot

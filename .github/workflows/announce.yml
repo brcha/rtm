@@ -1,9 +1,9 @@
 name: Announce
 
-# Announces each stable release on X and the Facebook Page through Buffer once its website post is
-# live (RTM-171, "Announcement" in doc/release-process.md). Merging the website post PR is what
-# publishes the announcement. Pull requests that add a post only check its texts. Not a required
-# check, so it may be filtered by `paths` (see doc/ci.md).
+# Announces each stable release on X through Buffer once its website post is live (RTM-171,
+# "Announcement" in doc/release-process.md). Merging the website post PR is what publishes the
+# announcement. Pull requests that add a post only check its text. Not a required check, so it may
+# be filtered by `paths` (see doc/ci.md).
 on:
   push:
     branches: [ "main" ]
@@ -24,15 +24,6 @@ on:
         required: true
         type: boolean
         default: true
-      networks:
-        description: 'Networks to post to'
-        required: true
-        type: choice
-        options:
-          - 'x facebook'
-          - 'x'
-          - 'facebook'
-        default: 'x facebook'
 
 permissions:
   contents: read
@@ -75,7 +66,7 @@ jobs:
           echo EOF
         } >> "$GITHUB_OUTPUT"
 
-    - name: Check the announcement texts
+    - name: Check the announcement text
       if: github.event_name == 'pull_request' && steps.posts.outputs.list != ''
       env:
         POSTS: ${{ steps.posts.outputs.list }}
@@ -89,10 +80,8 @@ jobs:
       env:
         POSTS: ${{ steps.posts.outputs.list }}
         DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
-        ANNOUNCE_NETWORKS: ${{ inputs.networks || 'x facebook' }}
         BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
         BUFFER_CHANNEL_X: ${{ vars.BUFFER_CHANNEL_X }}
-        BUFFER_CHANNEL_FACEBOOK: ${{ vars.BUFFER_CHANNEL_FACEBOOK }}
       run: |
         mode=()
         [[ $DRY_RUN == true ]] && mode=(--dry-run)

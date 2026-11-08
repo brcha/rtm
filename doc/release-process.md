@@ -88,7 +88,7 @@
     - for a patch on an older line (published with "Set as the latest release" unticked) sets
       `older_line = true` under `[extra]` in the post's front matter;
     - for a beta, `A.B.0-beta.N.md`, sets `channel = "beta"` under `[extra]`;
-    - for a stable release, adds the `[extra.announce]` texts (see "Announcement" below);
+    - for a stable release, adds the `[extra.announce]` text (see "Announcement" below);
     - passes `scripts/site/check.sh --external`.
 
     The post also updates `releases.json`, the release metadata the programs' update check reads
@@ -98,27 +98,27 @@
     file name (names as under "Assets"; `platforms` in `site/templates/macros.html`). See
     `site/AGENTS.md`.
   - **Announcement (RTM-154):** each stable release, minor or patch (a patch on an older line
-    too), is announced on X and the project's Facebook Page through Buffer, linking to its website
-    post, once the post is live, so the link works. Betas are not announced.
-    - The texts are written per network in the website post PR, in the post's front matter:
+    too), is announced on X through Buffer, linking to its website post, once the post is live, so
+    the link works. Betas are not announced.
+    - The text is written in the website post PR, in the post's front matter:
       ```toml
       [extra.announce]
       x = "..."
-      facebook = "..."
       ```
-      The post's URL is added after each text. The X text stays within 280 characters, the link
-      counting as 23. Like the summary, the texts stay neutral about other software.
-    - Buffer's free plan holds the X account and the Facebook Page (RTM-168, RTM-169, RTM-170).
-      The Announce workflow (`announce.yml`, RTM-171) runs `scripts/announce.sh`:
-      - on the website post PR, it checks the texts and prints each post as it will appear;
+      The post's URL is added after it. It stays within 280 characters, the link counting as 23.
+      Like the summary, it stays neutral about other software.
+    - Buffer's free plan holds the X account (RTM-168, RTM-169). The Announce workflow
+      (`announce.yml`, RTM-171) runs `scripts/announce.sh`:
+      - on the website post PR, it checks the text and prints the post as it will appear;
       - **merging the website post PR publishes the announcement:** after the merge it waits until
-        the deployed `releases.json` lists the version (up to 30 minutes), then posts both texts
-        right away. Review the texts in the PR as the final posts.
-    - **Retry:** if a network failed, or the post took longer to deploy, run Announce by hand
-      (`gh workflow run Announce -f version=X.Y.Z -f dry-run=false -f networks=x`), naming only the
-      networks that failed. A manual run is a dry run unless `dry-run` is false. If Buffer is
-      unavailable, post the same texts in Buffer by hand.
-    - LinkedIn is not announced for now; it would fit the free plan's third channel.
+        the deployed `releases.json` lists the version (up to 30 minutes), then posts right away.
+        Review the text in the PR as the final post.
+    - **Retry:** if posting failed, or the post took longer to deploy, run Announce by hand
+      (`gh workflow run Announce -f version=X.Y.Z -f dry-run=false`). A manual run is a dry run
+      unless `dry-run` is false. If Buffer is unavailable, post the same text in Buffer by hand.
+    - Facebook is not announced: the project has no Facebook Page, and Meta allows no automated
+      posts to personal profiles (RTM-170). LinkedIn is not announced for now (RTM-172); it would
+      fit one of the free plan's two remaining channels.
   - **`CHANGELOG.md`** lives on the release branches only, never on `main`, and is written by
     `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in the Nix dev shell; bash only).
     A patch release's section covers the commits since the line's previous tag, prepended; a minor
