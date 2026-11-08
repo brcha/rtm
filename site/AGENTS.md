@@ -141,6 +141,10 @@ in `vercel.json`:
   under `[extra]`. It carries a Beta label in the news list and on its page, and its own
   downloads, but never moves the landing page's downloads, the hero notice or the install
   guide's downloads: `latest_version` and the hero notice take stable posts only.
+- **Announcement texts:** a stable release's post carries `x` and `facebook` under
+  `[extra.announce]` in its front matter. The site does not render them; the Announce workflow
+  (RTM-171) posts them when the post is merged ("Announcement" in
+  [Release Process](../doc/release-process.md)).
 - Screenshots and the icon stay where they are; update them there, not in `site/static/`.
 - Website-only changes start no Rust or Nix build (`paths-ignore` on push, RTM-87; see
   [CI](../doc/ci.md)).

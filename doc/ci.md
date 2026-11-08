@@ -52,6 +52,19 @@
   Publishing is not CI's job: Vercel's Git integration builds and deploys the site from
   `vercel.json` (RTM-90, see `site/AGENTS.md`); its preview status on pull requests is not a
   required check.
+- **Announcement (RTM-171):** `announce.yml` (named `Announce`) runs `scripts/announce.sh` for the
+  release posts a change adds under `site/content/news/` (`git diff --diff-filter=A`, so editing a
+  published post never announces it again).
+  - On pull requests against `main` it only checks the texts (`--check`) and reads no secrets.
+  - On pushes to `main` it waits for the deployed post and posts to X and the Facebook Page
+    through Buffer. On manual dispatch it does the same for a named version; that is a dry run
+    unless `dry-run` is false.
+  - It is not a required check, so its trigger filters by `paths`.
+  - It has no `concurrency` group: a group keeps one waiting run and cancels older waiting ones,
+    which could drop a release's announcement.
+  - Buffer access: the repository secret `BUFFER_API_KEY` and the variables `BUFFER_CHANNEL_X` and
+    `BUFFER_CHANNEL_FACEBOOK` (RTM-168 to RTM-170), passed only to the posting step. See
+    "Announcement" in [Release Process](release-process.md).
 - **Actions security (RTM-145):** every `uses:` names a full commit SHA, with the release it
   stands for as a comment (`actions/checkout@<sha> # v7.0.1`), so a moved or replaced tag cannot
   change what runs. The repository setting "Require actions to be pinned to a full-length commit

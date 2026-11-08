@@ -81,8 +81,9 @@ one that had them.
   - `todotxt`, `rtmcli`, `rtmapp`, `rtmsync`, `rtmupdate`, `rtmmcp`: the crates (for `rtmapp`, its
     packaging metadata in `rtmapp/Cargo.toml` too).
   - `site`: the website, `scripts/site/`, `vercel.json`, its workflow and the release posts.
-  - `release`: `release.yml`, the packages, `scripts/set-version.*`, `scripts/changelog.sh`,
-    `cliff.toml`, `doc/release-process.md` and the release PRs.
+  - `release`: `release.yml`, `announce.yml`, the packages, `scripts/set-version.*`,
+    `scripts/changelog.sh`, `scripts/announce.sh`, `cliff.toml`, `doc/release-process.md` and the
+    release PRs.
   - `nix`: `default.nix`, `flake.nix`, `shell.nix`, `doc/nix-packaging.md`.
   - `github`: the other GitHub Actions workflows, the rulesets and `doc/ci.md`.
   - `workspace`: repository-wide files (root `AGENTS.md`, `README.md`, the workspace `Cargo.toml`
