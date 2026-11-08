@@ -3456,7 +3456,7 @@ dependencies = [
 
 [[package]]
 name = "rtmapp"
-version = "26.2.0"
+version = "26.3.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -3481,7 +3481,7 @@ dependencies = [
 
 [[package]]
 name = "rtmcli"
-version = "26.2.0"
+version = "26.3.0"
 dependencies = [
  "chrono",
  "clap",
@@ -3494,7 +3494,7 @@ dependencies = [
 
 [[package]]
 name = "rtmmcp"
-version = "26.2.0"
+version = "26.3.0"
 dependencies = [
  "chrono",
  "rmcp",
@@ -3511,14 +3511,14 @@ dependencies = [
 
 [[package]]
 name = "rtmsync"
-version = "26.2.0"
+version = "26.3.0"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "rtmupdate"
-version = "26.2.0"
+version = "26.3.0"
 dependencies = [
  "semver",
  "serde",
@@ -4139,7 +4139,7 @@ dependencies = [
 
 [[package]]
 name = "todotxt"
-version = "26.2.0"
+version = "26.3.0"
 dependencies = [
  "chrono",
  "libc",
