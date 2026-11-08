@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # The LLM eval of rtm's MCP tools (rtmmcp/eval, see rtmmcp/AGENTS.md): runs each scenario a few
-# times with Claude Code and the rtm server, on scratch files only, and prints the passes per
-# scenario. Needs node 22.22 or newer (`nix develop`) and a Claude Code login.
+# times with Claude Code and with Grok Build on the rtm server, on scratch files only, and prints
+# the passes per scenario. Needs node 22.22 or newer (`nix develop`), a Claude Code login, and for
+# Grok, `grok` on PATH, logged in.
 #
 # Usage: scripts/mcp-eval.sh
 #
 #   RTM_EVAL_RTMAPP        absolute path of the rtmapp to test (default: `nix build .#rtmapp`;
 #                          never one from PATH)
+#   RTM_EVAL_CLIENTS       clients, separated by spaces (default: claude, and grok when installed)
 #   RTM_EVAL_CLAUDE_MODEL  Claude model (default claude-sonnet-5-5)
+#   RTM_EVAL_GROK_MODEL    Grok model (default: Grok Build's)
 #   RTM_EVAL_REPEAT        runs per scenario (default 3)
 #   RTM_EVAL_MIN_PASSES    passes each scenario needs (default 2)
 #
@@ -29,6 +32,17 @@ fail() { echo "mcp-eval: $*" >&2; exit 2; }
 
 command -v npx >/dev/null || fail "needs node 22.22 or newer (nix develop)"
 command -v jq >/dev/null || fail "needs jq (nix develop)"
+
+clients=${RTM_EVAL_CLIENTS:-claude}
+if [ -z "${RTM_EVAL_CLIENTS:-}" ] && command -v grok >/dev/null; then clients="claude grok"; fi
+for client in $clients; do
+  case $client in
+    claude) ;;
+    grok) command -v grok >/dev/null || fail "grok is not on PATH" ;;
+    *) fail "unknown client $client (claude, grok)" ;;
+  esac
+done
+echo "Clients: $clients" >&2
 
 if [ -n "${RTM_EVAL_RTMAPP:-}" ]; then
   case $RTM_EVAL_RTMAPP in /*) ;; *) fail "RTM_EVAL_RTMAPP must be an absolute path" ;; esac
@@ -55,7 +69,7 @@ rm -f "$out"
   env -u ANTHROPIC_API_KEY PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 \
     npx --yes -p "$promptfoo" -p "$sdk" promptfoo eval \
     --config promptfooconfig.yaml --no-cache --max-concurrency 1 --repeat "$repeat" \
-    --output "$out" --no-progress-bar
+    --filter-providers "^($(echo "$clients" | tr -s ' ' '|'))\$" --output "$out" --no-progress-bar
 ) || true # promptfoo exits non-zero when a test fails; the table below decides.
 
 [ -s "$out" ] || fail "promptfoo wrote no results"

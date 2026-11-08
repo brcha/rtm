@@ -64,8 +64,8 @@
     squash-merging: the changelog leaves those commits out.
   - **The MCP eval (RTM-159):** when a release changes `rtmmcp/`, `todotxt/src/` or the `mcp`
     entry points, run `nix develop -c scripts/mcp-eval.sh` on the release branch before the
-    release run and read its table (see `rtmmcp/AGENTS.md`). It runs locally on a Claude Code
-    login; the Release workflow does not run it.
+    release run and read its table (see `rtmmcp/AGENTS.md`). It runs locally on the Claude Code
+    and Grok Build logins; the Release workflow does not run it.
   - **Website post (RTM-91):** each published release gets a post on the project website, and the
     website's download links are updated by hand in the same change; the site has no JavaScript
     and no automatic links. A PR against `main`, `docs(site): website post for X.Y.Z -- RTM-NN` (the

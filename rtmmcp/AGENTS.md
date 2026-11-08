@@ -23,7 +23,8 @@ rtmmcp/
 ├── tests/
 │   └── mcp_protocol_tests.rs  ← The server through rmcp's client on an in-memory pipe
 └── eval/           ← LLM eval of the tools (promptfoo), run by scripts/mcp-eval.sh
-    ├── promptfooconfig.yaml  ← The client, the server and the scenarios
+    ├── promptfooconfig.yaml  ← The clients, the server and the scenarios
+    ├── grok-provider.mjs     ← Runs a scenario with Grok Build (`grok -p`)
     ├── hooks.mjs             ← Each scenario's scratch files, config and repository
     └── checks.mjs            ← Each scenario's checks on the files and the tool calls
 ```
@@ -108,20 +109,35 @@ rtmmcp/
 
 The Rust tests prove the server correct; they cannot show whether a model uses the tools well,
 which depends on the tool descriptions and the instructions in `server.rs`. `eval/` checks that
-with a real client.
+with real clients: Claude Code and Grok Build.
 
 - **Run:** `nix develop -c scripts/mcp-eval.sh`. It builds `rtmapp` from the checkout
   (`nix build .#rtmapp`; `RTM_EVAL_RTMAPP` names another build by absolute path, never one from
   `PATH`), runs promptfoo 0.125.1 and the Claude Agent SDK 0.3.319 through `npx` (cached under
   `~/.npm`, nothing installed in the tree), and prints passes and cost per scenario. It exits 1
   when a scenario passes fewer than `RTM_EVAL_MIN_PASSES` (2) of its `RTM_EVAL_REPEAT` (3) runs.
-  `RTM_EVAL_CLAUDE_MODEL` picks the model (default `claude-sonnet-5-5`). Full results, with the
-  model's answers and tool calls: `target/mcp-eval/results.json`, or `npx promptfoo@0.125.1 view`.
-- **Client:** Claude Code through promptfoo's `anthropic:claude-agent-sdk` provider, on the Claude
+  `RTM_EVAL_CLIENTS` picks the clients (default `claude`, plus `grok` when it is on `PATH`),
+  `RTM_EVAL_CLAUDE_MODEL` and `RTM_EVAL_GROK_MODEL` the models (default `claude-sonnet-5-5` and
+  Grok Build's own, grok-4.7 in November 2026). Full results, with the models' answers and tool
+  calls: `target/mcp-eval/results.json`, or `npx promptfoo@0.125.1 view`.
+- **Claude:** Claude Code through promptfoo's `anthropic:claude-agent-sdk` provider, on the Claude
   Code login (the script unsets `ANTHROPIC_API_KEY`, which would be billed). It sees only rtm's
   tools: no built-in tools (it cannot read the files around `list_items`), no other MCP server,
   none of the user's settings. `delete_item` is not allowed and `permission_mode` is `dontAsk`, so
   Claude Code declines a delete as a client whose user did not confirm.
+- **Grok:** `grok -p` (Grok Build headless) through `grok-provider.mjs`, on the user's Grok login.
+  It runs in a fixed project directory outside the repository,
+  `${XDG_CACHE_HOME:-~/.cache}/rtm-mcp-eval/grok`, whose `.grok/config.toml` the provider writes
+  before each run: the rtm server, and permission rules allowing `MCPTool(rtm__*)` but
+  `rtm__delete_item`. `--trust` lets Grok load it (Grok records that one folder as trusted), and
+  `--tools search_tool,use_tool` leaves no built-in tool. Grok runs with a scratch `HOME` and
+  `XDG_CONFIG_HOME` and with `GROK_HOME` set to the user's Grok home: it keeps the login and the
+  trusted folders, but imports nothing from Claude Code, Cursor or Codex, which it otherwise does
+  (plugins with their hooks, skills and MCP servers, rules such as `CLAUDE.md`; switching the
+  imports off with `GROK_CLAUDE_*_ENABLED` misses the plugins). MCP servers in the user's own
+  `~/.grok/config.toml` would still load; any call to them fails the scenario. Grok reaches MCP tools through `use_tool` with `rtm__<tool>`; the provider reports them as
+  Claude Code names them (`mcp__rtm__<tool>`), so the same checks apply. Each run leaves a
+  session in `~/.grok/sessions`, as any Grok use does.
 - **Data:** every scenario starts from its own files in a scratch directory (`hooks.mjs`):
   `home.txt` and `work.txt`, rtmapp's config listing them (the server's `HOME` and
   `XDG_CONFIG_HOME` point there), and for the sync scenario a git repository whose remote has gone
@@ -135,9 +151,9 @@ with a real client.
 - **A failure** means a model misused a tool: look at the tool's description or the instructions
   first, not at the Rust code (the Rust tests cover that). A misleading `complete_item`
   description ("add the next occurrence yourself") fails the recurring scenario.
-- **Cost:** a full run (8 scenarios × 3) was $0.38 API-equivalent on Sonnet 5.5 (2026-11-08,
-  promptfoo's estimate from Claude Code's figures); nothing is billed on a subscription, but it
-  counts against its usage limits.
+- **Cost:** a full run (8 scenarios × 3 per client) was $0.38 API-equivalent on Sonnet 5.5 and
+  $0.77 on grok-4.7 (2026-11-08, the clients' own figures); nothing is billed on the
+  subscriptions, but it counts against their usage limits.
 - **The Claude binary** comes with the Agent SDK (a prebuilt Linux or macOS executable); on NixOS
   it runs only with nix-ld (it expects `/lib64/ld-linux-x86-64.so.2`).
 - **Local only:** no CI workflow runs it (yet). When Claude runs it is the epic-close rule in the

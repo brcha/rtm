@@ -44,6 +44,10 @@ providers:
               XDG_CONFIG_HOME: '{{ env.RTM_EVAL_DIR }}/home/.config'
               GIT_CONFIG_NOSYSTEM: '1'
 
+  # Grok Build in headless mode on the same server, with the same limits (see the file).
+  - id: file://grok-provider.mjs
+    label: grok
+
 extensions:
   - file://hooks.mjs:hook
 
