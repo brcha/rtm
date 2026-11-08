@@ -20,8 +20,12 @@ rtmmcp/
 │   ├── sync.rs     ← RepoWrite: rtmcli's sync rules for one change, returning messages
 │   ├── claim.rs    ← One rtm server per client
 │   └── tests/      ← Unit tests: claim, the server's duplicate check, sync (git), tools
-└── tests/
-    └── mcp_protocol_tests.rs  ← The server through rmcp's client on an in-memory pipe
+├── tests/
+│   └── mcp_protocol_tests.rs  ← The server through rmcp's client on an in-memory pipe
+└── eval/           ← LLM eval of the tools (promptfoo), run by scripts/mcp-eval.sh
+    ├── promptfooconfig.yaml  ← The client, the server and the scenarios
+    ├── hooks.mjs             ← Each scenario's scratch files, config and repository
+    └── checks.mjs            ← Each scenario's checks on the files and the tool calls
 ```
 
 ---
@@ -99,3 +103,42 @@ rtmmcp/
 - The claim test sleeps through the 2 s retry, so `cargo test -p rtmmcp` takes about 2 s.
 - The Nix `rtmcli` package runs this crate's tests (`cargoTestFlags` in `default.nix`).
 - Run with `cargo test -p rtmmcp`.
+
+## Eval (RTM-159)
+
+The Rust tests prove the server correct; they cannot show whether a model uses the tools well,
+which depends on the tool descriptions and the instructions in `server.rs`. `eval/` checks that
+with a real client.
+
+- **Run:** `nix develop -c scripts/mcp-eval.sh`. It builds `rtmapp` from the checkout
+  (`nix build .#rtmapp`; `RTM_EVAL_RTMAPP` names another build by absolute path, never one from
+  `PATH`), runs promptfoo 0.125.1 and the Claude Agent SDK 0.3.319 through `npx` (cached under
+  `~/.npm`, nothing installed in the tree), and prints passes and cost per scenario. It exits 1
+  when a scenario passes fewer than `RTM_EVAL_MIN_PASSES` (2) of its `RTM_EVAL_REPEAT` (3) runs.
+  `RTM_EVAL_CLAUDE_MODEL` picks the model (default `claude-sonnet-5-5`). Full results, with the
+  model's answers and tool calls: `target/mcp-eval/results.json`, or `npx promptfoo@0.125.1 view`.
+- **Client:** Claude Code through promptfoo's `anthropic:claude-agent-sdk` provider, on the Claude
+  Code login (the script unsets `ANTHROPIC_API_KEY`, which would be billed). It sees only rtm's
+  tools: no built-in tools (it cannot read the files around `list_items`), no other MCP server,
+  none of the user's settings. `delete_item` is not allowed and `permission_mode` is `dontAsk`, so
+  Claude Code declines a delete as a client whose user did not confirm.
+- **Data:** every scenario starts from its own files in a scratch directory (`hooks.mjs`):
+  `home.txt` and `work.txt`, rtmapp's config listing them (the server's `HOME` and
+  `XDG_CONFIG_HOME` point there), and for the sync scenario a git repository whose remote has gone
+  away. Tests run one at a time. The user's own config and todo.txt files are never read.
+- **Scenarios:** completing the item asked for with its listed number and line; a stale line not
+  guessed; "done" meaning complete, not delete; a declined delete changing nothing; a failed push
+  not repeating the add; one edit setting priority and due date with the creation date kept; the
+  second file by name; a recurring item's next occurrence not added again. `checks.mjs` checks the
+  files afterwards and the tool calls, never the wording; any tool other than rtm's fails a
+  scenario.
+- **A failure** means a model misused a tool: look at the tool's description or the instructions
+  first, not at the Rust code (the Rust tests cover that). A misleading `complete_item`
+  description ("add the next occurrence yourself") fails the recurring scenario.
+- **Cost:** a full run (8 scenarios × 3) was $0.38 API-equivalent on Sonnet 5.5 (2026-11-08,
+  promptfoo's estimate from Claude Code's figures); nothing is billed on a subscription, but it
+  counts against its usage limits.
+- **The Claude binary** comes with the Agent SDK (a prebuilt Linux or macOS executable); on NixOS
+  it runs only with nix-ld (it expects `/lib64/ld-linux-x86-64.so.2`).
+- **Local only:** no CI workflow runs it (yet). When Claude runs it is the epic-close rule in the
+  root `AGENTS.md`.
