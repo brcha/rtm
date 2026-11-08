@@ -5,12 +5,19 @@
 header = """
 # Changelog
 
-Generated with git-cliff from the squash-merged pull requests of this release line.\n
+Each release's section opens with a summary of the release, followed by the changes generated with
+git-cliff from the squash-merged pull requests of this release line.\n
 """
+# Each section opens with a hand-written summary of the release's finished epics, which replaces
+# the TODO line before the changelog PR is committed; the generated list follows under "Changes".
 body = """
 ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+
+TODO: summary of the finished epics, see "CHANGELOG.md" in doc/release-process.md.
+
+### Changes
 {% for group, commits in commits | group_by(attribute="group") %}
-### {{ group | striptags | trim }}
+#### {{ group | striptags | trim }}
 {% for commit in commits %}
 - {% if commit.scope %}{{ commit.scope }}: {% endif %}{{ commit.message }}\
 {% endfor %}
