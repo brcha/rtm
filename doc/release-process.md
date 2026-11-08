@@ -1,10 +1,19 @@
 # Release Process
 
 - **Making a release (RTM-72):** releases are made on demand, when a user-visible change is worth
-  shipping, from release branches `releases/vYY.M` cut from `main`. Each release has a YouTrack
-  issue "Release X.Y.Z" (Component Packaging) whose key its PRs carry. After the cut, changes
-  reach a release branch only through squash-merged PRs against it, which need the same checks as
-  on `main` (the ruleset covers both, RTM-78). `main` always carries the next release's version.
+  shipping, from release branches `releases/vYY.M` cut from `main`. Each release is a YouTrack
+  epic (see "Release epics" below). After the cut, changes reach a release branch only through
+  squash-merged PRs against it, which need the same checks as on `main` (the ruleset covers both,
+  RTM-78). `main` always carries the next release's version.
+  - **Release epics (RTM-154):** each release is tracked as a YouTrack epic `Release X.Y.Z`, not
+    as a task; the epic's component is Packaging:
+    - it depends on the epics whose features it ships (for a patch, the fixes' issues); the
+      changelog summary is written from them;
+    - its sub-issues are the release steps: cutting the branch and setting the next version (a
+      minor release only), the changelog and the release run, and the website post with the
+      announcement; each step's PR carries that sub-issue's key;
+    - when the release is done, create the next release's epic, so the epics finished in the
+      meantime can be linked to it as they land.
   - **Minor release `YY.M.0`:**
     1. Cut `releases/vYY.M` from `main` (already at `YY.M.0`) and push it. The ruleset allows
        creating it without checks (`do_not_enforce_on_create`): `releases/v26.1` was pushed with
@@ -17,7 +26,8 @@
        written by `scripts/changelog.sh YY.M.0`, its TODO line replaced by the summary (see
        "`CHANGELOG.md`" below).
     4. Run the Release workflow on `releases/vYY.M`.
-    5. Once the release is published, open the website post PR (see "Website post" below).
+    5. Once the release is published, open the website post PR (see "Website post" below); once
+       the post is live, announce the release (see "Announcement" below).
   - **Minor release with betas, `YY.M.0-beta.N` then `YY.M.0` (RTM-139):** betas exist only for
     minor releases, on their release branch, before the release.
     1. Cut `releases/vYY.M` from `main` and move `main` to the next version, as steps 1 and 2 of
@@ -50,7 +60,8 @@
        `cargo update --workspace` and `scripts/changelog.sh YY.M.P`, which needs the previous
        patch's tag, so its draft must be published first; the summary replaces the TODO line.
     3. Run the Release workflow on `releases/vYY.M`.
-    4. Once the release is published, open the website post PR (see "Website post" below).
+    4. Once the release is published, open the website post PR (see "Website post" below); once
+       the post is live, announce the release (see "Announcement" below).
   - **The release run:** a `workflow_dispatch` of Release on a release branch builds and tests the
     packages and publishes a draft release tagged `vX.Y.Z` on that commit, with the version's
     `CHANGELOG.md` section as its body. It first checks that the branch matches the version
@@ -70,13 +81,14 @@
   - **Website post (RTM-91):** each published release gets a post on the project website, and the
     website's download links are updated by hand in the same change; the site has no JavaScript
     and no automatic links. A PR against `main`, `docs(site): website post for X.Y.Z -- RTM-NN` (the
-    release issue's key), that
+    release epic's website-post sub-issue), that
     - adds `site/content/news/X.Y.Z.md` with the version's `CHANGELOG.md` section (from the release
       branch, or the release's body), the summary and then `## Changes` (headings one level up),
       and a one-sentence `description` in its front matter;
     - for a patch on an older line (published with "Set as the latest release" unticked) sets
       `older_line = true` under `[extra]` in the post's front matter;
     - for a beta, `A.B.0-beta.N.md`, sets `channel = "beta"` under `[extra]`;
+    - for a stable release, adds the `[extra.announce]` texts (see "Announcement" below);
     - passes `scripts/site/check.sh --external`.
 
     The post also updates `releases.json`, the release metadata the programs' update check reads
@@ -85,6 +97,21 @@
     `https://github.com/brcha/rtm/releases/download/vX.Y.Z/<asset>`, with X.Y.Z from the post's
     file name (names as under "Assets"; `platforms` in `site/templates/macros.html`). See
     `site/AGENTS.md`.
+  - **Announcement (RTM-154):** each stable release, minor or patch (a patch on an older line
+    too), is announced on X and the project's Facebook Page through Buffer, linking to its website
+    post, once the post is live, so the link works. Betas are not announced.
+    - The texts are written per network in the website post PR, in the post's front matter:
+      ```toml
+      [extra.announce]
+      x = "..."
+      facebook = "..."
+      ```
+      The post's URL is added after each text. The X text stays within 280 characters, the link
+      counting as 23. Like the summary, the texts stay neutral about other software.
+    - Buffer's free plan holds the X account and the Facebook Page (RTM-168, RTM-169, RTM-170); a
+      GitHub Actions job sends the texts through Buffer's API once the post is live (RTM-171).
+      Until that job exists, post the same texts in Buffer by hand.
+    - LinkedIn is not announced for now; it would fit the free plan's third channel.
   - **`CHANGELOG.md`** lives on the release branches only, never on `main`, and is written by
     `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in the Nix dev shell; bash only).
     A patch release's section covers the commits since the line's previous tag, prepended; a minor
