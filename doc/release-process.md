@@ -108,9 +108,16 @@
       ```
       The post's URL is added after each text. The X text stays within 280 characters, the link
       counting as 23. Like the summary, the texts stay neutral about other software.
-    - Buffer's free plan holds the X account and the Facebook Page (RTM-168, RTM-169, RTM-170); a
-      GitHub Actions job sends the texts through Buffer's API once the post is live (RTM-171).
-      Until that job exists, post the same texts in Buffer by hand.
+    - Buffer's free plan holds the X account and the Facebook Page (RTM-168, RTM-169, RTM-170).
+      The Announce workflow (`announce.yml`, RTM-171) runs `scripts/announce.sh`:
+      - on the website post PR, it checks the texts and prints each post as it will appear;
+      - **merging the website post PR publishes the announcement:** after the merge it waits until
+        the deployed `releases.json` lists the version (up to 30 minutes), then posts both texts
+        right away. Review the texts in the PR as the final posts.
+    - **Retry:** if a network failed, or the post took longer to deploy, run Announce by hand
+      (`gh workflow run Announce -f version=X.Y.Z -f dry-run=false -f networks=x`), naming only the
+      networks that failed. A manual run is a dry run unless `dry-run` is false. If Buffer is
+      unavailable, post the same texts in Buffer by hand.
     - LinkedIn is not announced for now; it would fit the free plan's third channel.
   - **`CHANGELOG.md`** lives on the release branches only, never on `main`, and is written by
     `scripts/changelog.sh X.Y.Z` (git-cliff with `cliff.toml`, in the Nix dev shell; bash only).

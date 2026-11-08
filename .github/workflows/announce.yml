@@ -1,0 +1,104 @@
+name: Announce
+
+# Announces each stable release on X and the Facebook Page through Buffer once its website post is
+# live (RTM-171, "Announcement" in doc/release-process.md). Merging the website post PR is what
+# publishes the announcement. Pull requests that add a post only check its texts. Not a required
+# check, so it may be filtered by `paths` (see doc/ci.md).
+on:
+  push:
+    branches: [ "main" ]
+    paths: &posts
+      - 'site/content/news/*.md'
+  pull_request:
+    branches: [ "main" ]
+    paths: *posts
+  # A retry, or a dry run, for a post that is already on main.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, e.g. 26.2.0'
+        required: true
+        type: string
+      dry-run:
+        description: 'Print the posts instead of sending them'
+        required: true
+        type: boolean
+        default: true
+      networks:
+        description: 'Networks to post to'
+        required: true
+        type: choice
+        options:
+          - 'x facebook'
+          - 'x'
+          - 'facebook'
+        default: 'x facebook'
+
+permissions:
+  contents: read
+
+# No concurrency group: a group keeps only one waiting run and cancels the others, which could drop
+# a release's announcement. Only posts added by a push are announced, so pushes never post twice.
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+
+    - name: Find the release posts
+      id: posts
+      env:
+        EVENT: ${{ github.event_name }}
+        BEFORE: ${{ github.event.before }}
+        BASE: ${{ github.event.pull_request.base.sha }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        case $EVENT in
+          push) range="$BEFORE $GITHUB_SHA" ;;
+          pull_request) range="$BASE HEAD" ;;
+        esac
+        if [[ $EVENT == workflow_dispatch ]]; then
+          posts="site/content/news/$VERSION.md"
+        else
+          # Only added posts: an edit to a published post is not announced again.
+          # shellcheck disable=SC2086 # two revisions
+          posts=$(git diff --name-only --diff-filter=A $range -- site/content/news/ |
+            grep -v '/_index\.md$' || true)
+        fi
+        echo "Posts: ${posts:-none}"
+        {
+          echo 'list<<EOF'
+          echo "$posts"
+          echo EOF
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Check the announcement texts
+      if: github.event_name == 'pull_request' && steps.posts.outputs.list != ''
+      env:
+        POSTS: ${{ steps.posts.outputs.list }}
+      run: |
+        while read -r post; do
+          [[ -n $post ]] && scripts/announce.sh --check "$post"
+        done <<< "$POSTS"
+
+    - name: Announce
+      if: github.event_name != 'pull_request' && steps.posts.outputs.list != ''
+      env:
+        POSTS: ${{ steps.posts.outputs.list }}
+        DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        ANNOUNCE_NETWORKS: ${{ inputs.networks || 'x facebook' }}
+        BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        BUFFER_CHANNEL_X: ${{ vars.BUFFER_CHANNEL_X }}
+        BUFFER_CHANNEL_FACEBOOK: ${{ vars.BUFFER_CHANNEL_FACEBOOK }}
+      run: |
+        mode=()
+        [[ $DRY_RUN == true ]] && mode=(--dry-run)
+        status=0
+        while read -r post; do
+          [[ -n $post ]] || continue
+          scripts/announce.sh "${mode[@]}" "$post" || status=1
+        done <<< "$POSTS"
+        exit $status
