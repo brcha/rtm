@@ -119,6 +119,12 @@ one that had them.
     writes the user's real `rtm/config.toml` or todo.txt. A new test that runs a program removes
     the environment variables that would change its result (`TODOTXT`, `RTM_NO_SYNC`, `RTM_VCS`,
     `RTM_UPDATE_URL`).
+- **Epic close** (RTM-159): before closing an epic whose changes touch `rtmmcp/`, `todotxt/src/`
+  (how a line is printed and parsed, which the MCP tools show and match on) or the `mcp` entry
+  points (`rtmcli/src/main.rs`'s `mcp`, `rtmapp/src/mcp.rs`), run the LLM eval of the MCP tools,
+  `nix develop -c scripts/mcp-eval.sh` (see `rtmmcp/AGENTS.md`), and report its table in the
+  epic's last PR or on the epic. A scenario that fails becomes an issue of its own, not a reason
+  to keep the epic open.
 
 ---
 
