@@ -635,11 +635,17 @@ jobs:
 
       # Nothing is built here. The package index is refreshed because the install check below
       # resolves the debs' Depends from it. Same hardened apt pattern as before (RTM-28) -- pin the
-      # mirror, bound retries and timeouts.
+      # mirror, bound retries and timeouts. kernel.org's mirror stands in when Ubuntu's DNS fails
+      # (RTM-213, see doc/ci.md).
       - name: Refresh the apt index
         timeout-minutes: 10
         run: |
-          echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+          mirror=http://archive.ubuntu.com/ubuntu/
+          if ! getent hosts archive.ubuntu.com > /dev/null; then
+            echo "::warning::archive.ubuntu.com does not resolve; using mirrors.edge.kernel.org."
+            mirror=http://mirrors.edge.kernel.org/ubuntu/
+          fi
+          echo "$mirror" | sudo tee /etc/apt/apt-mirrors.txt
           sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
 
       # Building a .deb is not evidence it installs. Installing both with apt resolves every
@@ -880,6 +886,13 @@ jobs:
           set -euo pipefail
           debs=("$PWD/dist/rtmapp_${VERSION}_amd64.deb" "$PWD/dist/rtmcli_${VERSION}_amd64.deb")
           apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          # The image names Ubuntu's hosts directly; kernel.org's mirror stands in when Ubuntu's DNS
+          # fails (RTM-213, see doc/ci.md).
+          if ! getent hosts archive.ubuntu.com > /dev/null; then
+            echo "::warning::archive.ubuntu.com does not resolve; using mirrors.edge.kernel.org."
+            sed -i -E 's#http://(archive|security)\.ubuntu\.com/ubuntu/?#http://mirrors.edge.kernel.org/ubuntu/#' \
+              /etc/apt/sources.list.d/ubuntu.sources
+          fi
           # Retried, as the build tools in the linux job.
           for attempt in 1 2 3; do
             if apt-get update "${apt_opts[@]}" && apt-get install -y "${apt_opts[@]}" "${debs[@]}"; then
