@@ -74,7 +74,6 @@ todotxt/tests/
   fact. It is also why fabricating dates only ever happens at `add_item`/`complete_item`, not
   in `Display`.
 - Business-day recurrence is currently approximated as daily (known limitation).
-- Monthly recurrence is approximated as 30 days; yearly as 365 days.
 
 ---
 
