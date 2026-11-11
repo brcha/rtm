@@ -5,7 +5,7 @@
 //! counts from the due date, normal recurrence from the day of completion, months and years are
 //! calendar months (the day clamped to the month's end), and `b` counts business days.
 
-use chrono::{Days, Local, Months, NaiveDate};
+use chrono::{Days, Local, NaiveDate};
 use todotxt::{TodoItem, TodoLibrary, TodoPriority};
 
 fn parse(line: &str) -> TodoItem {
@@ -243,7 +243,6 @@ fn the_next_occurrence_copies_the_task() {
 /// Extension `rec:` and `t:`: the threshold date moves by the same interval as the due date, for
 /// strict recurrence.
 #[test]
-#[ignore = "RTM-177: the threshold date does not move with the due date"]
 fn strict_recurrence_moves_the_threshold_date() {
     let next = next_occurrence("Water the plants due:2026-01-10 t:2026-01-05 rec:+1w");
     assert_eq!(next.due, Some(date("2026-01-17")));
@@ -253,7 +252,6 @@ fn strict_recurrence_moves_the_threshold_date() {
 /// Extension `rec:` and `t:`: for normal recurrence the threshold date keeps its distance to the
 /// new due date.
 #[test]
-#[ignore = "RTM-177: the threshold date does not move with the due date"]
 fn normal_recurrence_moves_the_threshold_date() {
     let next = next_occurrence("Water the plants due:2020-01-10 t:2020-01-05 rec:3d");
     assert_eq!(next.due, Some(today() + Days::new(3)));
@@ -261,18 +259,24 @@ fn normal_recurrence_moves_the_threshold_date() {
 }
 
 /// Extension `rec:` and `t:`: a monthly recurrence moves the threshold date by a calendar month
-/// too, so this case also needs calendar months.
+/// too. A bill that can be paid from the 5th and must be paid by the 15th comes back on the same
+/// days of the next month.
 #[test]
-#[ignore = "RTM-177: the threshold date does not move with the due date"]
 fn monthly_recurrence_moves_the_threshold_date_by_a_month() {
     let next =
-        next_occurrence("(C) 2026-10-11 Инфостан +рачуни @кућа due:2026-11-05 rec:+m t:2026-03-15");
-    assert_eq!(next.due, Some(date("2026-12-05")));
-    assert_eq!(next.threshold, Some(date("2026-04-15")));
-    assert_eq!(
-        next.threshold,
-        date("2026-03-15").checked_add_months(Months::new(1))
-    );
+        next_occurrence("(C) 2026-10-11 Инфостан +рачуни @кућа t:2026-11-05 due:2026-11-15 rec:+m");
+    assert_eq!(next.due, Some(date("2026-12-15")));
+    assert_eq!(next.threshold, Some(date("2026-12-05")));
+}
+
+/// Extension `rec:` and `t:`: when the due date is clamped to the end of a shorter month, the
+/// threshold date keeps its own day of the month (topydo would keep its distance to the due date
+/// instead, giving 2026-02-18).
+#[test]
+fn monthly_recurrence_keeps_the_threshold_day_at_the_end_of_the_month() {
+    let next = next_occurrence("Pay the rent t:2026-01-21 due:2026-01-31 rec:+m");
+    assert_eq!(next.due, Some(date("2026-02-28")));
+    assert_eq!(next.threshold, Some(date("2026-02-21")));
 }
 
 /// Extension `rec:`: a recurring task without a due date still recurs; the next due date counts

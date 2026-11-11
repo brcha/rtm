@@ -1,6 +1,6 @@
 use crate::todo_item::TodoItem;
 use crate::todo_recurrence::TodoRecurrenceUnit;
-use chrono::{Duration, Local, Months};
+use chrono::{Duration, Local, Months, NaiveDate};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -113,21 +113,28 @@ impl TodoLibrary {
             } else {
                 Local::now().date_naive()
             };
-            let new_due = match recurrence.unit {
-                TodoRecurrenceUnit::Daily => base_date + Duration::days(recurrence.count as i64),
+            let advance = |from: NaiveDate| match recurrence.unit {
+                TodoRecurrenceUnit::Daily => from + Duration::days(recurrence.count as i64),
                 TodoRecurrenceUnit::BusinessDay => {
                     // Skip weekends or something, but for simplicity, treat as daily
-                    base_date + Duration::days(recurrence.count as i64)
+                    from + Duration::days(recurrence.count as i64)
                 }
-                TodoRecurrenceUnit::Weekly => base_date + Duration::weeks(recurrence.count as i64),
+                TodoRecurrenceUnit::Weekly => from + Duration::weeks(recurrence.count as i64),
                 // Calendar months and years: a day the target month lacks becomes its last day.
-                TodoRecurrenceUnit::Monthly => base_date
+                TodoRecurrenceUnit::Monthly => from
                     .checked_add_months(Months::new(u32::from(recurrence.count)))
                     .expect("a u16 count of months stays within chrono's date range"),
-                TodoRecurrenceUnit::Yearly => base_date
+                TodoRecurrenceUnit::Yearly => from
                     .checked_add_months(Months::new(u32::from(recurrence.count) * 12))
                     .expect("a u16 count of years stays within chrono's date range"),
             };
+            let new_due = advance(base_date);
+            // The threshold date is advanced from a base shifted as the due date's base is: by
+            // the interval for strict recurrence, keeping its distance to the new due date for
+            // normal recurrence.
+            let new_threshold = self.items[index]
+                .threshold
+                .map(|threshold| advance(threshold + (base_date - current_due)));
             let new_item = TodoItem {
                 done: false,
                 priority: self.items[index].priority.clone(),
@@ -138,7 +145,7 @@ impl TodoLibrary {
                 contexts: self.items[index].contexts.clone(),
                 due: Some(new_due),
                 recurrence: Some(recurrence.clone()),
-                threshold: self.items[index].threshold,
+                threshold: new_threshold,
                 uuid: None,
                 sub: None,
             };
