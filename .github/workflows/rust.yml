@@ -84,11 +84,17 @@ jobs:
 
     # pijul needs OpenSSL and libsodium to build and to run, so these steps run on cache hits too.
     # Same hardened apt pattern as release.yml (RTM-28): pin the mirror, bound retries and timeouts.
+    # kernel.org's mirror stands in when Ubuntu's DNS fails (RTM-213, see doc/ci.md).
     - name: Install pijul's libraries (Linux)
       if: runner.os == 'Linux'
       timeout-minutes: 10
       run: |
-        echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+        mirror=http://archive.ubuntu.com/ubuntu/
+        if ! getent hosts archive.ubuntu.com > /dev/null; then
+          echo "::warning::archive.ubuntu.com does not resolve; using mirrors.edge.kernel.org."
+          mirror=http://mirrors.edge.kernel.org/ubuntu/
+        fi
+        echo "$mirror" | sudo tee /etc/apt/apt-mirrors.txt
         sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
         sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
           libssl-dev libsodium-dev pkg-config

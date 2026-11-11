@@ -10,6 +10,20 @@
   `apt-get update` and `apt-get install` as defence in depth. **Do not revert this for a marginally
   faster "good day" run** — it trades a small, predictable slowdown for an unbounded hang becoming
   a fast, loud failure instead.
+  - **When Ubuntu's DNS fails (RTM-213):** on 2026-11-11 Canonical's nameservers for `ubuntu.com`
+    were unreachable from Azure's resolver, which the runners use, so `archive.ubuntu.com` and
+    `security.ubuntu.com` did not resolve. Each apt step therefore first looks up
+    `archive.ubuntu.com` (`getent hosts`). When the name does not resolve, it pins
+    `http://mirrors.edge.kernel.org/ubuntu/` instead, with a warning: a full Ubuntu mirror, with
+    `-security`, on DNS that does not go through Canonical's. On the runners every suite goes
+    through the mirror list, so the list is the only thing that changes; `linux-deb-install`'s
+    `ubuntu:latest` container names both hosts directly, so there the step rewrites its
+    `ubuntu.sources`. A normal day is unchanged.
+  - The fallback is a lookup, not a second entry in the mirror list: apt would try the archive
+    first for every file, and each failed lookup takes 20 s (about 80 s with the retries), far past
+    the step timeouts for the dozens of packages `linux-deb` installs.
+  - `packages.microsoft.com`, which still resolved, is no alternative: it carries only Microsoft's
+    own packages, none of the Ubuntu ones these jobs install.
 - **Which changes start which build (RTM-76):** Markdown alone (`**/*.md`) starts no build.
   - The ruleset "Run tests in the PR" covers `main` and `releases/**` (RTM-78). It requires the
     checks `validate` (`pr-title.yml`, which requires a scope from the list under "Commit
