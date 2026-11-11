@@ -112,7 +112,6 @@ todotxt/tests/
   binary agree. `write_lock::lock_dir()` is public, for the other rtm locks kept there (the MCP
   server's one-server-per-client check).
 - Business-day recurrence is currently approximated as daily (known limitation).
-- Monthly recurrence is approximated as 30 days; yearly as 365 days.
 
 ---
 
