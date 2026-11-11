@@ -20,7 +20,8 @@ per-file state with its own error line (RTM-125) and sync with one worker per re
 check on open included (RTM-126), the open files as tabs (RTM-127) and moving an item to another
 open file (RTM-128), for several open files (RTM-66); the title bar's menu and the Settings dialog
 (RTM-134); the projects and contexts in the sidebar (RTM-120) and filtering by them (RTM-121),
-also from a tag clicked in an item row (RTM-150); links in item text (RTM-193).
+also from a tag clicked in an item row (RTM-150); links in item text (RTM-193); New File and Load
+File buttons on the page while no file is open (RTM-179).
 
 ---
 
@@ -232,7 +233,13 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     (`can_close`) while the edit dialog is open, while the file's check on open runs and while its
     repository has a job outstanding, and so is the question's Close tab. Pending changes are
     written and committed first (a failed write keeps the tab). The tab to its right is shown next,
-    else the one to its left; closing the last tab leaves no file open and the empty state.
+    else the one to its left; closing the last tab leaves no file open and the start page.
+  - **The start page (RTM-179):** while no file is open (first start, or every tab closed), the
+    page shows a line and two buttons side by side (`start_page`): New File in the Add button's
+    green, Load File in the primary blue, disabled while a file dialog is open; a click goes to
+    `menu_action` as `Clicked::Menu`. A tab whose file failed to load counts as open: it keeps a
+    hint pointing at the menu under its file line, and no buttons. The quick-add input and Add are
+    disabled whenever no loaded file is shown, in both cases.
   - **Switching** (`switch`, a click on a tab) saves the file as `file_name`. A file in the
     background with a Git-or-Pijul or outside-changes question is brought to the front
     (`show_question`, in `logic`, one at a time in tab order, while no modal is open), without

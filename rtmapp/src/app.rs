@@ -1420,10 +1420,15 @@ impl App {
     }
 
     /// CSS `.add-item`: the input fills the width, "Add" sits to its right, 16 px above the list.
+    /// Greyed out while no loaded file is shown, since there is nothing to add to.
     fn add_row(&mut self, ui: &mut Ui, p: &Palette) {
         let mut submit = false;
+        let loaded = self.library().is_some();
         // Top-aligned: a centred cross axis would centre the row in all the space below it.
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+            if !loaded {
+                ui.disable();
+            }
             // Lines the button up with the input, as the CSS flex row does.
             ui.spacing_mut().interact_size.y = 38.0;
             submit |= theme::success_button(ui, "Add").clicked();
@@ -1612,7 +1617,7 @@ impl App {
             .stroke(Stroke::new(1.0, p.border))
             .corner_radius(6.0)
             .inner_margin(16.0)
-            .show(ui, |ui| self.content(ui, p))
+            .show(ui, |ui| self.content(ui, p, files_enabled))
             .inner;
         if let Some(shown) = strip.shown {
             // The shown tab opens into the page: its part of the border is covered.
@@ -1622,11 +1627,12 @@ impl App {
             );
             ui.painter().rect_filled(gap, 0.0, p.panel);
         }
-        strip.clicked.map(Clicked::Tab).or(row.map(Clicked::Row))
+        strip.clicked.map(Clicked::Tab).or(row)
     }
 
-    /// The app and file lines, the add row and the list. Returns what was clicked in the list.
-    fn content(&mut self, ui: &mut Ui, p: &Palette) -> Option<RowAction> {
+    /// The app and file lines, the add row and the list, or New File and Load File when no file is
+    /// open. Returns what was clicked there.
+    fn content(&mut self, ui: &mut Ui, p: &Palette, files_enabled: bool) -> Option<Clicked> {
         let file_error = self.file().and_then(|file| file.error.as_ref());
         for error in [self.error.as_ref(), file_error].into_iter().flatten() {
             ui.label(RichText::new(error).color(p.due));
@@ -1640,10 +1646,11 @@ impl App {
             .show(ui, |ui| {
                 // The list box fills the content area, as in the web app.
                 ui.set_min_size(ui.available_size());
-                let Some((file, library)) = self
-                    .file()
-                    .and_then(|file| Some((file, file.library.as_ref()?)))
-                else {
+                let Some(file) = self.file() else {
+                    return start_page(ui, p, files_enabled).map(Clicked::Menu);
+                };
+                // A tab whose file failed to load: its file line says why.
+                let Some(library) = file.library.as_ref() else {
                     empty_state(
                         ui,
                         p,
@@ -1669,6 +1676,7 @@ impl App {
                         &file.projects,
                         &file.contexts,
                     )
+                    .map(Clicked::Row)
                 }
             })
             .inner
@@ -2081,7 +2089,9 @@ impl eframe::App for App {
             Some(Clicked::Tab(TabAction::Switch(path))) => self.switch(&path),
             Some(Clicked::Tab(TabAction::Close(path))) => self.confirm_close = Some(path),
             Some(Clicked::Tab(TabAction::Rename(path))) => self.start_rename(&path),
-            Some(Clicked::Tab(TabAction::Menu(action))) => self.menu_action(action, &ctx, frame),
+            Some(Clicked::Tab(TabAction::Menu(action)) | Clicked::Menu(action)) => {
+                self.menu_action(action, &ctx, frame)
+            }
             Some(Clicked::Row(RowAction::Toggle(index))) => self.toggle(index),
             Some(Clicked::Row(RowAction::Edit(index))) => self.open_editor(index),
             Some(Clicked::Row(RowAction::Project(tag))) => {
@@ -2539,10 +2549,12 @@ struct TabStrip {
     shown: Option<egui::Rect>,
 }
 
-/// What was clicked in the content area: in the tab strip, or in the list.
+/// What was clicked in the content area: in the tab strip, in the list, or New File or Load File
+/// on the page shown while no file is open.
 enum Clicked {
     Tab(TabAction),
     Row(RowAction),
+    Menu(MenuAction),
 }
 
 /// The tab of `file`, painted: its name (red while it has a file line), the full path on hover,
@@ -2713,6 +2725,37 @@ fn empty_state(ui: &mut Ui, p: &Palette, text: &str) {
     ui.vertical_centered(|ui| {
         ui.label(RichText::new(text).color(p.muted));
     });
+}
+
+/// The page while no file is open (first start, or every tab closed): a line, then New File and
+/// Load File side by side, so there is an obvious way to start. They run the menu's actions and are
+/// disabled while a file dialog is open. Returns the one clicked.
+fn start_page(ui: &mut Ui, p: &Palette, files_enabled: bool) -> Option<MenuAction> {
+    empty_state(
+        ui,
+        p,
+        "No file loaded. Create a todo.txt file or load an existing one.",
+    );
+    ui.add_space(12.0);
+    let mut chosen = None;
+    // One button on each side of the centre line.
+    ui.columns(2, |columns| {
+        columns[0].with_layout(Layout::right_to_left(Align::Min), |ui| {
+            ui.add_enabled_ui(files_enabled, |ui| {
+                if theme::success_button(ui, "New File").clicked() {
+                    chosen = Some(MenuAction::NewFile);
+                }
+            });
+        });
+        columns[1].with_layout(Layout::left_to_right(Align::Min), |ui| {
+            ui.add_enabled_ui(files_enabled, |ui| {
+                if theme::primary_button(ui, "Load File").clicked() {
+                    chosen = Some(MenuAction::LoadFile);
+                }
+            });
+        });
+    });
+    chosen
 }
 
 #[cfg(test)]
