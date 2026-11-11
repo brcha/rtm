@@ -174,7 +174,6 @@ fn normal_recurrence_counts_from_today() {
 
 /// Extension `rec:` with `m`: a month is a calendar month, as in topydo and SimpleTask.
 #[test]
-#[ignore = "RTM-207: months and years are 30 and 365 days"]
 fn monthly_recurrence_adds_calendar_months() {
     for (rec, due, next) in [
         ("+1m", "2026-03-15", "2026-04-15"),
@@ -188,7 +187,6 @@ fn monthly_recurrence_adds_calendar_months() {
 
 /// Extension `rec:` with `m`: a day that the next month lacks is clamped to its last day.
 #[test]
-#[ignore = "RTM-207: months and years are 30 and 365 days"]
 fn monthly_recurrence_clamps_to_the_end_of_the_month() {
     let next = next_occurrence("Pay the rent due:2026-01-31 rec:+1m");
     assert_eq!(next.due, Some(date("2026-02-28")));
@@ -198,7 +196,6 @@ fn monthly_recurrence_clamps_to_the_end_of_the_month() {
 
 /// Extension `rec:` with `y`: a year is a calendar year, leap years included.
 #[test]
-#[ignore = "RTM-207: months and years are 30 and 365 days"]
 fn yearly_recurrence_adds_calendar_years() {
     let next = next_occurrence("Renew the passport due:2027-03-01 rec:+1y");
     assert_eq!(next.due, Some(date("2028-03-01")));
@@ -266,7 +263,7 @@ fn normal_recurrence_moves_the_threshold_date() {
 /// Extension `rec:` and `t:`: a monthly recurrence moves the threshold date by a calendar month
 /// too, so this case also needs calendar months.
 #[test]
-#[ignore = "RTM-177: the threshold date does not move with the due date (needs RTM-207)"]
+#[ignore = "RTM-177: the threshold date does not move with the due date"]
 fn monthly_recurrence_moves_the_threshold_date_by_a_month() {
     let next =
         next_occurrence("(C) 2026-10-11 Инфостан +рачуни @кућа due:2026-11-05 rec:+m t:2026-03-15");
