@@ -2,7 +2,7 @@ use crate::todo_context::TodoContext;
 use crate::todo_item::TodoItem;
 use crate::todo_project::TodoProject;
 use crate::todo_recurrence::TodoRecurrenceUnit;
-use chrono::{Duration, Local};
+use chrono::{Duration, Local, Months};
 use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
@@ -122,14 +122,13 @@ impl TodoLibrary {
                     base_date + Duration::days(recurrence.count as i64)
                 }
                 TodoRecurrenceUnit::Weekly => base_date + Duration::weeks(recurrence.count as i64),
-                TodoRecurrenceUnit::Monthly => {
-                    // Approximate months as 30 days
-                    base_date + Duration::days(recurrence.count as i64 * 30)
-                }
-                TodoRecurrenceUnit::Yearly => {
-                    // Approximate years as 365 days
-                    base_date + Duration::days(recurrence.count as i64 * 365)
-                }
+                // Calendar months and years: a day the target month lacks becomes its last day.
+                TodoRecurrenceUnit::Monthly => base_date
+                    .checked_add_months(Months::new(u32::from(recurrence.count)))
+                    .expect("a u16 count of months stays within chrono's date range"),
+                TodoRecurrenceUnit::Yearly => base_date
+                    .checked_add_months(Months::new(u32::from(recurrence.count) * 12))
+                    .expect("a u16 count of years stays within chrono's date range"),
             };
             let new_item = TodoItem {
                 done: false,
