@@ -17,6 +17,9 @@ pub struct Palette {
     pub done_bg: Color32,
     pub done_text: Color32,
     pub project: Color32,
+    /// Links in an item's text: not the project blue nor the recurrence colour, so they look like
+    /// neither chip.
+    pub link: Color32,
     pub context: Color32,
     pub due: Color32,
     pub recurrence: Color32,
@@ -60,6 +63,7 @@ pub(crate) const LIGHT: Palette = Palette {
     done_bg: rgb(0xf6, 0xf8, 0xfa),
     done_text: rgb(0x6a, 0x73, 0x7d),
     project: rgb(0x03, 0x66, 0xd6),
+    link: rgb(0x6f, 0x42, 0xc1),
     context: rgb(0x6a, 0x73, 0x7d),
     due: rgb(0xe7, 0x4c, 0x3c),
     recurrence: rgb(0x9b, 0x59, 0xb6),
@@ -92,6 +96,7 @@ const DARK: Palette = Palette {
     done_bg: rgb(0x21, 0x26, 0x2d),
     done_text: rgb(0x8b, 0x94, 0x9e),
     project: rgb(0x58, 0xa6, 0xff),
+    link: rgb(0xd2, 0xa8, 0xff),
     context: rgb(0x8b, 0x94, 0x9e),
     due: rgb(0xf8, 0x51, 0x49),
     recurrence: rgb(0xbc, 0x8c, 0xff),

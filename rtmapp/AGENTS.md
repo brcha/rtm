@@ -20,7 +20,7 @@ per-file state with its own error line (RTM-125) and sync with one worker per re
 check on open included (RTM-126), the open files as tabs (RTM-127) and moving an item to another
 open file (RTM-128), for several open files (RTM-66); the title bar's menu and the Settings dialog
 (RTM-134); the projects and contexts in the sidebar (RTM-120) and filtering by them (RTM-121),
-also from a tag clicked in an item row (RTM-150).
+also from a tag clicked in an item row (RTM-150); links in item text (RTM-193).
 
 ---
 
@@ -47,7 +47,7 @@ rtmapp/
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
     ├── list.rs             ← Filtering and sorting (`visible`), item rows (`RowAction`) and
-    │                         their clickable tags
+    │                         their clickable tags and links
     ├── mcp.rs              ← `rtmapp mcp`: the MCP server on the configured files
     ├── settings.rs         ← Settings dialog: the form (`SettingsForm`) and the modal
     ├── sync.rs             ← Sync through the file's repository: `find`, the worker thread
@@ -159,6 +159,19 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     space after a short wrapped line still edits. The hovered tag is underlined (painted, since
     `LayoutJob` merges a tag with the space before it into one section); tags in the selection
     are bold in every row.
+  - **Links (RTM-193):** URLs in an item's description (`list::links`) are spans of the same
+    label (`RowTag::Link`, the URL's byte range in the description), in the palette's `link`
+    colour (a purple apart from the project blue and the recurrence colour) and always underlined (`TextFormat::underline`).
+    A click on one hands it to the OS (`ctx.open_url`) and returns no `RowAction`; the file never
+    changes. Only the description is searched: the parser takes tags out of it, so a `+project`
+    or `@context` is never a link, while URLs and unknown `key:value` words stay in it. Schemes:
+    `http://`, `https://`, `mailto:`, in any case; not `file://` (a shared file could hand a
+    local program to the OS) and not bare `www.` hosts. A link starts at the scheme at the start
+    of a word or after a character that is not an ASCII letter or digit (`url:https://…` links
+    the URL, not the key) and ends with the word, less trailing `. , : ; ! ? ' " * _ ~ ] >`, and
+    a trailing `)` only while it has more `)` than `(` (GitHub's autolink rule). Detection stays
+    in rtmapp: rtmcli prints plain text, which terminals link themselves, and the MCP server
+    returns lines as they are. The links are not AccessKit nodes of their own, as for tags.
 - **Item rows** show the visible items in that order. A done item is struck through entirely, as the
   CSS did. Recurrence is shown through `TodoRecurrence`'s `Display` (`rec:+1m` appears as `rec:+m`).
   The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had

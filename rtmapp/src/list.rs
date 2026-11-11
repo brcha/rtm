@@ -52,14 +52,17 @@ pub enum RowAction {
     Context(TodoContext),
 }
 
-/// A `+project` or `@context` in a row's text, by its index in the item's list.
+/// A `+project` or `@context` in a row's text, by its index in the item's list, or a link in the
+/// description, by its byte range there.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum RowTag {
     Project(usize),
     Context(usize),
+    Link { start: usize, end: usize },
 }
 
-/// Where a tag is in a row's text: its characters (`+name`, without the space before it).
+/// Where a tag or link is in a row's text: its characters (`+name`, without the space before
+/// it).
 #[derive(Debug)]
 struct TagSpan {
     tag: RowTag,
@@ -131,12 +134,14 @@ pub fn show(
                                 (text.hover_pos()).and_then(|at| tag_at(&galley, pos, at, &tags));
                             if ui.is_rect_visible(text.rect) {
                                 // The hovered tag is underlined glyph by glyph: `LayoutJob`
-                                // merges it with the space before it into one section.
-                                if let Some(span) = hovered {
-                                    let color = match span.tag {
-                                        RowTag::Project(_) => p.project,
-                                        RowTag::Context(_) => p.context,
-                                    };
+                                // merges it with the space before it into one section. Links
+                                // are always underlined, through their format.
+                                let underlined = hovered.and_then(|span| match span.tag {
+                                    RowTag::Project(_) => Some((span, p.project)),
+                                    RowTag::Context(_) => Some((span, p.context)),
+                                    RowTag::Link { .. } => None,
+                                });
+                                if let Some((span, color)) = underlined {
                                     for glyph in glyph_rects(&galley, span.chars.clone()) {
                                         let glyph = glyph.translate(pos.to_vec2());
                                         ui.painter().hline(
@@ -169,15 +174,21 @@ pub fn show(
                                 );
                             }
                             if text.clicked() {
-                                clicked = Some(match hovered.map(|span| span.tag) {
+                                match hovered.map(|span| span.tag) {
                                     Some(RowTag::Project(i)) => {
-                                        RowAction::Project(item.projects[i].clone())
+                                        clicked =
+                                            Some(RowAction::Project(item.projects[i].clone()));
                                     }
                                     Some(RowTag::Context(i)) => {
-                                        RowAction::Context(item.contexts[i].clone())
+                                        clicked =
+                                            Some(RowAction::Context(item.contexts[i].clone()));
                                     }
-                                    None => RowAction::Edit(index),
-                                });
+                                    // Handed to the OS's handler; the item is left alone.
+                                    Some(RowTag::Link { start, end }) => ui.ctx().open_url(
+                                        egui::OpenUrl::new_tab(&item.description[start..end]),
+                                    ),
+                                    None => clicked = Some(RowAction::Edit(index)),
+                                }
                             }
                         });
                     });
@@ -238,7 +249,8 @@ fn checkbox(ui: &mut Ui, p: &Palette, item: &TodoItem, index: usize) -> bool {
 
 /// The text of a row: priority, description and the `+project @context due: rec: t:` chips. A done
 /// item is struck through entirely, as the CSS `text-decoration` on the whole text box does. Tags in
-/// the selection (`projects`, `contexts`) are bold. Also returns where the tags are.
+/// the selection (`projects`, `contexts`) are bold; links in the description are underlined in the
+/// link colour. Also returns where the tags and links are.
 fn row_job(
     p: &Palette,
     item: &TodoItem,
@@ -267,9 +279,36 @@ fn row_job(
         let letter = char::from(b'A' + n.min(25));
         add(&mut job, &format!("({letter}) "), theme::bold(11.9), color);
     }
+    let mut tags = Vec::new();
+    let description = &item.description;
+    let mut plain = 0;
+    for link in links(description) {
+        add(
+            &mut job,
+            &description[plain..link.start],
+            FontId::proportional(14.0),
+            main,
+        );
+        let chars = add(
+            &mut job,
+            &description[link.clone()],
+            FontId::proportional(14.0),
+            p.link,
+        );
+        // The link colour differs from the text's, so `append` gave the link its own section.
+        if let Some(section) = job.sections.last_mut() {
+            section.format.underline = Stroke::new(1.0, p.link);
+        }
+        let tag = RowTag::Link {
+            start: link.start,
+            end: link.end,
+        };
+        tags.push(TagSpan { tag, chars });
+        plain = link.end;
+    }
     add(
         &mut job,
-        &item.description,
+        &description[plain..],
         FontId::proportional(14.0),
         main,
     );
@@ -291,7 +330,6 @@ fn row_job(
             p.context,
         )
     });
-    let mut tags = Vec::new();
     for (tag, text, selected, color) in projects.chain(contexts) {
         let font = if selected {
             theme::bold(11.9)
@@ -329,6 +367,58 @@ fn row_job(
     (job, tags)
 }
 
+/// What a link starts with, in any case. `file://` is left out: the file may come from a shared
+/// repository, and a click would hand a local path to the OS to open or run.
+const LINK_SCHEMES: [&str; 3] = ["http://", "https://", "mailto:"];
+
+/// The byte ranges of the links in `text`. A link starts with one of `LINK_SCHEMES` at the start
+/// of a word or after a character that is not an ASCII letter or digit (`(https://…`,
+/// `url:https://…`, whose `url:` stays outside), and ends with the word, less trailing
+/// punctuation; a trailing `)` goes only while the link has more `)` than `(`, so
+/// `…/Rust_(language)` keeps its own (GitHub's autolink rule). A scheme alone is no link.
+// shortcut: one link per word, so two URLs joined by a comma make one link; scan the rest of the
+// word if that turns up in real lists.
+fn links(text: &str) -> Vec<Range<usize>> {
+    let mut found = Vec::new();
+    for word in text.split(char::is_whitespace) {
+        // `split` yields slices of `text`, so the pointers give the word's offset.
+        let offset = word.as_ptr() as usize - text.as_ptr() as usize;
+        let mut before = None;
+        let start = word.char_indices().find_map(|(i, c)| {
+            let starts_here = !before.is_some_and(|b: char| b.is_ascii_alphanumeric());
+            before = Some(c);
+            let scheme = (LINK_SCHEMES.iter()).find(|scheme| {
+                (word.get(i..i + scheme.len())).is_some_and(|w| w.eq_ignore_ascii_case(scheme))
+            });
+            scheme
+                .filter(|_| starts_here)
+                .map(|scheme| (i, scheme.len()))
+        });
+        let Some((start, scheme)) = start else {
+            continue;
+        };
+        let mut end = word.len();
+        while let Some(last) = word[start..end].chars().next_back() {
+            let link = &word[start..end];
+            let trailing = match last {
+                '.' | ',' | ':' | ';' | '!' | '?' | '\'' | '"' | '*' | '_' | '~' | ']' | '>' => {
+                    true
+                }
+                ')' => link.matches(')').count() > link.matches('(').count(),
+                _ => false,
+            };
+            if !trailing {
+                break;
+            }
+            end -= last.len_utf8();
+        }
+        if end > start + scheme {
+            found.push(offset + start..offset + end);
+        }
+    }
+    found
+}
+
 /// The tag whose glyphs are under `at`, in `galley` painted at `origin`. Checked glyph by glyph, so
 /// that the space around the text (after a short line, between rows) hits no tag.
 fn tag_at<'a>(galley: &Galley, origin: Pos2, at: Pos2, tags: &'a [TagSpan]) -> Option<&'a TagSpan> {
@@ -355,3 +445,7 @@ mod filter_tests;
 #[cfg(test)]
 #[path = "tests/list_rows_tests.rs"]
 mod rows_tests;
+
+#[cfg(test)]
+#[path = "tests/list_links_tests.rs"]
+mod links_tests;
