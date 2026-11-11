@@ -136,7 +136,6 @@ fn a_date_later_in_the_line_is_text() {
 /// Incomplete tasks, rule 2: the creation date is in the format YYYY-MM-DD; a date written
 /// differently is text and stays as written.
 #[test]
-#[ignore = "RTM-205: dates not in YYYY-MM-DD are accepted"]
 fn a_date_not_in_yyyy_mm_dd_is_text() {
     for line in [
         "2011-3-2 Call Mom",
