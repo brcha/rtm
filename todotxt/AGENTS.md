@@ -48,7 +48,10 @@ todotxt/tests/
   an already-done item does not overwrite its existing completion date), handles recurrence
   (appends new item), returns `Option<bool>` (None = out of bounds, Some(true) = had
   recurrence, Some(false) = no recurrence). It never fabricates a creation date; see
-  `add_item` above.
+  `add_item` above. The next occurrence's threshold date (`t:`) moves with its due date:
+  strict recurrence advances it by the interval (in calendar months for `m` and `y`, so it keeps
+  its day of the month), normal recurrence keeps its distance to the new due date. A recurring
+  item without `due:` gets no next occurrence yet.
 - `uncomplete_item(index)` clears `done` and `completion_date`, returns `Option<()>` (None =
   out of bounds). Priority and creation date are untouched — priority re-serializes as `(X)`
   automatically because `Display` keys that choice off `done`.
