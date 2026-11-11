@@ -147,7 +147,7 @@ const LINKED: &str = "First\n\
 fn asking_to_delete_counts_the_sub_items() {
     let dir = temp_dir("ask-delete");
     let mut app = app_with(&dir, LINKED);
-    // load() drops a line whose uuid does not parse; make sure none was.
+    // All five fixture lines are loaded.
     assert_eq!(
         app.file().unwrap().library.as_ref().unwrap().item_count(),
         5
