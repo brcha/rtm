@@ -72,7 +72,6 @@ fn completing_a_task_without_a_creation_date_writes_only_the_completion_date() {
 /// Complete tasks, rule 1: completing changes only the start of the line; projects, contexts and
 /// tags between the words stay in place.
 #[test]
-#[ignore = "RTM-204: tags move to the end of the line and spacing collapses"]
 fn completing_keeps_the_rest_of_the_line_in_place() {
     let line = complete("2026-01-05 Call +Mom about @home stuff h:1").items[0].to_string();
     assert!(
@@ -129,7 +128,6 @@ fn editing_a_field_changes_only_that_field() {
 /// Incomplete tasks, rule 3: editing one field keeps the projects, contexts and tags placed
 /// between the words where they are.
 #[test]
-#[ignore = "RTM-204: tags move to the end of the line and spacing collapses"]
 fn editing_a_field_keeps_the_rest_of_the_line_in_place() {
     let item = parse("2026-01-05 Call +Mom about @home stuff due:2026-01-10 h:1");
     assert_eq!(

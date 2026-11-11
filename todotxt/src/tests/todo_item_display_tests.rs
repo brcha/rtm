@@ -16,6 +16,7 @@ fn display_simple() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     assert_eq!(item.to_string(), "Buy milk");
     assert_eq!(item.threshold, None);
@@ -42,6 +43,7 @@ fn display_with_extensions() {
         threshold: Some(NaiveDate::from_ymd_opt(2023, 5, 25).unwrap()),
         uuid: None,
         sub: None,
+        layout: None,
     };
     assert_eq!(
         item.to_string(),
@@ -87,14 +89,15 @@ fn display_open_item_with_priority_uses_parens_not_pri_tag() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     assert_eq!(item.to_string(), "(A) Call mom");
 }
 
 #[test]
-fn display_normalizes_pri_tag_on_open_item_to_parens() {
+fn display_keeps_an_unchanged_pri_tag_on_an_open_item() {
     let item: TodoItem = "Task pri:B".parse().unwrap();
-    assert_eq!(item.to_string(), "(B) Task");
+    assert_eq!(item.to_string(), "Task pri:B");
 }
 
 #[test]
@@ -129,6 +132,7 @@ fn display_done_item_with_creation_date_but_no_completion_date_omits_it() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     assert_eq!(item.to_string(), "x Review code");
 }
@@ -151,6 +155,7 @@ fn display_done_item_date_handling_is_a_parse_display_fixed_point() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let once = corrupting_shape.to_string();
     let reparsed: TodoItem = once.parse().unwrap();
@@ -175,6 +180,7 @@ fn display_completed_item_with_empty_description_has_no_double_space() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     assert_eq!(item.to_string(), "x pri:A");
 }
@@ -194,6 +200,7 @@ fn display_with_uuid_and_sub() {
         threshold: None,
         uuid: Some(Uuid::parse_str("12345678-1234-1234-1234-123456789abc").unwrap()),
         sub: Some(Uuid::parse_str("87654321-4321-4321-4321-abc123456789").unwrap()),
+        layout: None,
     };
     assert_eq!(
         item.to_string(),
@@ -205,14 +212,7 @@ fn display_with_uuid_and_sub() {
 fn test_roundtrip_with_all_fields() {
     let original = "(A) 2023-05-20 Complete task +Work @office due:2023-05-30 rec:1w t:2023-05-25";
     let parsed: TodoItem = original.parse().unwrap();
-    let output = parsed.to_string();
-    assert!(output.contains("(A)"));
-    assert!(output.contains("Complete task"));
-    assert!(output.contains("+Work"));
-    assert!(output.contains("@office"));
-    assert!(output.contains("due:2023-05-30"));
-    assert!(output.contains("rec:w"));
-    assert!(output.contains("t:2023-05-25"));
+    assert_eq!(parsed.to_string(), original);
 }
 
 #[test]
@@ -230,6 +230,7 @@ fn test_display_empty_item() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     assert_eq!(item.to_string(), "");
 }

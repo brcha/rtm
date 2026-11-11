@@ -52,7 +52,6 @@ fn a_line_with_every_field_in_order_comes_back_unchanged() {
 /// Incomplete tasks, rule 3: projects and contexts between the words of the description stay
 /// where they are.
 #[test]
-#[ignore = "RTM-204: tags move to the end of the line and spacing collapses"]
 fn projects_and_contexts_stay_in_place() {
     assert_round_trip("Call +Mom about @home stuff");
     assert_round_trip("(B) 2026-01-05 @phone Call Mom +Family about the trip");
@@ -61,7 +60,6 @@ fn projects_and_contexts_stay_in_place() {
 /// Additional definitions: key:value tags stay where they are, known and unknown alike, in their
 /// order.
 #[test]
-#[ignore = "RTM-204: tags move to the end of the line and spacing collapses"]
 fn key_value_tags_stay_in_place_and_in_order() {
     assert_round_trip("due:2026-01-10 Pay the rent");
     assert_round_trip("Pay the rent h:1 due:2026-01-10 id:7");
@@ -76,7 +74,6 @@ fn unknown_tags_come_back_in_order() {
 
 /// A tag that appears twice is kept twice.
 #[test]
-#[ignore = "RTM-204: tags move to the end of the line and spacing collapses"]
 fn repeated_tags_are_kept() {
     assert_round_trip("Pay the rent due:2026-01-10 due:2026-01-11");
     assert_round_trip("Paint the fence +home +home");
@@ -84,7 +81,6 @@ fn repeated_tags_are_kept() {
 
 /// The spacing of the line is kept: rtm did not change it.
 #[test]
-#[ignore = "RTM-204: tags move to the end of the line and spacing collapses"]
 fn spacing_is_kept() {
     assert_round_trip("Pay  the rent");
     assert_round_trip("Pay the rent ");
@@ -93,7 +89,6 @@ fn spacing_is_kept() {
 
 /// Non-ASCII text, projects and contexts come back unchanged.
 #[test]
-#[ignore = "RTM-204: tags move to the end of the line and spacing collapses"]
 fn non_ascii_text_comes_back_unchanged() {
     assert_round_trip("(C) 2026-10-11 Инфостан +рачуни @кућа due:2026-11-05 rec:+m t:2026-03-15");
     assert_round_trip("Платити +рачуни гаражу @кућа на време");

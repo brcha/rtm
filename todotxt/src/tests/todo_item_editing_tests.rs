@@ -17,6 +17,7 @@ fn add_subtask_new_uuid() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let child = TodoItem {
         done: false,
@@ -31,6 +32,7 @@ fn add_subtask_new_uuid() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let (updated_parent, new_child) = parent.add_subtask(&child);
     assert!(updated_parent.is_some());
@@ -57,6 +59,7 @@ fn add_subtask_existing_uuid() {
         threshold: None,
         uuid: Some(existing_uuid),
         sub: None,
+        layout: None,
     };
     let child = TodoItem {
         done: false,
@@ -71,6 +74,7 @@ fn add_subtask_existing_uuid() {
         threshold: None,
         uuid: None,
         sub: Some(Uuid::new_v4()), // existing sub, should be overwritten
+        layout: None,
     };
     let (updated_parent, new_child) = parent.add_subtask(&child);
     assert!(updated_parent.is_none());
@@ -93,6 +97,7 @@ fn test_set_done() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let new_item = item.set_done(true);
     assert!(new_item.done);
@@ -114,6 +119,7 @@ fn test_set_priority() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let new_item = item.set_priority(TodoPriority { priority: Some(1) });
     assert_eq!(new_item.priority.priority, Some(1));
@@ -135,6 +141,7 @@ fn test_set_description() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let new_item = item.set_description("New".to_string());
     assert_eq!(new_item.description, "New");
@@ -156,6 +163,7 @@ fn test_add_project() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let proj = TodoProject {
         name: "Work".to_string(),
@@ -184,6 +192,7 @@ fn test_remove_project() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let new_item = item.remove_project(&proj).unwrap();
     assert_eq!(new_item.projects.len(), 0);
@@ -205,6 +214,7 @@ fn test_add_context() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let ctx = TodoContext {
         name: "Home".to_string(),
@@ -233,6 +243,7 @@ fn test_remove_context() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let new_item = item.remove_context(&ctx).unwrap();
     assert_eq!(new_item.contexts.len(), 0);
@@ -254,6 +265,7 @@ fn test_set_due() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let date = NaiveDate::from_ymd_opt(2023, 5, 30).unwrap();
     let new_item = item.set_due(Some(date));
@@ -276,6 +288,7 @@ fn test_set_recurrence() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let rec = TodoRecurrence::from_str("1m").unwrap();
     let new_item = item.set_recurrence(Some(rec.clone()));
@@ -298,6 +311,7 @@ fn test_set_threshold() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let date = NaiveDate::from_ymd_opt(2023, 5, 25).unwrap();
     let new_item = item.set_threshold(Some(date));
@@ -320,6 +334,7 @@ fn test_set_uuid() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let uuid = Uuid::new_v4();
     let new_item = TodoItem {
@@ -345,6 +360,7 @@ fn test_set_sub() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let sub = Uuid::new_v4();
     let new_item = TodoItem {
@@ -370,6 +386,7 @@ fn test_set_completion_date() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let date = NaiveDate::from_ymd_opt(2023, 5, 26).unwrap();
     let new_item = item.set_completion_date(Some(date));
@@ -392,6 +409,7 @@ fn test_set_creation_date() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let date = NaiveDate::from_ymd_opt(2023, 5, 20).unwrap();
     let new_item = item.set_creation_date(Some(date));
@@ -414,6 +432,7 @@ fn test_set_contexts() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let contexts = vec![TodoContext {
         name: "home".to_string(),
@@ -438,6 +457,7 @@ fn test_item_equality() {
         threshold: None,
         uuid: None,
         sub: None,
+        layout: None,
     };
     let item2 = item1.clone();
     assert_eq!(item1, item2);
@@ -466,6 +486,7 @@ fn test_item_clone() {
         threshold: Some(NaiveDate::from_ymd_opt(2023, 5, 25).unwrap()),
         uuid: Some(Uuid::new_v4()),
         sub: None,
+        layout: None,
     };
     let item2 = item1.clone();
     assert_eq!(item1, item2);
