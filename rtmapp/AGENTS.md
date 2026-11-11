@@ -110,8 +110,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   recurring item that has a due date) then `save`, then `load` once the save succeeded; delete is
   `remove_item` (which also removes the item's sub-items) then `save`. Errors go to
   the error line above the list, not to a dialog; the quick-add input is cleared only after a
-  successful save. Every save rewrites the whole file, and recurrence goes through `Display`, so a
-  count of 1 is written in its short form (`rec:+1m` becomes `rec:+m`); this is intended.
+  successful save. Every save rewrites the whole file, but each line is written as read except
+  for what changed (`todotxt/AGENTS.md`); a new or edited recurrence goes through `Display`, so a
+  count of 1 is written in its short form (`rec:+1m` becomes `rec:+m`).
 - **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled as the Tauri app's
   `openEditDialog` did; Save (or Enter in a field) writes the fields as its `update_item` did, then
   `save`. Fields the dialog does not show (done, dates of completion and creation, `uuid`, `sub`) are
