@@ -59,17 +59,18 @@ impl FromStr for TodoItem {
             index += 1;
         }
 
-        let mut priority = if let Some(prio_str) = parts.get(index) {
-            if prio_str.starts_with('(') && prio_str.ends_with(')') && prio_str.len() == 3 {
-                let prio = TodoPriority::from_str(prio_str)?;
-                index += 1;
-                prio
-            } else {
-                TodoPriority { priority: None }
-            }
-        } else {
-            TodoPriority { priority: None }
-        };
+        // A `(X)` whose letter is not A-Z (`(b)`, `(1)`) is not a priority: the word starts
+        // the description.
+        let mut priority = TodoPriority { priority: None };
+        if let Some(prio_str) = parts.get(index)
+            && prio_str.starts_with('(')
+            && prio_str.ends_with(')')
+            && prio_str.len() == 3
+            && let Ok(prio) = TodoPriority::from_str(prio_str)
+        {
+            priority = prio;
+            index += 1;
+        }
         // Whether the leading `(X)` form was seen, to detect a conflict with a `pri:Y` tag.
         let priority_from_parens = priority.priority.is_some();
 
@@ -107,6 +108,9 @@ impl FromStr for TodoItem {
         let mut sub: Option<Uuid> = None;
         let mut clean_description_parts = vec![];
 
+        // A known tag whose value cannot be read (`due:soon`, `rec:often`, `uuid:nope`) does
+        // not match its branch and falls through to plain description text, so every line
+        // parses and TodoLibrary::load never drops one.
         for word in description_vec {
             if word.starts_with('+') && word.len() > 1 {
                 let project = TodoProject::from_str(word)?;
@@ -114,40 +118,39 @@ impl FromStr for TodoItem {
             } else if word.starts_with('@') && word.len() > 1 {
                 let context = TodoContext::from_str(word)?;
                 contexts.push(context);
-            } else if word.starts_with("due:") && word.len() > 5 {
-                let date_str = &word[4..];
-                due = Some(chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")?);
-            } else if word.starts_with("rec:") && word.len() > 4 {
-                let rec_str = &word[4..];
-                recurrence = Some(TodoRecurrence::from_str(rec_str)?);
-            } else if word.starts_with("t:") && word.len() > 2 {
-                let thresh_str = &word[2..];
-                threshold = Some(chrono::NaiveDate::parse_from_str(thresh_str, "%Y-%m-%d")?);
-            } else if word.starts_with("uuid:") && word.len() > 5 {
-                let uuid_str = &word[5..];
-                let parsed_uuid = Uuid::parse_str(uuid_str)?;
-                // Only set if not already set, or overwrite?
+            } else if word.starts_with("due:")
+                && word.len() > 5
+                && let Ok(date) = chrono::NaiveDate::parse_from_str(&word[4..], "%Y-%m-%d")
+            {
+                due = Some(date);
+            } else if word.starts_with("rec:")
+                && word.len() > 4
+                && let Ok(rec) = TodoRecurrence::from_str(&word[4..])
+            {
+                recurrence = Some(rec);
+            } else if word.starts_with("t:")
+                && word.len() > 2
+                && let Ok(date) = chrono::NaiveDate::parse_from_str(&word[2..], "%Y-%m-%d")
+            {
+                threshold = Some(date);
+            } else if word.starts_with("uuid:")
+                && word.len() > 5
+                && let Ok(parsed_uuid) = Uuid::parse_str(&word[5..])
+            {
                 uuid = Some(parsed_uuid);
-            } else if word.starts_with("sub:") && word.len() > 4 {
-                let sub_str = &word[4..];
-                let parsed_sub = Uuid::parse_str(sub_str)?;
+            } else if word.starts_with("sub:")
+                && word.len() > 4
+                && let Ok(parsed_sub) = Uuid::parse_str(&word[4..])
+            {
                 sub = Some(parsed_sub);
-            } else if word.starts_with("pri:") && word.len() > 4 {
-                let prio_str = &word[4..];
-                // Unlike the other tags, an unparseable pri: value is not a hard error: it
-                // falls through to plain description text, so a malformed tag never causes
-                // TodoLibrary::load to silently drop the whole line.
-                match TodoPriority::from_tag_value(prio_str) {
-                    Ok(parsed) => {
-                        if priority_from_parens && priority.priority != parsed.priority {
-                            let existing = (priority.priority.unwrap() + b'A') as char;
-                            let new = (parsed.priority.unwrap() + b'A') as char;
-                            return Err(TodoItemParseError::ConflictingPriority(existing, new));
-                        }
-                        priority = parsed;
-                    }
-                    Err(_) => clean_description_parts.push(word.to_string()),
-                }
+            } else if word.starts_with("pri:")
+                && word.len() > 4
+                && let Ok(parsed) = TodoPriority::from_tag_value(&word[4..])
+                // A `pri:` that disagrees with the leading `(X)` stays text; `(X)` keeps
+                // the priority.
+                && (!priority_from_parens || priority.priority == parsed.priority)
+            {
+                priority = parsed;
             } else {
                 clean_description_parts.push(word.to_string());
             }

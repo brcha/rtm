@@ -136,7 +136,6 @@ fn crlf_line_endings_are_saved_as_lf() {
 /// The lines are a negative example of incomplete tasks rule 1, known tags with values rtm cannot
 /// read (additional definitions: key:value is free-form) and a conflicting priority.
 #[test]
-#[ignore = "RTM-203: lines rtm cannot interpret fail to parse and are dropped"]
 fn lines_rtm_cannot_interpret_are_kept() {
     let content = "Call Mom\n\
                    (b) Get back to the boss\n\
@@ -145,5 +144,10 @@ fn lines_rtm_cannot_interpret_are_kept() {
                    (C) Call the plumber pri:A\n\
                    Pay the rent\n";
     let file = todo_file("uninterpretable", content);
-    assert_eq!(load_and_save(&file), content);
+    // Compared line by line: the final newline is checked by the byte-for-byte tests above.
+    let saved = load_and_save(&file);
+    assert_eq!(
+        saved.lines().collect::<Vec<_>>(),
+        content.lines().collect::<Vec<_>>()
+    );
 }
