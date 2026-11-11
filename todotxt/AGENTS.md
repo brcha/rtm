@@ -21,7 +21,11 @@ todotxt/src/
 ├── write_lock.rs        ← WriteLock: the lock every rtm process holds while changing a file
 └── tests/               ← Unit tests, one file per source file and topic
 todotxt/tests/
-└── library_file_tests.rs ← Load, edit and save todo.txt files through TodoLibrary
+├── library_file_tests.rs    ← Load, edit and save todo.txt files through TodoLibrary
+├── spec_format_tests.rs     ← Specification: the format rules and their negative cases
+├── spec_extension_tests.rs  ← Specification: due:, t:, rec:, pri:, uuid:, sub:
+├── spec_roundtrip_tests.rs  ← Specification: lines and files come back byte for byte
+└── spec_operation_tests.rs  ← Specification: complete, uncomplete, edit, recurrence
 ```
 
 ---
@@ -119,3 +123,8 @@ todotxt/tests/
 - Unit tests are in `src/tests/`, one file per source file and topic (see Tests in the root
   `AGENTS.md`); `tests/library_file_tests.rs` loads, edits and saves todo.txt files through
   `TodoLibrary`. Run with `cargo test -p todotxt`.
+- The specification suite, `tests/spec_*_tests.rs`, checks the library against the todo.txt
+  specification (https://github.com/todotxt/todo.txt) and the extensions rtm supports; every
+  test names the rule or tool convention it checks. A test that fails because the library
+  deviates is marked `#[ignore = "RTM-NN: …"]` with the key of the issue that fixes it, and that
+  fix removes the `ignore`; `cargo test -p todotxt -- --ignored` lists the open deviations.
