@@ -69,3 +69,30 @@ fn selected_tags_are_bold_whatever_their_case() {
     assert_eq!(font(&tags[0]), theme::bold(11.9));
     assert_eq!(font(&tags[1]), FontId::proportional(11.9));
 }
+
+#[test]
+fn link_spans_cover_the_url_and_are_underlined_in_the_link_colour() {
+    let item = item("Čišćenje url:https://kuća.example/a, then call +home");
+    let (job, _) = row_job(&theme::LIGHT, &item, 400.0, &[], &[]);
+    assert!(
+        job.text
+            .starts_with("Čišćenje url:https://kuća.example/a, then call")
+    );
+    let start = item.description.find("https").unwrap();
+    let end = start + "https://kuća.example/a".len();
+    assert_eq!(
+        tag_texts(&item),
+        [
+            (
+                RowTag::Link { start, end },
+                "https://kuća.example/a".to_owned()
+            ),
+            (RowTag::Project(0), "+home".to_owned())
+        ]
+    );
+    let link = (job.sections.iter())
+        .find(|s| job.text[s.byte_range.start.0..s.byte_range.end.0] == *"https://kuća.example/a")
+        .unwrap();
+    assert_eq!(link.format.color, theme::LIGHT.link);
+    assert_eq!(link.format.underline, Stroke::new(1.0, theme::LIGHT.link));
+}

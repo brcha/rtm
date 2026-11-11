@@ -263,7 +263,9 @@ open-item counts, in Projects and Contexts sections that collapse from their hea
 remembers which ones are collapsed). Click tags there to filter the list: an item must carry every
 selected tag, a second click removes a tag, and **Clear filter** shows everything again. Each
 tab keeps its own selection until the app closes. A tag in an item row works the same way: click
-it to add it to the filter or remove it, and click the rest of the item to edit it.
+it to add it to the filter or remove it, and click the rest of the item to edit it. A link in an
+item's text (`http://`, `https://` or `mailto:`) is underlined; click it to open it in your
+browser or mail program.
 
 ## Syncing through Git or Pijul
 

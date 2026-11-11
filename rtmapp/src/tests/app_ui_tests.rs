@@ -1304,3 +1304,47 @@ fn a_click_past_the_end_of_a_wrapped_rows_last_line_edits() {
     assert!(harness.query_by_label_contains("Clear filter").is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Links in item text (RTM-193).
+
+/// The URLs the last frame asked the OS to open.
+fn opened_urls(harness: &Harness<'_, App>) -> Vec<String> {
+    (harness.output().platform_output.commands.iter())
+        .filter_map(|command| match command {
+            egui::OutputCommand::OpenUrl(open) => Some(open.url.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+const LINKED: &str = "Read https://example.com/ticket/42\nFix the fence\n";
+
+#[test]
+fn clicking_a_link_in_a_row_opens_it_and_leaves_the_item_alone() {
+    let dir = temp_dir("ui-row-link");
+    let mut harness = harness(&dir, LINKED, |_| {});
+
+    click_row(&harness, "Read https://example.com/ticket/42", Side::End);
+    harness.step();
+    assert_eq!(opened_urls(&harness), ["https://example.com/ticket/42"]);
+    harness.run();
+    assert!(harness.query_by_label("Save").is_none());
+    assert_eq!(
+        std::fs::read_to_string(dir.join("todo.txt")).unwrap(),
+        LINKED
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn clicking_the_text_before_a_link_still_edits() {
+    let dir = temp_dir("ui-row-link-edit");
+    let mut harness = harness(&dir, LINKED, |_| {});
+
+    click_row(&harness, "Read https://example.com/ticket/42", Side::Start);
+    harness.step();
+    assert!(opened_urls(&harness).is_empty());
+    harness.run();
+    harness.get_by_label("Save");
+    let _ = std::fs::remove_dir_all(dir);
+}
