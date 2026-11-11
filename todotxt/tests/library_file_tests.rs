@@ -83,7 +83,7 @@ fn edits_are_written_and_read_back() {
     assert_eq!(
         file_lines(&file),
         [
-            format!("x {today} 2026-01-05 Write the report pri:B +work"),
+            format!("x {today} 2026-01-05 Write the report +work pri:B"),
             "2026-01-02 Buy milk @shop".to_owned(),
             "2026-01-01 Old task".to_owned(),
             format!("{today} Call mom"),
