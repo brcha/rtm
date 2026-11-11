@@ -133,6 +133,18 @@ one that had them.
 
 - **Nix shell:** `shell.nix` (or `nix develop`) provides the toolchain and the libraries `rtmapp` loads
   at run time. Use it before running `cargo build` on NixOS.
+- **Issue tracker** (RTM-180): Jira, https://brcha.atlassian.net, space RTM. The "RTM board"
+  (Scrum) shows the current sprint, "RTM overview" (Kanban) all work; keys continue the
+  YouTrack ones.
+  - Workflow: Open -> In Progress -> Code Review when the pull request opens -> Done after the
+    merge. The transitions into Done set the resolution (Done, Won't do, Duplicate, Obsolete,
+    Cannot reproduce). To Verify is the queue of finished work waiting for a manual check,
+    never the review state.
+  - Work types: Epic, Story, Task, Bug, Spike; an issue's epic is its parent field. Links:
+    "depends on", "blocks", "relates to".
+  - Access: the Atlassian MCP, or the REST API with the credentials in `~/.config/rtm-jira/env`.
+  - History before 2026-11-11 is also in the frozen YouTrack project RTM. `PER-N` keys are
+    perseus_helm issues, which are still in YouTrack.
 - **Vercel bot comments** (RTM-141): `vercel[bot]` comments on every pull request with the
   website's preview deployment status, whatever the PR changes. It is a status notice, not a
   review: do not treat it as feedback or reply to it. It matters only for a PR that changes the

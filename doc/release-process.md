@@ -1,11 +1,11 @@
 # Release Process
 
 - **Making a release (RTM-72):** releases are made on demand, when a user-visible change is worth
-  shipping, from release branches `releases/vYY.M` cut from `main`. Each release is a YouTrack
+  shipping, from release branches `releases/vYY.M` cut from `main`. Each release is a Jira
   epic (see "Release epics" below). After the cut, changes reach a release branch only through
   squash-merged PRs against it, which need the same checks as on `main` (the ruleset covers both,
   RTM-78). `main` always carries the next release's version.
-  - **Release epics (RTM-154):** each release is tracked as a YouTrack epic `Release X.Y.Z`, not
+  - **Release epics (RTM-154):** each release is tracked as a Jira epic `Release X.Y.Z`, not
     as a task; the epic's component is Packaging:
     - it depends on the epics whose features it ships (for a patch, the fixes' issues); the
       changelog summary is written from them;
@@ -134,7 +134,7 @@
     `cliff.toml`, so an older line keeps its branch's layout. The script writes a TODO line where the summary goes; replace it before
     committing (a forgotten one shows in the draft release's body, which is checked before
     publishing). The summary is written for users, not copied from issue titles:
-    - its epics are the release epic's "depends on" links in YouTrack (see "Release epics");
+    - its epics are the release epic's "depends on" links in Jira (see "Release epics");
     - an opening sentence, then a short paragraph or bullet per epic saying what users can now do;
     - a patch's summary names its fixes in a sentence or two; a beta's covers the epics it has so
       far; a release after betas covers everything since the cut;
