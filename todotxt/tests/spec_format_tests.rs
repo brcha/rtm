@@ -48,7 +48,6 @@ fn a_priority_that_is_not_first_is_text() {
 /// Incomplete tasks, rule 1, the specification's example: a lowercase letter is not a priority
 /// (`(b) Get back to the boss`); the line is an ordinary task.
 #[test]
-#[ignore = "RTM-203: lines rtm cannot interpret fail to parse and are dropped"]
 fn a_lowercase_letter_in_parentheses_is_text() {
     let item = parse("(b) Get back to the boss");
     assert_eq!(item.priority.priority, None);
@@ -58,7 +57,6 @@ fn a_lowercase_letter_in_parentheses_is_text() {
 /// Incomplete tasks, rule 1: only a letter from A to Z is a priority; `(1)`, `(?)` and a
 /// non-ASCII letter are ordinary text.
 #[test]
-#[ignore = "RTM-203: lines rtm cannot interpret fail to parse and are dropped"]
 fn a_non_letter_in_parentheses_is_text() {
     for line in [
         "(1) Get back to the boss",

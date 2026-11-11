@@ -18,7 +18,7 @@ fn test_add_stamps_the_creation_date_and_returns_the_number() {
 fn test_add_refuses_an_invalid_line() {
     let source = source_with("Buy milk\n");
     assert!(add_item(&source, "   ").is_err());
-    assert!(add_item(&source, "Pay rent due:someday").is_err());
+    assert!(add_item(&source, "Pay rent\nCall Mom").is_err());
     assert_eq!(lines(&source), ["Buy milk"]);
     remove(source);
 }
