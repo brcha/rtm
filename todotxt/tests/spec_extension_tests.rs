@@ -131,7 +131,6 @@ fn the_hidden_tag_is_kept() {
 /// cannot read is ordinary text. The line still parses, the field stays empty and the word is
 /// kept as written.
 #[test]
-#[ignore = "RTM-203: lines rtm cannot interpret fail to parse and are dropped"]
 fn a_known_tag_with_a_malformed_value_is_text() {
     for line in [
         "Pay rent due:soon",

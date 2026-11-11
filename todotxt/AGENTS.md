@@ -78,11 +78,12 @@ todotxt/tests/
   regardless of `done`, so a file is normalized to the canonical form for its completion
   state on the next save. If a line carries both and the letters agree (`(C) … pri:C`), the
   duplicate is silently accepted and collapses to one form on save; if the letters disagree
-  (`(C) … pri:A`), parsing returns `TodoItemParseError::ConflictingPriority`. A malformed
-  `pri:` value (`pri:xyz`) is not an error — it falls through to plain description text,
-  unlike the strict `due:`/`rec:`/`t:`/`uuid:`/`sub:` tags, because `TodoLibrary::load`
-  silently drops any line that fails to parse and a hard error there would mean silent data
-  loss.
+  (`(C) … pri:A`), `(C)` stays the priority and `pri:A` stays in the description as text. A
+  malformed `pri:` value (`pri:xyz`) is text like any other unreadable tag (below).
+- **`TodoItem::from_str` accepts every line.** A known tag (`due:`, `t:`, `rec:`, `uuid:`,
+  `sub:`, `pri:`) whose value rtm cannot read and a leading `(X)` that is not A-Z (`(b)`, `(1)`)
+  stay in the description as written, so `TodoLibrary::load`, which skips lines that fail to
+  parse, never drops one and the next save keeps it.
 - **`Display` never emits a creation date without a completion date on a done line.** A
   completed item's creation date is written only immediately after its completion date; if
   there is no completion date, no date is written at all, even if a creation date is present.

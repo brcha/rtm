@@ -99,11 +99,9 @@ fn parse_pri_tag_agreeing_with_parens() {
 
 #[test]
 fn parse_pri_tag_conflicting_with_parens() {
-    let result: Result<TodoItem, _> = "x (C) 2024-01-02 2024-01-01 Task pri:A".parse();
-    assert_eq!(
-        result,
-        Err(TodoItemParseError::ConflictingPriority('C', 'A'))
-    );
+    let item: TodoItem = "x (C) 2024-01-02 2024-01-01 Task pri:A".parse().unwrap();
+    assert_eq!(item.priority.priority, Some(2));
+    assert_eq!(item.description, "Task pri:A");
 }
 
 #[test]
@@ -144,15 +142,11 @@ fn parse_reported_issue_line() {
 }
 
 #[test]
-fn parse_malformed_recurrence_is_error() {
+fn parse_malformed_recurrence_is_description_text() {
     for line in ["Task rec:+", "Task rec:é", "Task rec:1é"] {
-        assert!(
-            matches!(
-                line.parse::<TodoItem>(),
-                Err(TodoItemParseError::Recurrence(_))
-            ),
-            "{line:?}"
-        );
+        let item: TodoItem = line.parse().unwrap();
+        assert_eq!(item.recurrence, None, "{line:?}");
+        assert_eq!(item.description, line, "{line:?}");
     }
 }
 
