@@ -223,7 +223,8 @@ your flake inputs.
 
 The desktop app keeps several todo.txt files open, one tab each above the list. **New File** and
 **Load File** (in the menu at the left of the title bar, or under the **+** after the tabs) add a
-tab, or show the file's tab when it is already open. The × that appears on a tab under the pointer
+tab, or show the file's tab when it is already open; with no file open, as at the first start, the
+page itself offers both. The × that appears on a tab under the pointer
 closes it, after asking. The app reopens the same tabs at the next start and shows the one you
 last clicked. They are saved in `rtm/config.toml` as `[[files]]` tables, one per tab, each with
 the file's `path`. To label a tab, right-click it and choose **Rename tab**; the label is saved as

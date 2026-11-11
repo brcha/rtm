@@ -184,7 +184,7 @@ fn the_app_line_and_the_file_line_are_both_shown() {
 fn a_file_chosen_in_the_dialog_opens_and_is_saved_in_the_config() {
     let dir = temp_dir("ui-open");
     let mut harness = harness(&dir, "", |config| config.file_name = None);
-    harness.get_by_label_contains("No file loaded. Use New File or Load File");
+    assert_eq!(start_buttons(&harness), 2);
 
     let chosen = dir.join("sub").join("chosen.txt");
     std::fs::write(&chosen, "From the dialog\n").unwrap();
@@ -193,6 +193,7 @@ fn a_file_chosen_in_the_dialog_opens_and_is_saved_in_the_config() {
     harness.run();
 
     assert_eq!(rows(&harness), ["From the dialog"]);
+    assert_eq!(start_buttons(&harness), 0);
     let config = AppConfig::load(&dir.join("config.toml"));
     let canonical = chosen.canonicalize().unwrap();
     assert_eq!(config.file_name.as_deref(), canonical.to_str());
@@ -372,6 +373,27 @@ fn entry<'h>(harness: &'h Harness<'_, App>, name: &'static str) -> egui_kittest:
     harness.get_by(move |node| {
         node.role() == Role::Button && node.label().is_some_and(|label| label.starts_with(name))
     })
+}
+
+/// How many of the New File and Load File buttons the page shows while no file is open.
+fn start_buttons(harness: &Harness<'_, App>) -> usize {
+    ["New File", "Load File"]
+        .into_iter()
+        .filter(|name| {
+            harness
+                .query_by_role_and_label(Role::Button, name)
+                .is_some()
+        })
+        .count()
+}
+
+/// Whether the quick-add input and its Add button are enabled.
+fn add_row_enabled(harness: &Harness<'_, App>) -> bool {
+    let input = harness.get_by_role(Role::TextInput);
+    let add = harness.get_by_role_and_label(Role::Button, "Add");
+    let enabled = !input.accesskit_node().is_disabled();
+    assert_eq!(enabled, !add.accesskit_node().is_disabled());
+    enabled
 }
 
 #[test]
@@ -612,7 +634,7 @@ fn closing_a_tab_removes_it_and_its_entry() {
     assert_eq!(config.file_name.as_ref(), Some(&entry.path));
 
     close_tab(&mut harness, "todo.txt", "Close tab");
-    harness.get_by_label_contains("No file loaded. Use New File or Load File");
+    assert_eq!(start_buttons(&harness), 2);
     assert_eq!(AppConfig::load(&dir.join("config.toml")).files, []);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -631,6 +653,69 @@ fn the_add_button_offers_new_file_and_load_file() {
             "{name}"
         );
     }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// The page while no file is open (RTM-179).
+
+#[test]
+fn with_no_file_open_the_page_offers_new_file_and_load_file() {
+    let dir = temp_dir("ui-start");
+    let mut harness = harness(&dir, "", |config| config.file_name = None);
+
+    assert!(harness.query_by_role(Role::Tab).is_none());
+    for name in ["New File", "Load File"] {
+        let button = harness.get_by_role_and_label(Role::Button, name);
+        assert!(!button.accesskit_node().is_disabled(), "{name}");
+    }
+    assert!(!add_row_enabled(&harness));
+
+    // A dialog that has not returned yet.
+    let (_send, receive) = mpsc::channel();
+    harness.state_mut().dialog = Some((receive, App::open_file));
+    harness.run();
+    for name in ["New File", "Load File"] {
+        let button = harness.get_by_role_and_label(Role::Button, name);
+        assert!(button.accesskit_node().is_disabled(), "{name}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_start_buttons_leave_when_a_file_opens_and_return_when_every_tab_closes() {
+    let dir = temp_dir("ui-start-states");
+    let mut harness = harness(&dir, "", |config| config.file_name = None);
+    assert_eq!(start_buttons(&harness), 2);
+
+    let new = dir.join("new.txt");
+    // Clicking New File would start a real file dialog; its result is handed over instead.
+    dialog_returned(harness.state_mut(), Some(new.clone()), App::create_file);
+    harness.run();
+    assert_eq!(std::fs::read_to_string(&new).unwrap(), "");
+    assert_eq!(
+        tab(&harness, "new.txt").accesskit_node().is_selected(),
+        Some(true)
+    );
+    assert_eq!(start_buttons(&harness), 0);
+    assert!(add_row_enabled(&harness));
+
+    close_tab(&mut harness, "new.txt", "Close tab");
+    assert_eq!(start_buttons(&harness), 2);
+    assert!(!add_row_enabled(&harness));
+    assert_eq!(AppConfig::load(&dir.join("config.toml")).files, []);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_tab_whose_file_is_missing_keeps_the_hint_without_start_buttons() {
+    let dir = temp_dir("ui-start-missing");
+    let gone = dir.join("gone.txt").to_string_lossy().into_owned();
+    let harness = harness(&dir, "", |config| config.file_name = Some(gone));
+
+    tab(&harness, "gone.txt");
+    harness.get_by_label_contains("No file loaded. Use New File or Load File");
+    assert_eq!(start_buttons(&harness), 0);
+    assert!(!add_row_enabled(&harness));
     let _ = std::fs::remove_dir_all(dir);
 }
 
