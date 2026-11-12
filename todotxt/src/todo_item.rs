@@ -146,19 +146,19 @@ impl FromStr for TodoItem {
 
         if done {
             if let Some(date_str) = parts.get(index)
-                && let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                && let Some(date) = strict_date(date_str)
             {
                 completion_date = Some(date);
                 index += 1;
             }
             if let Some(date_str) = parts.get(index)
-                && let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                && let Some(date) = strict_date(date_str)
             {
                 creation_date = Some(date);
                 index += 1;
             }
         } else if let Some(date_str) = parts.get(index)
-            && let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            && let Some(date) = strict_date(date_str)
         {
             creation_date = Some(date);
             index += 1;
@@ -193,7 +193,7 @@ impl FromStr for TodoItem {
                 Kind::Context
             } else if word.starts_with("due:")
                 && word.len() > 5
-                && let Ok(date) = chrono::NaiveDate::parse_from_str(&word[4..], "%Y-%m-%d")
+                && let Some(date) = strict_date(&word[4..])
             {
                 due = Some(date);
                 Kind::Due
@@ -205,7 +205,7 @@ impl FromStr for TodoItem {
                 Kind::Recurrence
             } else if word.starts_with("t:")
                 && word.len() > 2
-                && let Ok(date) = chrono::NaiveDate::parse_from_str(&word[2..], "%Y-%m-%d")
+                && let Some(date) = strict_date(&word[2..])
             {
                 threshold = Some(date);
                 Kind::Threshold
@@ -689,6 +689,19 @@ impl TodoItem {
             ..self.clone()
         }
     }
+}
+
+/// A date in exactly the `YYYY-MM-DD` form the specification requires. chrono's `%Y-%m-%d`
+/// alone also takes `2011-3-2` and `11-03-02`, which are text.
+fn strict_date(word: &str) -> Option<NaiveDate> {
+    let shape = word.len() == 10
+        && word.bytes().enumerate().all(|(i, b)| match i {
+            4 | 7 => b == b'-',
+            _ => b.is_ascii_digit(),
+        });
+    shape
+        .then(|| NaiveDate::parse_from_str(word, "%Y-%m-%d").ok())
+        .flatten()
 }
 
 #[cfg(test)]
