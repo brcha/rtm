@@ -137,19 +137,16 @@ impl TodoLibrary {
             let new_threshold = self.items[index]
                 .threshold
                 .map(|threshold| advance(threshold + (base_date - current_due)));
+            // A copy of the completed item, so the next occurrence keeps its line's layout.
             let new_item = TodoItem {
                 done: false,
-                priority: self.items[index].priority.clone(),
                 completion_date: None,
                 creation_date: Some(Local::now().date_naive()),
-                description: self.items[index].description.clone(),
-                projects: self.items[index].projects.clone(),
-                contexts: self.items[index].contexts.clone(),
                 due: Some(new_due),
-                recurrence: Some(recurrence.clone()),
                 threshold: new_threshold,
                 uuid: None,
                 sub: None,
+                ..self.items[index].clone()
             };
             self.items.push(new_item);
         }
