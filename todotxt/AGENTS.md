@@ -47,23 +47,45 @@ todotxt/tests/
   an already-done item does not overwrite its existing completion date), handles recurrence
   (appends new item), returns `Option<bool>` (None = out of bounds, Some(true) = had
   recurrence, Some(false) = no recurrence). It never fabricates a creation date; see
-  `add_item` above. The next occurrence's threshold date (`t:`) moves with its due date:
+  `add_item` above. The next occurrence is a copy of the completed item (open, today's creation
+  date, the new dates, no `uuid`/`sub`), so it keeps the line's layout. Its threshold date (`t:`) moves with its due date:
   strict recurrence advances it by the interval (in calendar months for `m` and `y`, so it keeps
   its day of the month), normal recurrence keeps its distance to the new due date. A recurring
   item without `due:` gets no next occurrence yet.
 - `uncomplete_item(index)` clears `done` and `completion_date`, returns `Option<()>` (None =
   out of bounds). Priority and creation date are untouched — priority re-serializes as `(X)`
-  automatically because `Display` keys that choice off `done`.
+  automatically because `Display` keys that choice off `done`, and the `pri:` tag goes.
 - `remove_item(index)` removes the item and, recursively, every item whose `sub` is the uuid
   of a removed item (cyclic links terminate). Returns `Option<Vec<TodoItem>>`: None = out of
   bounds, otherwise the removed items in file order. Like every mutation it does not save.
 - `TodoItem` fields: `done`, `priority`, `completion_date`, `creation_date`, `description`,
-  `projects`, `contexts`, `due`, `recurrence`, `threshold`, `uuid`, `sub`.
+  `projects`, `contexts`, `due`, `recurrence`, `threshold`, `uuid`, `sub`, and `layout`.
+- **`Display` writes back the line as read** (RTM-204). `from_str` keeps the line in `layout`
+  (an opaque `Layout`: the text, where each word stands and what it set, and the fields as
+  read); an item built in code has `layout: None` and is written in a fixed order (head,
+  description, `pri:`, projects, contexts, `due:`, `rec:`, `t:`, `uuid:`, `sub:`). An item whose
+  fields equal those read is written byte for byte; otherwise only what changed is patched:
+  - a changed `done`, priority, completion or creation date writes a new head (`x` and the
+    dates, or `(A)` and the creation date); a changed `done` or priority also removes the `pri:`
+    tag that set the priority and appends `pri:X` for a done item with one;
+  - a changed `due:`, `t:`, `rec:`, `uuid:` or `sub:` replaces its tag in place (the last one,
+    which set the field), `None` removes every such tag, and a field that had none appends one;
+  - projects and contexts still listed keep their place (a repeated one as often as it is still
+    listed), removed ones go, new ones are appended;
+  - a changed description replaces only the words between the part it shares with the old one
+    at its start and at its end, so a typo fix or an added word keeps every tag in place;
+  - a removed word takes the whitespace before it; new tags go after the last word, before
+    trailing whitespace.
+
+  Equality (`PartialEq`, written by hand) compares the fields and leaves out `layout`, so two
+  lines that differ only in spacing are equal items; a new field must be added there too. A
+  done line with its priority between the `x` and the dates (`x (A) 2011-03-02 …`) is written
+  in the specification's form even unchanged (`x 2011-03-02 … pri:A`).
 - **Priority has two serialization forms, chosen by `done`:** an open item writes `(X)`
-  before the description; a completed item writes `pri:X` after it. Both forms parse
-  regardless of `done`, so a file is normalized to the canonical form for its completion
-  state on the next save. If a line carries both and the letters agree (`(C) … pri:C`), the
-  duplicate is silently accepted and collapses to one form on save; if the letters disagree
+  before the description; a completed item writes `pri:X` (appended at the end of the line
+  when rtm completes it). Both forms parse regardless of `done`; an unchanged line keeps the
+  form it was read in. If a line carries both and the letters agree (`(C) … pri:C`), the
+  duplicate is accepted; if the letters disagree
   (`(C) … pri:A`), `(C)` stays the priority and `pri:A` stays in the description as text. A
   malformed `pri:` value (`pri:xyz`) is text like any other unreadable tag (below).
 - **`TodoItem::from_str` accepts every line.** A known tag (`due:`, `t:`, `rec:`, `uuid:`,

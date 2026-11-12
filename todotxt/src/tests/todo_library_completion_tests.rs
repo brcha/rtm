@@ -228,3 +228,19 @@ fn test_complete_item_with_threshold() {
     assert_eq!(result, Some(false));
     assert!(lib.items[0].done);
 }
+
+#[test]
+fn the_next_occurrence_keeps_the_line_layout() {
+    let mut lib = TodoLibrary::new("dummy.txt".to_string());
+    lib.items.push(
+        "(B) 2026-01-05 Water +garden the plants due:2026-01-10 rec:+1w h:1"
+            .parse()
+            .unwrap(),
+    );
+    lib.complete_item(0);
+    let today = chrono::Local::now().date_naive();
+    assert_eq!(
+        lib.items[1].to_string(),
+        format!("(B) {today} Water +garden the plants due:2026-01-17 rec:+1w h:1")
+    );
+}
