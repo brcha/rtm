@@ -61,9 +61,8 @@ impl Display for TodoRecurrence {
         if self.strict {
             write!(f, "+")?;
         }
-        if self.count > 1 {
-            write!(f, "{}", self.count)?;
-        }
+        // Always with the count: topydo reads a recurrence only with one (`1w`, not `w`).
+        write!(f, "{}", self.count)?;
         match self.unit {
             TodoRecurrenceUnit::Daily => {
                 write!(f, "d")

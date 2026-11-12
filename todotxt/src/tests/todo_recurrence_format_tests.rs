@@ -60,7 +60,7 @@ fn parse_test() {
 #[test]
 fn display_test() {
     assert_eq!(
-        "+d",
+        "+1d",
         TodoRecurrence {
             count: 1,
             strict: true,
@@ -145,7 +145,7 @@ fn parse_malformed_does_not_panic() {
 #[test]
 fn display_strict_variants() {
     assert_eq!(
-        "+d",
+        "+1d",
         TodoRecurrence {
             strict: true,
             count: 1,
@@ -172,7 +172,7 @@ fn display_strict_variants() {
         .to_string()
     );
     assert_eq!(
-        "+y",
+        "+1y",
         TodoRecurrence {
             strict: true,
             count: 1,
@@ -212,4 +212,11 @@ fn recurrence_clone() {
     };
     let r2 = r1.clone();
     assert_eq!(r1, r2);
+}
+
+#[test]
+fn display_keeps_a_count_of_zero() {
+    let zero = TodoRecurrence::from_str("0d").unwrap();
+    assert_eq!(zero.to_string(), "0d");
+    assert_eq!(TodoRecurrence::from_str(&zero.to_string()), Ok(zero));
 }

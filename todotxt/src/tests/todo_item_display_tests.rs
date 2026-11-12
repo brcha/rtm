@@ -47,7 +47,7 @@ fn display_with_extensions() {
     };
     assert_eq!(
         item.to_string(),
-        "Buy groceries +Personal @home due:2023-05-30 rec:m t:2023-05-25"
+        "Buy groceries +Personal @home due:2023-05-30 rec:1m t:2023-05-25"
     );
 }
 

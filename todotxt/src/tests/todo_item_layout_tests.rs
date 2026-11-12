@@ -161,3 +161,18 @@ fn an_item_built_in_code_is_written_in_the_fixed_order() {
 fn the_layout_does_not_take_part_in_equality() {
     assert_eq!(item("Pay  the rent"), item("Pay the rent"));
 }
+
+#[test]
+fn an_edited_recurrence_is_written_with_its_count() {
+    let weekly = TodoRecurrence {
+        strict: false,
+        count: 1,
+        unit: crate::todo_recurrence::TodoRecurrenceUnit::Weekly,
+    };
+    assert_eq!(
+        item("Water the plants rec:+m")
+            .set_recurrence(Some(weekly))
+            .to_string(),
+        "Water the plants rec:1w"
+    );
+}

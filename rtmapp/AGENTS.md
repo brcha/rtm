@@ -174,7 +174,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     in rtmapp: rtmcli prints plain text, which terminals link themselves, and the MCP server
     returns lines as they are. The links are not AccessKit nodes of their own, as for tags.
 - **Item rows** show the visible items in that order. A done item is struck through entirely, as the
-  CSS did. Recurrence is shown through `TodoRecurrence`'s `Display` (`rec:+1m` appears as `rec:+m`).
+  CSS did. Recurrence is shown through `TodoRecurrence`'s `Display`, always with its count (`rec:+m`
+  appears as `rec:+1m`; the file keeps its own spelling).
   The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had
   it. Rows report the clicked item's index in the file, never its position in the filtered list.
 - **Mutations** call the same `TodoLibrary` methods in the same order as the Tauri app did and save at
@@ -184,8 +185,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   `remove_item` (which also removes the item's sub-items) then `save`. Errors go to
   the error lines above the list, not to a dialog; the quick-add input is cleared only after a
   successful save. Every save rewrites the whole file, but each line is written as read except
-  for what changed (`todotxt/AGENTS.md`); a new or edited recurrence goes through `Display`, so a
-  count of 1 is written in its short form (`rec:+1m` becomes `rec:+m`).
+  for what changed (`todotxt/AGENTS.md`); a new or edited recurrence goes through `Display`, so it
+  is written with its count (`rec:1w`).
 - **Open files and error lines (RTM-125, epic RTM-66):** what belongs to one todo.txt lives in
   `OpenFile` (its path and tab name, its library, pending changes, the sync questions, the edit
   dialog's `edited`, `deleting` and `stale`, and its error line); `App` holds `files` and `active`,
