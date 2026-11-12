@@ -26,7 +26,7 @@ fn fields_are_filled_like_the_tauri_app() {
     assert_eq!(f.priority, Some(1));
     assert_eq!(f.due, "2026-11-01");
     assert_eq!(f.threshold, "2026-10-30");
-    assert_eq!(f.recurrence, "w");
+    assert_eq!(f.recurrence, "1w");
     assert_eq!(f.projects, "Work, Home");
     assert_eq!(f.contexts, "office");
 }
