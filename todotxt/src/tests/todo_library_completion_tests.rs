@@ -244,3 +244,22 @@ fn the_next_occurrence_keeps_the_line_layout() {
         format!("(B) {today} Water +garden the plants due:2026-01-17 rec:+1w h:1")
     );
 }
+
+#[test]
+fn business_days_skip_saturdays_and_sundays() {
+    let date = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+    // 2026-01-09 is a Friday, 2026-01-05 a Monday.
+    for (from, count, expected) in [
+        ("2026-01-09", 1, "2026-01-12"),  // Friday + 1: Monday
+        ("2026-01-05", 5, "2026-01-12"),  // Monday + 5: next Monday
+        ("2026-01-10", 1, "2026-01-12"),  // Saturday + 1: Monday
+        ("2026-01-07", 0, "2026-01-07"),  // Wednesday + 0: unchanged
+        ("2026-01-08", 10, "2026-01-22"), // Thursday + 10: over two weekends
+    ] {
+        assert_eq!(
+            add_business_days(date(from), count),
+            date(expected),
+            "{from} + {count}b"
+        );
+    }
+}
