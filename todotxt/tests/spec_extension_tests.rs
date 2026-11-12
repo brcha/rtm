@@ -68,7 +68,6 @@ fn every_recurrence_form_is_read() {
 /// with a count (`rec:1w`), so dropping a count of 1 makes the line unreadable there; and a
 /// canonical rewrite of `rec:+m` would change every synced file on its next save.
 #[test]
-#[ignore = "RTM-206: a recurrence count of 1 is not written"]
 fn a_recurrence_is_written_back_as_spelled() {
     for value in ["1d", "+1w", "1m", "+1y", "2b", "+m", "w"] {
         let line = format!("Water the plants rec:{value}");
