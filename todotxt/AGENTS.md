@@ -105,7 +105,8 @@ todotxt/tests/
 - **`TodoItem::from_str` accepts every line.** A known tag (`due:`, `t:`, `rec:`, `uuid:`,
   `sub:`, `pri:`) whose value rtm cannot read and a leading `(X)` that is not A-Z (`(b)`, `(1)`)
   stay in the description as written, so `TodoLibrary::load`, which skips lines that fail to
-  parse, never drops one and the next save keeps it.
+  parse, never drops one and the next save keeps it. A date (creation, completion, `due:`,
+  `t:`) is exactly `YYYY-MM-DD` (RTM-205, `strict_date`): `2011-3-2` or `11-03-02` is text.
 - **`Display` never emits a creation date without a completion date on a done line.** A
   completed item's creation date is written only immediately after its completion date; if
   there is no completion date, no date is written at all, even if a creation date is present.
