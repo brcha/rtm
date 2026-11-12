@@ -89,7 +89,9 @@ todotxt/tests/
   - a changed description replaces only the words between the part it shares with the old one
     at its start and at its end, so a typo fix or an added word keeps every tag in place;
   - a removed word takes the whitespace before it; new tags go after the last word, before
-    trailing whitespace.
+    trailing whitespace;
+  - a recurrence rtm writes (new or changed) always carries its count (`rec:1w`, `rec:+1m`,
+    RTM-206), which SimpleTask and topydo both read; an unchanged one keeps its spelling.
 
   Equality (`PartialEq`, written by hand) compares the fields and leaves out `layout`, so two
   lines that differ only in spacing are equal items; a new field must be added there too. A
