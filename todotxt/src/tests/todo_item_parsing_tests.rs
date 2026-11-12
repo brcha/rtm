@@ -218,3 +218,28 @@ fn test_parse_multiple_projects_and_contexts() {
     assert_eq!(item.contexts[0].name, "context1");
     assert_eq!(item.contexts[1].name, "context2");
 }
+
+#[test]
+fn parse_completion_date_not_in_yyyy_mm_dd_is_text() {
+    let line = "x 2011-3-2 Call Mom";
+    let item: TodoItem = line.parse().unwrap();
+    assert!(item.done);
+    assert_eq!(item.completion_date, None);
+    assert_eq!(item.description, "2011-3-2 Call Mom");
+    assert_eq!(item.to_string(), line);
+}
+
+#[test]
+fn parse_due_and_threshold_not_in_yyyy_mm_dd_are_text() {
+    for line in [
+        "Pay rent due:2026-1-5",
+        "Pay rent t:2026-01-5",
+        "Pay rent due:26-01-05",
+    ] {
+        let item: TodoItem = line.parse().unwrap();
+        assert_eq!(item.due, None, "{line}");
+        assert_eq!(item.threshold, None, "{line}");
+        assert_eq!(item.description, line, "{line}");
+        assert_eq!(item.to_string(), line);
+    }
+}
