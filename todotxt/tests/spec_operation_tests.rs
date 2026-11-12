@@ -204,7 +204,6 @@ fn yearly_recurrence_adds_calendar_years() {
 /// Extension `rec:` with `b`: business days skip Saturdays and Sundays, as in topydo and
 /// SimpleTask.
 #[test]
-#[ignore = "RTM-208: business days count weekends"]
 fn business_day_recurrence_skips_weekends() {
     // 2026-01-09 is a Friday, 2026-01-05 a Monday.
     let next = next_occurrence("File the report due:2026-01-09 rec:+1b");
