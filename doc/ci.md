@@ -55,6 +55,23 @@
     ruleset forbids deleting and force-pushing those branches and allows only squash-merged PRs.
 
   A new required check needs the same shape: a gate job that always runs, not a path filter.
+- **PR title and issue links (RTM-219):** `pr-title.yml` (job `validate`) runs when a pull request
+  against `main` or `releases/**` is opened, edited, pushed to or reopened.
+  - When the title lacks ` -- RTM-NN` and the branch name carries a key (`issues/RTM-27/foo`), it
+    appends the key to the title. Then it checks the title: a conventional-commit type, one scope
+    from the list under "Commit subjects" in `AGENTS.md`, and ` -- RTM-NN` at the end.
+  - GitHub does not render the `RTM-NN` autolink in titles, so the job also starts the
+    description with `Issue: [RTM-NN](https://brcha.atlassian.net/browse/RTM-NN)`, the key taken
+    from the title. It adds the line when missing, replaces it when the title's key changes, and
+    changes nothing when it is already right, so there is never a second line; a line someone
+    removes comes back on the next event. The rest of the description is kept as it is.
+  - It uses the `pull_request` trigger with `pull-requests: write`. A fork's run gets a read-only
+    token, so the description step is skipped for forks (the title check still runs).
+    `pull_request_target` would give forks a write token, but it runs that token next to the
+    fork's own title, branch and description text, for forks this repository does not get.
+  - A `pull_request` run takes the workflow from the PR's merge commit. A PR against a branch
+    whose `pr-title.yml` lacks the step (a release branch it has not reached) gets no line; an
+    open PR gets it on its next event once its merge commit includes the step.
 - **Website (RTM-89):** `site.yml` builds the site and checks its links with
   `scripts/site/check.sh`: Zola's check and build, the shape of `releases.json` (`jq`), then
   lychee over the built pages and `releases.json` offline, with the absolute `base_url` mapped to

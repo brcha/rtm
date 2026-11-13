@@ -77,7 +77,9 @@ one that had them.
 - **Commit subjects** (RTM-110): `type(scope): summary -- RTM-NN`, a conventional-commit type and
   exactly one scope, for commits on issue branches and PR titles alike (merges are squashes, so a PR
   title becomes the commit). `.github/workflows/pr-title.yml` rejects a PR title without one of
-  these scopes; a new part of the repository adds its scope there and here in the same PR.
+  these scopes; a new part of the repository adds its scope there and here in the same PR. It
+  also starts the PR description with a link to the title's issue (RTM-219, see
+  [CI](doc/ci.md)).
   - `todotxt`, `rtmcli`, `rtmapp`, `rtmsync`, `rtmupdate`, `rtmmcp`: the crates (for `rtmapp`, its
     packaging metadata in `rtmapp/Cargo.toml` too).
   - `site`: the website, `scripts/site/`, `vercel.json`, its workflow and the release posts.
