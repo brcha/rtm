@@ -663,8 +663,10 @@ impl App {
 
     /// Handles the outstanding jobs' results until none is left or `deadline` passes, writing the
     /// changes that waited for them. A job that changes are still waiting behind gets as long as a
-    /// sync's network timeout, and so does a commit: those changes are not in the file yet. The
-    /// repositories' workers run at once, so they are waited for in turn within one limit.
+    /// sync's network timeout, and so does a commit, even one queued with the last sync on the
+    /// same worker: those changes are not in the file, or not committed, yet. Only a worker with
+    /// nothing but syncs outstanding gets `deadline`. The repositories' workers run at once, so
+    /// they are waited for in turn within one limit.
     fn finish_jobs(&mut self, deadline: Instant) {
         let saving_deadline = deadline.max(Instant::now() + SAVE_TIMEOUT);
         let keys: Vec<_> = self.repos.iter().map(|repo| repo.key.clone()).collect();
@@ -676,7 +678,7 @@ impl App {
                     .files
                     .iter()
                     .any(|file| file.repo.as_ref() == Some(&key) && !file.pending.is_empty());
-                let until = if waiting || !repo.worker.syncing() {
+                let until = if waiting || repo.worker.committing() || !repo.worker.syncing() {
                     saving_deadline
                 } else {
                     deadline
@@ -1994,7 +1996,7 @@ impl eframe::App for App {
         let saving_deadline = deadline.max(Instant::now() + SAVE_TIMEOUT);
         for worker in &mut self.closing {
             while worker.busy() {
-                let until = if worker.syncing() {
+                let until = if worker.syncing() && !worker.committing() {
                     deadline
                 } else {
                     saving_deadline
