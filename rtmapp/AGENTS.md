@@ -406,7 +406,10 @@ the binary, `Info.plist`, the icon and both licences.
     value is read back by a `RegistrySearch`, so an upgrade keeps a custom install folder — **kept**
     (the Release workflow tests it);
   - install folder `Program Files\Rusty Todo.txt Manager` with the exe at its root, desktop shortcut,
-    "Launch" checkbox on the finish screen — **kept**; the shortcuts are optional features here;
+    "Launch" checkbox on the finish screen — **kept**; the shortcuts are optional features here.
+    Since RTM-216 the checkbox starts the app through `explorer.exe`, not as msiexec's child: the
+    client msiexec runs with the RedirectionTrust mitigation, which its children inherit, and under
+    it Scoop's shims cannot follow their `apps\<app>\current` junction, so git and pijul failed;
   - Start Menu shortcut inside a `Rusty Todo.txt Manager` folder — **now directly in Programs**;
   - AppUserModelID `com.brcha.rtm` on that shortcut — **kept**, on both shortcuts; the app sets the same
     ID at startup (RTM-48), and the Release workflow reads it back from the installed shortcuts;
