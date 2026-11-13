@@ -919,12 +919,16 @@ fn commit_message(changes: &[Change]) -> String {
     }
 }
 
-/// Loads a todo.txt file. The path is canonicalized first, as the Tauri app did; `path` is the
-/// `PathBuf` from the file dialog, with no string or URI conversion in between.
+/// `path` resolved (symlinks, `..`) as `canonicalize` does, in the plain Windows form
+/// (`C:\…`, not `\\?\C:\…`): the form the app shows and saves.
+fn resolve(path: &Path) -> std::io::Result<PathBuf> {
+    path.canonicalize().map(|path| config::plain_path(&path))
+}
+
+/// Loads a todo.txt file. The path is resolved first (`resolve`), as the Tauri app did; `path`
+/// is the `PathBuf` from the file dialog, with no string or URI conversion in between.
 fn load_library(path: &Path) -> Result<TodoLibrary, String> {
-    let canonical = path
-        .canonicalize()
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let canonical = resolve(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut library = TodoLibrary::new(canonical.to_string_lossy().into_owned());
     library
         .load()

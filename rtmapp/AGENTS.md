@@ -89,6 +89,11 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   the answer when the file's directory has both; anything else means ask; cleared when another
   file is opened).
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
+  `file_name` holds the loaded file's path resolved with `canonicalize`, then in the plain Windows
+  form (`config::plain_path`, through `app::resolve`, RTM-217): `C:\…` and `\\server\share\…`,
+  not the verbatim `\\?\` form, unless the plain form would name another file (a `.` or `..`
+  component, a name ending in a dot or space, a device name such as `CON`). `AppConfig::load`
+  converts a verbatim `file_name` saved by an earlier version.
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer

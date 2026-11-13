@@ -40,6 +40,19 @@ fn file_with_only_file_name() {
     assert_eq!(config.sync_interval_minutes, 10);
 }
 
+#[cfg(windows)]
+#[test]
+fn a_verbatim_file_name_saved_by_an_earlier_version_loads_plain() {
+    let path = temp_path("verbatim");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, r"file_name = '\\?\C:\todo\a.txt'").unwrap();
+    assert_eq!(
+        AppConfig::load(&path).file_name.as_deref(),
+        Some(r"C:\todo\a.txt")
+    );
+    cleanup(&path);
+}
+
 #[test]
 fn unknown_keys_are_ignored() {
     let config: AppConfig = toml::from_str("future_option = 3\nreverse_sort = true").unwrap();

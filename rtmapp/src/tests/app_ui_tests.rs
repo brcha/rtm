@@ -82,7 +82,7 @@ fn a_file_chosen_in_the_dialog_opens_and_is_saved_in_the_config() {
 
     assert_eq!(rows(&harness), ["From the dialog"]);
     let config = AppConfig::load(&dir.join("config.toml"));
-    let canonical = chosen.canonicalize().unwrap();
+    let canonical = resolve(&chosen).unwrap();
     assert_eq!(config.file_name.as_deref(), canonical.to_str());
     let _ = std::fs::remove_dir_all(dir);
 }
