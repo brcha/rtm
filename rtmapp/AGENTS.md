@@ -458,9 +458,11 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     in `logic`, pending changes are written and committed, and a last sync of every repository runs,
     within 5 s. When changes are waiting behind a running job, the repositories get up to
     `SAVE_TIMEOUT` (125 s, a pull and a push timeout, counted once for all of them; their workers
-    run at the same time), so they are not lost. The commits and the last sync share the 5 s, so
-    the sync may still run when `on_exit` returns: the exit tests check the files and the commits
-    `on_exit` waited for right after it, then `wait` for the last sync before checking the remote.
+    run at the same time), so they are not lost. So does a commit, even one queued with the last
+    sync on the same worker (`Worker` counts outstanding commits apart from syncs); only the last
+    sync is held to the 5 s limit, so it may still run when `on_exit` returns: the exit tests check
+    the files and the local commits right after it, then `wait` for the last sync before checking
+    the remote.
     On macOS, `scripts/check-macos-quit.sh` checks that quitting through `terminate:` (Cmd+Q, the
     quit Apple event) reaches `on_exit` and pushes (RTM-140; see "macOS" in
     [`doc/release-process.md`](../doc/release-process.md)).

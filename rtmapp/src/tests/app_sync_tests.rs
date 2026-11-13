@@ -1033,13 +1033,24 @@ fn exit_during_a_move_writes_both_files() {
     let (source, target) = (one.join("a/todo.txt"), two.join("a/todo.txt"));
     let mut app = app_on(&one, &[source.clone(), target.clone()]);
     app.sync_repo(&key_of(&app, &target), Instant::now());
+    // The source's commit outlasts the 5 s exit limit, and the last sync is queued behind it on
+    // the same worker: exit still waits for the commit.
+    let hook = one.join("no hooks/pre-commit");
+    std::fs::write(&hook, "#!/bin/sh\nsleep 6\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 
     move_to(&mut app, &source, 1, &target);
     eframe::App::on_exit(&mut app);
 
+    assert_eq!(subjects(&one.join("a"), 1), "rtm: move Bravo to todo.txt");
+    assert_eq!(subjects(&two.join("a"), 1), "rtm: move Bravo from todo.txt");
     assert_eq!(file_lines(&one.join("a")), ["Alpha"]);
     assert!(file_lines(&two.join("a"))[1].ends_with("Bravo"));
-    // The source's commit may still run when `on_exit` returns: it is queued with the last sync.
+    // The last sync is held to the exit limit, which the slow commit has used up.
     wait(&mut app);
     assert_eq!(
         subjects(&one.join("remote"), 1),
