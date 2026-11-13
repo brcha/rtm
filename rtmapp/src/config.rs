@@ -94,9 +94,19 @@ impl AppConfig {
 
     /// Brings a config from an older version (or edited by one) into the list of files: an entry
     /// for `file_name` when it has none, and the top-level `vcs`, which an older version wrote for
-    /// `file_name`, moved into that entry. Entries without a path are dropped.
+    /// `file_name`, moved into that entry. Entries without a path are dropped. Windows paths saved
+    /// in the verbatim form (`\\?\C:\…`) take the plain one, and an entry that then repeats an
+    /// earlier one is dropped.
     fn migrate(&mut self) {
+        let plain = |path: &str| plain_path(Path::new(path)).to_string_lossy().into_owned();
         self.files.retain(|entry| !entry.path.is_empty());
+        for entry in &mut self.files {
+            entry.path = plain(&entry.path);
+        }
+        let mut seen = std::collections::HashSet::new();
+        self.files
+            .retain(|entry| seen.insert(PathBuf::from(&entry.path)));
+        self.file_name = self.file_name.as_deref().map(plain);
         let Some(file) = self.file_name.clone() else {
             self.vcs = None;
             return;
@@ -112,7 +122,8 @@ impl AppConfig {
         }
     }
 
-    /// The entry of `file`. Paths are compared as given: the app keeps them canonical.
+    /// The entry of `file`. Paths are compared as given: the app keeps them resolved, in the plain
+    /// Windows form (`plain_path`).
     pub fn entry(&self, file: &Path) -> Option<&FileEntry> {
         self.files
             .iter()
@@ -204,6 +215,81 @@ impl AppConfig {
     }
 }
 
+/// `path` in the form Windows users know: the verbatim `\\?\C:\dir\todo.txt` that
+/// `canonicalize` returns as `C:\dir\todo.txt`, and `\\?\UNC\server\share\todo.txt` as
+/// `\\server\share\todo.txt`. A path whose plain form would name another file keeps the verbatim
+/// form: a `.` or `..` component (literal in a verbatim path), a name ending in a dot or a space,
+/// containing `/`, or naming a device (`CON`, `NUL`, `COM1`, …). Anything else, a path already
+/// plain included, is returned unchanged.
+///
+/// Unlike `dunce`, a long path is converted too: rtm handles long plain paths (the standard
+/// library adds the prefix for its own file calls, and rtmsync strips it before running git).
+#[cfg(windows)]
+pub fn plain_path(path: &Path) -> PathBuf {
+    use std::path::{Component, Prefix};
+    let unchanged = || path.to_path_buf();
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return unchanged();
+    };
+    let mut plain = match prefix.kind() {
+        Prefix::VerbatimDisk(drive) => format!("{}:", char::from(drive)),
+        Prefix::VerbatimUNC(server, share) => match (server.to_str(), share.to_str()) {
+            (Some(server), Some(share)) => format!(r"\\{server}\{share}"),
+            _ => return unchanged(),
+        },
+        _ => return unchanged(),
+    };
+    if components.next() != Some(Component::RootDir) {
+        return unchanged();
+    }
+    let mut names = 0;
+    for component in components {
+        let Component::Normal(name) = component else {
+            return unchanged();
+        };
+        match name.to_str() {
+            Some(name) if keeps_meaning(name) => {
+                plain.push('\\');
+                plain.push_str(name);
+                names += 1;
+            }
+            _ => return unchanged(),
+        }
+    }
+    if names == 0 {
+        plain.push('\\');
+    }
+    PathBuf::from(plain)
+}
+
+/// On other systems paths have no verbatim form.
+#[cfg(not(windows))]
+pub fn plain_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
+/// Whether `name` names the same file outside a verbatim path. Windows trims a trailing dot or
+/// space, splits at `/` and maps device names (by the part before the first dot) to devices.
+#[cfg(windows)]
+fn keeps_meaning(name: &str) -> bool {
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or(name)
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit());
+    !device && !name.ends_with(['.', ' ']) && !name.contains('/')
+}
+
 #[cfg(test)]
 #[path = "tests/config_file_tests.rs"]
 mod file_tests;
+
+#[cfg(test)]
+#[path = "tests/config_paths_tests.rs"]
+mod paths_tests;

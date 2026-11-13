@@ -114,7 +114,7 @@ fn a_config_from_before_the_file_list_is_migrated_on_the_next_save_only() {
 
     let text = std::fs::read_to_string(dir.join("config.toml")).unwrap();
     let table: toml::Table = text.parse().unwrap();
-    let file = dir.join("todo.txt").canonicalize().unwrap();
+    let file = resolve(&dir.join("todo.txt")).unwrap();
     assert_eq!(table["file_name"].as_str(), file.to_str());
     assert!(!table.contains_key("vcs"), "{text}");
     let Some([entry]) = table
@@ -147,10 +147,7 @@ fn the_choice_of_a_file_named_through_a_detour_is_found_after_startup() {
         .unwrap()
         .file_name
         .clone();
-    assert_eq!(
-        Path::new(&file),
-        dir.join("todo.txt").canonicalize().unwrap()
-    );
+    assert_eq!(Path::new(&file), resolve(&dir.join("todo.txt")).unwrap());
     assert_eq!(app.config.file_name.as_deref(), Some(file.as_str()));
     assert_eq!(app.config.files.len(), 1);
     assert_eq!(
@@ -195,7 +192,7 @@ fn a_file_chosen_in_the_dialog_opens_and_is_saved_in_the_config() {
     assert_eq!(rows(&harness), ["From the dialog"]);
     assert_eq!(start_buttons(&harness), 0);
     let config = AppConfig::load(&dir.join("config.toml"));
-    let canonical = chosen.canonicalize().unwrap();
+    let canonical = resolve(&chosen).unwrap();
     assert_eq!(config.file_name.as_deref(), canonical.to_str());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -610,7 +607,7 @@ fn clicking_a_tab_shows_its_file_and_quick_add_goes_there() {
     assert!(work.contains("Send invoice"), "{work}");
     assert_eq!(file_lines(&dir), ["Alpha"]);
     let config = AppConfig::load(&dir.join("config.toml"));
-    let canonical = dir.join("work.txt").canonicalize().unwrap();
+    let canonical = resolve(&dir.join("work.txt")).unwrap();
     assert_eq!(config.file_name.as_deref(), canonical.to_str());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -1184,7 +1181,7 @@ fn name_field<'h>(harness: &'h Harness<'_, App>, name: &'h str) -> egui_kittest:
 fn saved_name(dir: &Path, file: &str) -> Option<String> {
     let config = AppConfig::load(&dir.join("config.toml"));
     let path = dir.join(file);
-    let canonical = path.canonicalize().unwrap();
+    let canonical = resolve(&path).unwrap();
     config
         .entry(&canonical)
         .or(config.entry(&path))
