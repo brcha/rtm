@@ -4,7 +4,7 @@ use super::*;
 /// Writes `name` in `dir` with `contents` and returns its canonical path.
 fn write(dir: &Path, name: &str, contents: &str) -> PathBuf {
     std::fs::write(dir.join(name), contents).unwrap();
-    dir.join(name).canonicalize().unwrap()
+    resolve(&dir.join(name)).unwrap()
 }
 
 /// A config listing `files`, in that order, with `active` as `file_name`.

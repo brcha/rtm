@@ -122,6 +122,13 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     resolved path differs from its entry's (a symlink, `..`), the entry, and `file_name` when it
     names it, take the resolved path in memory (`rename`), since entries are looked up by the
     loaded file's path.
+  - **Plain Windows paths (RTM-217):** paths are resolved with `canonicalize`, which on Windows
+    returns the verbatim form (`\\?\C:\…`, `\\?\UNC\server\share\…`), then converted to the plain
+    one (`config::plain_path`, through `app::resolve`) everywhere the app resolves a path, so the
+    sidebar, tooltips, error lines, the config and `rtmapp mcp` show `C:\…` and `\\server\share\…`.
+    A path whose plain form would name another file (a `.` or `..` component, a name ending in a
+    dot or space, a device name such as `CON`) keeps the verbatim form. `migrate` converts the
+    verbatim paths earlier versions saved and drops an entry that then repeats an earlier one.
 - **egui 0.37 API:** `eframe::App::ui` (not `update`) and `egui::Panel` (not `SidePanel` and
   `TopBottomPanel`). A label inside `ui.horizontal` does not wrap unless `wrap_mode(TextWrapMode::Wrap)`
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
@@ -201,8 +208,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 - **Tabs (RTM-127, epic RTM-66):** every `[[files]]` entry opens at startup (`open_session`), in
   order, and the one `file_name` names is shown, else the first. A file that fails to load (missing,
   unreadable) keeps its tab with the error in its file line; two entries resolving to one file open
-  it once. Each `OpenFile` keeps its entry's `path` (canonical once loaded) and `name` (the entry's,
-  else the file name), so an unloaded file keeps its tab; only loaded files are placed, checked or
+  it once. Each `OpenFile` keeps its entry's `path` (resolved once loaded, in the plain Windows
+  form) and `name` (the entry's, else the file name), so an unloaded file keeps its tab; only
+  loaded files are placed, checked or
   synced (`loaded_path`). `App::active` is that path (`Option<PathBuf>`, none when no file is open),
   never an index, so removing a tab cannot shift it onto another file; tab actions carry the path
   too (`TabAction`).

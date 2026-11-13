@@ -604,7 +604,7 @@ fn app_on(dir: &Path, files: &[PathBuf]) -> App {
 
 /// Adds `text` to the open file at `file`, as the quick-add does for the shown file.
 fn add_to(app: &mut App, file: &Path, text: &str) {
-    let shown = app.active.replace(file.canonicalize().unwrap());
+    let shown = app.active.replace(resolve(file).unwrap());
     app.new_item = text.to_owned();
     app.add_item();
     app.active = shown;
@@ -924,16 +924,16 @@ fn a_question_in_a_background_tab_brings_it_to_front_without_writing_the_config(
 
 /// The repository key of the open file at `file`.
 fn key_of(app: &App, file: &Path) -> RepoKey {
-    let file = file.canonicalize().unwrap();
+    let file = resolve(file).unwrap();
     let open = app.files.iter().find(|open| open.is(&file)).unwrap();
     open.repo.clone().unwrap()
 }
 
 /// Shows the open file at `file` and moves its item at `index` to the open file at `target`.
 fn move_to(app: &mut App, file: &Path, index: usize, target: &Path) {
-    app.active = Some(file.canonicalize().unwrap());
+    app.active = Some(resolve(file).unwrap());
     open_editor(app, index);
-    app.move_item(&target.canonicalize().unwrap());
+    app.move_item(&resolve(target).unwrap());
 }
 
 #[test]
@@ -965,16 +965,16 @@ fn a_conflict_in_the_target_puts_the_moved_item_back() {
     let (source, target) = (one.join("a/todo.txt"), two.join("a/todo.txt"));
     let mut app = app_on(&one, &[source.clone(), target.clone()]);
     push_from_b(&two, "Report from b\n");
-    app.active = Some(target.canonicalize().unwrap());
+    app.active = Some(resolve(&target).unwrap());
     open_editor(&mut app, 0).description = "Report from a".to_owned();
     app.save_edit();
     wait(&mut app);
     // The pull conflicts; the move's arriving half waits behind it.
     app.sync_repo(&key_of(&app, &target), Instant::now());
 
-    app.active = Some(source.canonicalize().unwrap());
+    app.active = Some(resolve(&source).unwrap());
     open_editor(&mut app, 1).description = "Bravo, renamed".to_owned();
-    app.move_item(&target.canonicalize().unwrap());
+    app.move_item(&resolve(&target).unwrap());
     wait(&mut app);
 
     let source_file = app.files.first().unwrap();
@@ -1012,7 +1012,7 @@ fn closing_the_target_after_its_write_still_lets_the_source_write() {
 
     move_to(&mut app, &source, 1, &target);
     assert!(std::fs::read_to_string(&target).unwrap().contains("Bravo"));
-    app.close(&target.canonicalize().unwrap());
+    app.close(&resolve(&target).unwrap());
     assert_eq!(app.files.len(), 1);
     wait(&mut app);
 
@@ -1064,10 +1064,10 @@ fn dont_open_on_the_target_puts_the_moved_item_back() {
     let key = key_of(&app, &target);
     let repo = find_repo(&mut app.repos, Some(&key)).unwrap();
     repo.worker
-        .check(key.root.clone(), target.canonicalize().unwrap());
+        .check(key.root.clone(), resolve(&target).unwrap());
 
     move_to(&mut app, &source, 1, &target);
-    app.active = Some(target.canonicalize().unwrap());
+    app.active = Some(resolve(&target).unwrap());
     app.answer(false);
     wait(&mut app);
 
@@ -1120,7 +1120,7 @@ fn the_source_cannot_be_closed_until_its_moved_item_reached_the_target() {
     let (source, target) = (one.join("a/todo.txt"), two.join("a/todo.txt"));
     let mut app = app_on(&one, &[source.clone(), target.clone()]);
     app.sync_repo(&key_of(&app, &target), Instant::now());
-    let source = source.canonicalize().unwrap();
+    let source = resolve(&source).unwrap();
 
     move_to(&mut app, &source, 1, &target);
     app.close(&source);
