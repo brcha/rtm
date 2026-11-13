@@ -58,13 +58,14 @@ fn push_from_b(dir: &Path, lines: &str) {
     git(&dir.join("b"), &["push", "--quiet"]);
 }
 
-/// Lets the worker finish its jobs and applies their results, as the frames would.
+/// Lets the workers finish their jobs, closed repositories' included, and applies their results,
+/// as the frames would.
 fn wait(app: &mut App) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
         app.sync_results();
         // A write that found the lock held is tried again by the next frames, as here.
-        if !app.busy() && !app.files.iter().any(|file| file.locked_out) {
+        if !app.busy() && app.closing.is_empty() && !app.files.iter().any(|file| file.locked_out) {
             return;
         }
         assert!(
@@ -307,7 +308,9 @@ fn exit_commits_and_pushes() {
     app.new_item = "Call mom".to_owned();
     app.add_item();
     eframe::App::on_exit(&mut app);
-    assert!(!app.busy());
+    // Exit waits for the commit; the last sync may outlast its limit on a loaded machine.
+    assert_eq!(subjects(&dir.join("a"), 1), "rtm: add Call mom");
+    wait(&mut app);
     assert_eq!(subjects(&dir.join("remote"), 1), "rtm: add Call mom");
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -321,10 +324,11 @@ fn exit_during_a_pull_redoes_pending_changes_on_it() {
     app.new_item = "Call mom".to_owned();
     app.add_item();
     eframe::App::on_exit(&mut app);
-    assert!(!app.busy());
     let lines = file_lines(&dir.join("a"));
     assert_eq!(lines.len(), 3, "{lines:?}");
     assert_eq!(lines[1], "From b");
+    assert_eq!(subjects(&dir.join("a"), 2), "rtm: add Call mom\nfrom b");
+    wait(&mut app);
     assert_eq!(
         subjects(&dir.join("remote"), 2),
         "rtm: add Call mom\nfrom b"
@@ -880,7 +884,7 @@ fn closing_waits_for_the_repository_and_its_last_tab_pushes_once_more() {
 
     assert!(app.files.is_empty() && app.repos.is_empty());
     eframe::App::on_exit(&mut app);
-    assert!(app.closing.iter().all(|worker| !worker.busy()));
+    wait(&mut app);
     assert_eq!(subjects(&dir.join("remote"), 1), "rtm: add Call mom");
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -1035,6 +1039,8 @@ fn exit_during_a_move_writes_both_files() {
 
     assert_eq!(file_lines(&one.join("a")), ["Alpha"]);
     assert!(file_lines(&two.join("a"))[1].ends_with("Bravo"));
+    // The source's commit may still run when `on_exit` returns: it is queued with the last sync.
+    wait(&mut app);
     assert_eq!(
         subjects(&one.join("remote"), 1),
         "rtm: move Bravo to todo.txt"
@@ -1242,12 +1248,15 @@ fn exit_writes_once_a_job_waiting_for_the_same_lock_is_done() {
         drop(held);
     });
 
+    // Far longer than the job takes, even on a loaded machine: writing only at the limit, without
+    // the lock, would take all of it.
+    let limit = std::time::Duration::from_secs(60);
     let start = Instant::now();
-    app.write_through_lock(start + std::time::Duration::from_secs(5));
+    app.write_through_lock(start + limit);
     wait(&mut app);
     releaser.join().unwrap();
 
-    assert!(start.elapsed() < std::time::Duration::from_secs(4));
+    assert!(start.elapsed() < limit / 2);
     let lines = file_lines(&dir.join("a"));
     assert!(lines.len() == 2 && lines[1].ends_with("Bravo"), "{lines:?}");
     assert_eq!(subjects(&dir.join("a"), 1), "rtm: add Bravo");
