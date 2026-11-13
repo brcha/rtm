@@ -14,9 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # If the branch name carries an RTM-NN reference (e.g. issues/RTM-27/foo) and the PR
-      # title doesn't already end with " -- RTM-NN", append it automatically. This edits the
-      # title via the API, which fires a new `edited` event; the validate step below is skipped
-      # on the stale-title run so it doesn't fail against a title we're about to fix.
+      # title doesn't already end with " -- RTM-NN", append it automatically. Edits made with
+      # the workflow token start no new run, so the validate step below is skipped on this run:
+      # it would check the event's old title, not the fixed one.
       - name: Autofix PR title from branch name
         id: autofix
         env:
@@ -41,6 +41,61 @@ jobs:
           gh pr edit "$PR_NUMBER" --repo "${{ github.repository }}" \
             --title "${PR_TITLE} -- ${ticket}"
           echo "patched=true" >> "$GITHUB_OUTPUT"
+
+      # GitHub does not render autolinks in PR titles, so the description starts with a link to
+      # the issue named in the title: added when missing, replaced when the title's key changes,
+      # left alone when it is already right. Title and body are read from the API because the
+      # step above may just have changed the title. Fork PRs get a read-only token and are
+      # skipped; a failed edit would fail this required check.
+      - name: Link the description to the issue
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          title=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json title --jq .title)
+          key=$(printf '%s' "$title" | grep -oE -- ' -- RTM-[0-9]+$' | grep -oE 'RTM-[0-9]+' || true)
+          if [ -z "$key" ]; then
+            exit 0
+          fi
+          line="Issue: [${key}](https://brcha.atlassian.net/browse/${key})"
+
+          # The trailing x keeps the body's own trailing newlines through $(...); --jq adds one.
+          body=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json body --jq .body; printf x)
+          body=${body%x}
+          body=${body%$'\n'}
+
+          first=${body%%$'\n'*}
+          rest=
+          if [ "$first" != "$body" ]; then
+            rest=$'\n'${body#*$'\n'}
+          fi
+          cr=
+          if [ "${first%$'\r'}" != "$first" ]; then
+            cr=$'\r'
+            first=${first%$'\r'}
+          fi
+
+          if [ "$first" = "$line" ]; then
+            exit 0
+          elif printf '%s' "$first" | grep -qE '^Issue: (RTM-[0-9]+|\[RTM-[0-9]+\]\(https://brcha\.atlassian\.net/browse/RTM-[0-9]+\))$'; then
+            new="${line}${cr}${rest}"
+          elif [ -z "$body" ]; then
+            new=$line
+          else
+            # Web UI bodies use CRLF; keep the added blank line in the body's own style.
+            eol=$'\n'
+            if [ "${body#*$'\r\n'}" != "$body" ]; then
+              eol=$'\r\n'
+            fi
+            new="${line}${eol}${eol}${body}"
+          fi
+
+          printf '%s' "$new" > "$RUNNER_TEMP/pr-body.md"
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/pr-body.md"
 
       # Every title names one scope from this list, the one in AGENTS.md (change both together).
       # The empty scope "" is left out so that a title without a scope fails.
