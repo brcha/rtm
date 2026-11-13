@@ -111,6 +111,39 @@ fn entry(path: &str, vcs: Option<&str>) -> FileEntry {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn verbatim_paths_saved_by_an_earlier_version_load_plain_and_once() {
+    let config = load_text(
+        "verbatim",
+        r#"file_name = '\\?\C:\todo\a.txt'
+
+[[files]]
+path = '\\?\C:\todo\a.txt'
+name = "Home"
+vcs = "git"
+
+[[files]]
+path = 'C:\todo\a.txt'
+vcs = "pijul"
+
+[[files]]
+path = '\\?\UNC\server\share\b.txt'
+"#,
+    );
+    assert_eq!(config.file_name.as_deref(), Some(r"C:\todo\a.txt"));
+    assert_eq!(
+        config.files,
+        [
+            FileEntry {
+                name: Some("Home".into()),
+                ..entry(r"C:\todo\a.txt", Some("git"))
+            },
+            entry(r"\\server\share\b.txt", None),
+        ]
+    );
+}
+
 #[test]
 fn a_config_from_before_the_file_list_gets_one_entry_with_its_vcs() {
     let config = load_text(

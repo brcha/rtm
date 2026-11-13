@@ -926,7 +926,7 @@ impl App {
     /// Creates `path` empty and opens it. A file open in a tab is not replaced: its tab would keep
     /// the old items and write them back.
     fn create_file(&mut self, path: &Path) {
-        if let Ok(canonical) = path.canonicalize()
+        if let Ok(canonical) = resolve(path)
             && self
                 .files
                 .iter()
@@ -1779,8 +1779,7 @@ impl OpenFile {
     /// (a file missing at startup is not resolved yet).
     fn resolves_to(&self, canonical: &Path) -> bool {
         self.is(canonical)
-            || (self.library.is_none()
-                && self.path.canonicalize().is_ok_and(|path| path == canonical))
+            || (self.library.is_none() && resolve(&self.path).is_ok_and(|path| path == canonical))
     }
 
     /// Finds where the file syncs and, in a repository, assigns it there and queues its check on
@@ -2311,12 +2310,16 @@ fn disk_state(path: &Path) -> Option<(SystemTime, u64)> {
     Some((metadata.modified().ok()?, metadata.len()))
 }
 
-/// Loads a todo.txt file. The path is canonicalized first, as the Tauri app did; `path` is the
-/// `PathBuf` from the file dialog, with no string or URI conversion in between.
+/// `path` resolved (symlinks, `..`) as `canonicalize` does, in the plain Windows form
+/// (`C:\…`, not `\\?\C:\…`): the form the app shows, saves and compares.
+fn resolve(path: &Path) -> std::io::Result<PathBuf> {
+    path.canonicalize().map(|path| config::plain_path(&path))
+}
+
+/// Loads a todo.txt file. The path is resolved first (`resolve`), as the Tauri app did; `path`
+/// is the `PathBuf` from the file dialog, with no string or URI conversion in between.
 fn load_library(path: &Path) -> Result<TodoLibrary, String> {
-    let canonical = path
-        .canonicalize()
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let canonical = resolve(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut library = TodoLibrary::new(canonical.to_string_lossy().into_owned());
     library
         .load()
