@@ -146,7 +146,8 @@
 - **Exe resources:** `rtmapp/build.rs` embeds `icon.ico` and the product name in `rtmapp.exe` with
   `winresource`, checking `CARGO_CFG_TARGET_OS` (not `#[cfg]`, which tests the host).
 - **Tests in the job:** a silent fresh install (files, both shortcuts and their AppUserModelID, the
-  exe's version information, a smoke launch, uninstall), then an upgrade from the v0.1.3 Tauri MSI
+  exe's version information, a smoke launch, the launch action's check, uninstall), then an upgrade
+  from the v0.1.3 Tauri MSI
   installed into a custom folder (one product afterwards, at the new version, still in that folder),
   then an upgrade from the previous release's MSI in the default folder (skipped with a notice when that
   is v0.1.3, already covered, or when it has no MSI). All read the product from the uninstall entries in
@@ -155,7 +156,31 @@
   starts the installed `rtmapp.exe` with a sample `todo.txt` (config in `%APPDATA%\rtm`) and expects it
   running after 5 s, then stops it by its PID; it only warns on failure, since the runner's desktop
   session and adapter (WARP) are not under our control. Its stderr (`RUST_LOG=info`) is in the
-  `msi-logs` artifact.
+  `msi-logs` artifact. Then the launch check (RTM-216), for the finish screen's "Launch" action,
+  which a silent install never runs:
+  - It reads `LaunchApplication` from the built MSI through `msi.dll` and requires a type 34
+    action from `APPLICATIONFOLDER` that runs `"[WindowsFolder]explorer.exe"`.
+  - It runs that command from a launcher that enforces the RedirectionTrust mitigation on itself,
+    as the client msiexec has it, and reads the policy of the rtmapp that starts. It must be 0.
+  - The control, rtmapp started directly by the same launcher, must have 1.
+  - It skips with a notice on a Windows without the mitigation, and with a warning when the control
+    is not 1 or no rtmapp starts through Explorer within 15 s.
+  - It reads the policy rather than syncing through a junction because the runner has no Scoop,
+    and junctions its administrator makes are trusted anyway.
+  - The launcher is started with `Start-Process`, not `&`: a directly started rtmapp inherits the
+    step's output pipe, and `&` would wait for it to exit.
+- **Manual check of the "Launch" check box** (RTM-216), on a release candidate's MSI, on a Windows
+  machine with git from Scoop (`git` on `PATH` is `scoop\shims\git.exe`) and rtmapp configured with
+  a synced todo.txt:
+  1. Install the MSI interactively and leave "Launch Rusty Todo.txt Manager" checked.
+  2. In the rtmapp the installer starts, the header shows no "Not syncing" or "Not synced", and
+     Sync now works.
+  3. The window groups with the Start Menu shortcut on the taskbar.
+
+  Do it once over an installed version and once after an uninstall. Start the MSI by
+  double-clicking it or from a normal terminal. Started from a shell that runs inside a job object
+  (some automation and agent shells), the launch action was seen to end with 1631 and start
+  nothing, which says nothing about the MSI.
 
 ## Linux (RTM-8)
 
