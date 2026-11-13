@@ -1,6 +1,6 @@
 use crate::todo_item::TodoItem;
 use crate::todo_recurrence::TodoRecurrenceUnit;
-use chrono::{Duration, Local, Months, NaiveDate};
+use chrono::{Datelike, Duration, Local, Months, NaiveDate, Weekday};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -115,10 +115,7 @@ impl TodoLibrary {
             };
             let advance = |from: NaiveDate| match recurrence.unit {
                 TodoRecurrenceUnit::Daily => from + Duration::days(recurrence.count as i64),
-                TodoRecurrenceUnit::BusinessDay => {
-                    // Skip weekends or something, but for simplicity, treat as daily
-                    from + Duration::days(recurrence.count as i64)
-                }
+                TodoRecurrenceUnit::BusinessDay => add_business_days(from, recurrence.count),
                 TodoRecurrenceUnit::Weekly => from + Duration::weeks(recurrence.count as i64),
                 // Calendar months and years: a day the target month lacks becomes its last day.
                 TodoRecurrenceUnit::Monthly => from
@@ -163,6 +160,19 @@ impl TodoLibrary {
         // does not change.
         Some(())
     }
+}
+
+/// The date `count` business days after `from`, skipping Saturdays and Sundays as topydo and
+/// SimpleTask do (no holidays): each step lands on a weekday, so Saturday + 1 is Monday.
+fn add_business_days(from: NaiveDate, count: u16) -> NaiveDate {
+    let mut date = from;
+    for _ in 0..count {
+        date += Duration::days(1);
+        while matches!(date.weekday(), Weekday::Sat | Weekday::Sun) {
+            date += Duration::days(1);
+        }
+    }
+    date
 }
 
 #[cfg(test)]
