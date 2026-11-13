@@ -16,6 +16,11 @@ fn loads_items_from_a_path_with_spaces_and_dots() {
     assert!(library.items[1].done);
     assert!(!library.file_name.contains(".."));
     assert!(library.file_name.ends_with("todo list.txt"));
+    assert!(
+        !library.file_name.starts_with(r"\\?\"),
+        "{}",
+        library.file_name
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -53,7 +58,7 @@ fn a_new_file_is_created_empty_opened_and_kept_in_the_config() {
     assert_eq!(app.error, None);
     // What the next start reads.
     let name = AppConfig::load(&dir.join("config.toml")).file_name.unwrap();
-    let canonical = dir.join("sub/todo.txt").canonicalize().unwrap();
+    let canonical = resolve(&dir.join("sub/todo.txt")).unwrap();
     assert_eq!(Path::new(&name), canonical);
     let library = load_library(Path::new(&name)).unwrap();
     assert_eq!(library.items[0].description, "Buy milk");
@@ -76,10 +81,7 @@ fn a_picked_file_is_opened_when_the_dialog_returns() {
         "Other item"
     );
     let name = AppConfig::load(&dir.join("config.toml")).file_name.unwrap();
-    assert_eq!(
-        Path::new(&name),
-        dir.join("other.txt").canonicalize().unwrap()
-    );
+    assert_eq!(Path::new(&name), resolve(&dir.join("other.txt")).unwrap());
     let _ = std::fs::remove_dir_all(dir);
 }
 
