@@ -13,8 +13,9 @@
     install folder is saved there and reused on upgrade, so a custom folder from a Tauri install stays.
   - The template's PATH feature is gone (a GUI app). Start Menu (directly in Programs, where Tauri used
     a folder) and desktop shortcuts are optional features (on by default, deselectable in the
-    installer). The finish screen offers to launch the app, as Tauri's did; Tauri's Uninstall shortcut
-    is not kept (Settings > Apps uninstalls).
+    installer). The finish screen offers to launch the app, as Tauri's did, through Explorer rather
+    than as a child of msiexec (see LaunchApplication); Tauri's Uninstall shortcut is not kept
+    (Settings > Apps uninstalls).
   - Both shortcuts carry the AppUserModelID com.brcha.rtm, which Tauri's Start Menu shortcut had and the
     app sets at startup (main.rs): the taskbar groups the window with the shortcut, and pins made with
     a Tauri install keep working.
@@ -190,8 +191,18 @@
         <!-- "Launch" checkbox on the finish screen, checked by default; interactive installs only. -->
         <Property Id='WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT' Value='Launch $(var.ProductName)'/>
         <Property Id='WIXUI_EXITDIALOGOPTIONALCHECKBOX' Value='1'/>
-        <Property Id='LAUNCHAPPARGS' Secure='yes'/>
-        <CustomAction Id='LaunchApplication' FileKey='exe0' ExeCommand='[LAUNCHAPPARGS]' Return='asyncNoWait'/>
+        <!--
+          The client msiexec runs with the RedirectionTrust process mitigation, and a process it starts
+          inherits it: such a process does not follow filesystem junctions created by a non-administrator.
+          Scoop's shims reach their programs through such a junction (apps\<app>\current), so an app
+          started directly by msiexec could not run git or pijul from Scoop. explorer.exe hands the file
+          to the user's running shell, which starts the app as the Start Menu does, without the
+          mitigation. Explorer passes no arguments, and returns 1 even on success (ignored here).
+        -->
+        <CustomAction Id='LaunchApplication'
+            Directory='APPLICATIONFOLDER'
+            ExeCommand='"[WindowsFolder]explorer.exe" "[#exe0]"'
+            Return='asyncNoWait'/>
 
         <UI>
             <UIRef Id='WixUI_FeatureTree'/>
