@@ -51,8 +51,9 @@ todotxt/tests/
   `add_item` above. The next occurrence is a copy of the completed item (open, today's creation
   date, the new dates, no `uuid`/`sub`), so it keeps the line's layout. Its threshold date (`t:`) moves with its due date:
   strict recurrence advances it by the interval (in calendar months for `m` and `y`, so it keeps
-  its day of the month), normal recurrence keeps its distance to the new due date. A recurring
-  item without `due:` gets no next occurrence yet.
+  its day of the month, and in business days for `b`), normal recurrence keeps its distance to
+  the new due date. Business days (`b`) skip Saturdays and Sundays, as in topydo and SimpleTask
+  (no holidays). A recurring item without `due:` gets no next occurrence yet.
 - `uncomplete_item(index)` clears `done` and `completion_date`, returns `Option<()>` (None =
   out of bounds). Priority and creation date are untouched — priority re-serializes as `(X)`
   automatically because `Display` keys that choice off `done`, and the `pri:` tag goes.
@@ -140,7 +141,6 @@ todotxt/tests/
   created yet, its directory's canonical path and its name), so every spelling and every rtm
   binary agree. `write_lock::lock_dir()` is public, for the other rtm locks kept there (the MCP
   server's one-server-per-client check).
-- Business-day recurrence is currently approximated as daily (known limitation).
 
 ---
 
