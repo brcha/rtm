@@ -279,7 +279,6 @@ fn monthly_recurrence_keeps_the_threshold_day_at_the_end_of_the_month() {
 /// Extension `rec:`: a recurring task without a due date still recurs; the next due date counts
 /// from today, as in topydo.
 #[test]
-#[ignore = "RTM-209: no next occurrence without a due date"]
 fn a_recurring_task_without_a_due_date_recurs() {
     let mut library = library("Water the plants rec:1w");
     assert_eq!(library.complete_item(0), Some(true));
@@ -290,7 +289,6 @@ fn a_recurring_task_without_a_due_date_recurs() {
 /// Extension `rec:` and `t:`: a recurring task with only a threshold date moves that date, as in
 /// topydo.
 #[test]
-#[ignore = "RTM-209: no next occurrence without a due date"]
 fn a_recurring_task_with_only_a_threshold_date_moves_it() {
     let next = next_occurrence("Water the plants t:2026-01-05 rec:+1w");
     assert_eq!(next.threshold, Some(date("2026-01-12")));
