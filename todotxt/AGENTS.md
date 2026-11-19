@@ -53,7 +53,9 @@ todotxt/tests/
   strict recurrence advances it by the interval (in calendar months for `m` and `y`, so it keeps
   its day of the month, and in business days for `b`), normal recurrence keeps its distance to
   the new due date. Business days (`b`) skip Saturdays and Sundays, as in topydo and SimpleTask
-  (no holidays). A recurring item without `due:` gets no next occurrence yet.
+  (no holidays). Every recurring item gets a next occurrence (RTM-209): one with only `t:`
+  moves its threshold (strict from the old `t:`, normal from today) and gets no `due:`; one with
+  neither date is due the interval from today, strict too.
 - `uncomplete_item(index)` clears `done` and `completion_date`, returns `Option<()>` (None =
   out of bounds). Priority and creation date are untouched — priority re-serializes as `(X)`
   automatically because `Display` keys that choice off `done`, and the `pri:` tag goes.

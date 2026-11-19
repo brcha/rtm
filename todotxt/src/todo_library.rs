@@ -106,15 +106,8 @@ impl TodoLibrary {
         self.items[index].done = true;
         // Check for recurrence and create new item
         let has_recurrence = self.items[index].recurrence.is_some();
-        if has_recurrence
-            && let Some(ref recurrence) = self.items[index].recurrence
-            && let Some(current_due) = self.items[index].due
-        {
-            let base_date = if recurrence.strict {
-                current_due
-            } else {
-                Local::now().date_naive()
-            };
+        if let Some(ref recurrence) = self.items[index].recurrence {
+            let today = Local::now().date_naive();
             let advance = |from: NaiveDate| match recurrence.unit {
                 TodoRecurrenceUnit::Daily => from + Duration::days(recurrence.count as i64),
                 TodoRecurrenceUnit::BusinessDay => add_business_days(from, recurrence.count),
@@ -127,19 +120,28 @@ impl TodoLibrary {
                     .checked_add_months(Months::new(u32::from(recurrence.count) * 12))
                     .expect("a u16 count of years stays within chrono's date range"),
             };
-            let new_due = advance(base_date);
-            // The threshold date is advanced from a base shifted as the due date's base is: by
-            // the interval for strict recurrence, keeping its distance to the new due date for
-            // normal recurrence.
-            let new_threshold = self.items[index]
-                .threshold
-                .map(|threshold| advance(threshold + (base_date - current_due)));
+            // Strict recurrence counts from the old date, normal recurrence from today.
+            let base = |old: NaiveDate| if recurrence.strict { old } else { today };
+            let (new_due, new_threshold) =
+                match (self.items[index].due, self.items[index].threshold) {
+                    // The threshold date is advanced from a base shifted as the due date's base
+                    // is: by the interval for strict recurrence, keeping its distance to the new
+                    // due date for normal recurrence.
+                    (Some(due), threshold) => (
+                        Some(advance(base(due))),
+                        threshold.map(|threshold| advance(threshold + (base(due) - due))),
+                    ),
+                    // Only a threshold date: it moves, and no due date is added.
+                    (None, Some(threshold)) => (None, Some(advance(base(threshold)))),
+                    // Neither: due the interval from today, strict too (there is no old date).
+                    (None, None) => (Some(advance(today)), None),
+                };
             // A copy of the completed item, so the next occurrence keeps its line's layout.
             let new_item = TodoItem {
                 done: false,
                 completion_date: None,
-                creation_date: Some(Local::now().date_naive()),
-                due: Some(new_due),
+                creation_date: Some(today),
+                due: new_due,
                 threshold: new_threshold,
                 uuid: None,
                 sub: None,
