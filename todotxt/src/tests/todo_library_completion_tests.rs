@@ -263,3 +263,27 @@ fn business_days_skip_saturdays_and_sundays() {
         );
     }
 }
+
+#[test]
+fn a_normal_recurrence_with_only_a_threshold_moves_it_from_today() {
+    let mut lib = TodoLibrary::new("dummy.txt".to_string());
+    lib.items
+        .push("Water the plants t:2026-01-05 rec:1w".parse().unwrap());
+    assert_eq!(lib.complete_item(0), Some(true));
+    let today = chrono::Local::now().date_naive();
+    assert_eq!(
+        lib.items[1].threshold,
+        Some(today + chrono::Duration::weeks(1))
+    );
+    assert_eq!(lib.items[1].due, None);
+}
+
+#[test]
+fn a_strict_recurrence_without_dates_is_due_from_today() {
+    let mut lib = TodoLibrary::new("dummy.txt".to_string());
+    lib.items.push("Water the plants rec:+3d".parse().unwrap());
+    assert_eq!(lib.complete_item(0), Some(true));
+    let today = chrono::Local::now().date_naive();
+    assert_eq!(lib.items[1].due, Some(today + chrono::Duration::days(3)));
+    assert_eq!(lib.items[1].threshold, None);
+}
