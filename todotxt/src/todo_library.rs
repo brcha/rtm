@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub struct TodoLibrary {
     pub file_name: String,
     pub items: Vec<TodoItem>,
+    final_newline: bool,
 }
 
 impl TodoLibrary {
@@ -15,25 +16,31 @@ impl TodoLibrary {
         TodoLibrary {
             file_name,
             items: Vec::new(),
+            final_newline: true,
         }
     }
 
     pub fn load(&mut self) -> Result<(), std::io::Error> {
         let content = std::fs::read_to_string(&self.file_name)?;
+        // `lines` also drops the `\r` of CRLF line endings, so they are saved as LF.
         self.items = content
             .lines()
             .filter_map(|line| line.parse::<TodoItem>().ok())
             .collect();
+        self.final_newline = content.is_empty() || content.ends_with('\n');
         Ok(())
     }
 
     pub fn save(&self) -> Result<(), std::io::Error> {
-        let content = self
+        let mut content = self
             .items
             .iter()
             .map(|item| item.to_string())
             .collect::<Vec<String>>()
             .join("\n");
+        if self.final_newline && !self.items.is_empty() {
+            content.push('\n');
+        }
         std::fs::write(&self.file_name, content)?;
         Ok(())
     }

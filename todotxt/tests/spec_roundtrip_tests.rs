@@ -101,7 +101,6 @@ fn non_ascii_text_comes_back_unchanged() {
 /// included: another tool appending a line to a file without one would join it to the last
 /// task.
 #[test]
-#[ignore = "RTM-210: save drops the final newline"]
 fn an_unchanged_file_is_saved_byte_for_byte() {
     let content = "(A) 2026-01-05 Call the plumber +home @phone due:2026-01-10\n\
                    x 2026-01-04 2026-01-02 File the taxes pri:B +admin\n\
@@ -121,7 +120,6 @@ fn a_file_without_a_final_newline_stays_so() {
 /// A file with CRLF line endings, as Windows editors write it, is read without the carriage
 /// returns and saved with LF line endings, the only exception to the byte-for-byte rule.
 #[test]
-#[ignore = "RTM-210: save drops the final newline"]
 fn crlf_line_endings_are_saved_as_lf() {
     let file = todo_file("crlf", "Call Mom\r\nPay the rent\r\n");
     assert_eq!(load_and_save(&file), "Call Mom\nPay the rent\n");
@@ -139,10 +137,5 @@ fn lines_rtm_cannot_interpret_are_kept() {
                    (C) Call the plumber pri:A\n\
                    Pay the rent\n";
     let file = todo_file("uninterpretable", content);
-    // Compared line by line: the final newline is checked by the byte-for-byte tests above.
-    let saved = load_and_save(&file);
-    assert_eq!(
-        saved.lines().collect::<Vec<_>>(),
-        content.lines().collect::<Vec<_>>()
-    );
+    assert_eq!(load_and_save(&file), content);
 }
