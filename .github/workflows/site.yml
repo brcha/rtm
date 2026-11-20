@@ -1,6 +1,6 @@
 name: Site
 
-# The project website (site/, RTM-79). Not a required check, so it may be filtered by `paths`:
+# The project website (site/). Not a required check, so it may be filtered by `paths`:
 # only required checks need a gate job that always reports (see doc/ci.md).
 on:
   push:
