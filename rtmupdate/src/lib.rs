@@ -133,7 +133,6 @@ pub fn url() -> String {
         .unwrap_or_else(|| URL.to_owned())
 }
 
-/// [`check_at`] the [`url`].
 pub fn check(current: &str, channel: Channel) -> Result<Option<Release>, Error> {
     check_at(&url(), current, channel)
 }
