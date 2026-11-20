@@ -1,7 +1,7 @@
 name: Claude Review
 
 # Reviews pull requests from branches of this repository when they are opened, reopened or marked
-# ready, and again after every push, and posts the findings as comments (RTM-147). It never
+# ready, and again after every push, and posts the findings as comments. It never
 # pushes, approves or blocks, and it is not a required check. See "Claude review" in doc/ci.md.
 on:
   pull_request:
