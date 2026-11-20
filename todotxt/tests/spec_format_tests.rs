@@ -91,7 +91,6 @@ fn a_priority_not_followed_by_a_space_is_text() {
 /// Incomplete tasks, rule 1: the priority appears first, so a line that starts with whitespace
 /// has none.
 #[test]
-#[ignore = "RTM-212: leading whitespace and tabs are ignored"]
 fn a_priority_after_leading_whitespace_is_text() {
     let item = parse(" (A) Call Mom");
     assert_eq!(item.priority.priority, None);
@@ -100,7 +99,6 @@ fn a_priority_after_leading_whitespace_is_text() {
 
 /// Incomplete tasks, rule 1: the priority is followed by a space; a tab is not one.
 #[test]
-#[ignore = "RTM-212: leading whitespace and tabs are ignored"]
 fn a_priority_followed_by_a_tab_is_text() {
     let item = parse("(A)\tCall Mom");
     assert_eq!(item.priority.priority, None);
@@ -269,7 +267,6 @@ fn other_lines_starting_with_x_are_not_complete() {
 /// Complete tasks, rule 1: a completed task starts with the x, so a line that starts with
 /// whitespace is not complete.
 #[test]
-#[ignore = "RTM-212: leading whitespace and tabs are ignored"]
 fn a_line_starting_with_whitespace_is_not_complete() {
     let item = parse(" x 2011-03-03 Call Mom");
     assert!(!item.done);
@@ -279,7 +276,6 @@ fn a_line_starting_with_whitespace_is_not_complete() {
 
 /// Complete tasks, rule 1: the x is followed directly by a space; a tab is not one.
 #[test]
-#[ignore = "RTM-212: leading whitespace and tabs are ignored"]
 fn x_followed_by_a_tab_is_not_complete() {
     let item = parse("x\t2011-03-03 Call Mom");
     assert!(!item.done);
