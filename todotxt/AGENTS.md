@@ -38,7 +38,9 @@ todotxt/tests/
   `Clone, Debug, Eq, PartialEq` alongside `thiserror::Error`.
 - `TodoItem` implements `FromStr` (parse from a todo.txt line) and `Display` (serialize back).
 - `TodoLibrary` owns a `Vec<TodoItem>` and a file path string. `load()` reads from disk,
-  `save()` writes back. No async.
+  `save()` writes back. No async. The file's final newline is kept as read (RTM-210): a file
+  that ends with one keeps it, one without stays without, and a new or empty file gets one.
+  CRLF line endings are saved as LF.
 - `add_item(item)` stamps `creation_date = today` when the item has none; an explicit date is
   left alone. `load()` never does this — a file with dateless lines stays dateless. This is
   the single point new items enter the library, which is what guarantees a completed item can
