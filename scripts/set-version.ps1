@@ -63,10 +63,6 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# ---------------------------------------------------------------------------
-# 1. Validate and normalise the version string.
-# ---------------------------------------------------------------------------
-
 $normalised = $Version -replace '^[vV]', ''
 
 if ($normalised -notmatch '^(\d+)\.(\d+)\.(\d+)(-beta\.(\d+))?$') {
@@ -101,10 +97,6 @@ if ($beta) {
 }
 
 Write-Host "Setting version to $normalised"
-
-# ---------------------------------------------------------------------------
-# 2. Patch helper.
-# ---------------------------------------------------------------------------
 
 function Set-TomlPackageVersion {
     <#
@@ -142,10 +134,6 @@ function Set-TomlPackageVersion {
     }
 }
 
-# ---------------------------------------------------------------------------
-# 3. Define the patch targets.
-# ---------------------------------------------------------------------------
-
 $targets = @(
     @{ Path = Join-Path $RepoRoot 'rtmapp/Cargo.toml';  Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'rtmcli/Cargo.toml';  Handler = ${function:Set-TomlPackageVersion} },
@@ -154,10 +142,6 @@ $targets = @(
     @{ Path = Join-Path $RepoRoot 'rtmupdate/Cargo.toml'; Handler = ${function:Set-TomlPackageVersion} },
     @{ Path = Join-Path $RepoRoot 'todotxt/Cargo.toml'; Handler = ${function:Set-TomlPackageVersion} }
 )
-
-# ---------------------------------------------------------------------------
-# 4. Apply patches. Fail loudly on any target whose pattern is not found — see script header.
-# ---------------------------------------------------------------------------
 
 foreach ($target in $targets) {
     $path = $target.Path

@@ -1,6 +1,6 @@
 name: Announce
 
-# Announces each stable release on X through Buffer once its website post is live (RTM-171,
+# Announces each stable release on X through Buffer once its website post is live (see
 # "Announcement" in doc/release-process.md). Merging the website post PR is what publishes the
 # announcement. Pull requests that add a post only check its text. Not a required check, so it may
 # be filtered by `paths` (see doc/ci.md).

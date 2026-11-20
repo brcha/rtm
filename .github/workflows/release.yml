@@ -4,7 +4,7 @@ on:
   # On a release branch (releases/vYY.M) a manual run is a release: it publishes a draft tagged
   # with the committed version. On any other branch it is a dry run. There is no tag trigger:
   # publishing the draft creates its tag, and a run started by that tag would rebuild the packages
-  # and publish them over the release (RTM-102).
+  # and publish them over the release.
   workflow_dispatch:
     inputs:
       previous:
@@ -58,10 +58,8 @@ jobs:
             echo code=false >> "$GITHUB_OUTPUT"
           fi
 
-  # Extracted into its own job so all platform jobs depend on the same version checks via
-  # `needs:` instead of duplicating them. Runs on ubuntu-latest purely as a cheap host for pwsh;
-  # it builds nothing. Skipped when the changes job finds nothing to build, and the platform jobs
-  # skip with it.
+  # The version checks every platform job needs, on ubuntu-latest as a cheap host for pwsh.
+  # Skipped when the changes job finds nothing to build, and the platform jobs skip with it.
   version:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -288,7 +286,7 @@ jobs:
       - name: Build rtmapp and rtmcli
         run: cargo build --release -p rtmapp -p rtmcli
 
-      # Compiled with --locked for the same reasons as cargo-deb on the Linux job (RTM-29);
+      # Compiled with --locked for the same reasons as cargo-deb on the Linux job;
       # version pinned so a new release cannot change the MSI mid-run. cargo-wix 0.3.9 drives the
       # WiX v3 toolset by default.
       - name: Install cargo-wix
@@ -311,7 +309,7 @@ jobs:
             Write-Host "WiX installed at $wix"
           }
 
-      # Unsigned for now (RTM-10). Signing would sign rtmapp.exe before this step and the MSI
+      # Unsigned for now. Signing would sign rtmapp.exe before this step and the MSI
       # after it, with the certificate and password from repository secrets.
       - name: Build rtmapp MSI
         shell: pwsh
@@ -322,10 +320,7 @@ jobs:
           cargo wix -p rtmapp --no-build --nocapture --output "dist/rtmapp_${env:VERSION}_x64_en-US.msi"
           if ($LASTEXITCODE -ne 0) { throw "cargo wix failed ($LASTEXITCODE)." }
 
-      # Stages rtmcli.exe and asserts both release assets exist before upload. rtmapp.exe is
-      # deliberately not staged -- the MSI installs the same binary, so shipping it loose is
-      # redundant. rtmcli.exe stays: the MSI only packages rtmapp, so the raw binary is the sole
-      # channel for the CLI on Windows.
+      # rtmapp.exe is not staged: the MSI installs it. rtmcli.exe is, as no package holds it.
       - name: Stage release artifacts
         shell: pwsh
         env:
@@ -346,7 +341,7 @@ jobs:
           Write-Host 'Staged artifacts:'
           Get-ChildItem dist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
 
-      # The last Tauri MSI, for the upgrade check below.
+      # The last 0.1.x MSI, for the upgrade check below.
       - name: Download the v0.1.3 Tauri MSI
         shell: pwsh
         env:
@@ -385,7 +380,7 @@ jobs:
           }
 
           # Runs an MCP server with stdin and stdout on pipes, as a client does, and checks its answers
-          # to the handshake: named rtm, a list_items tool, and list_files naming $expected (RTM-116).
+          # to the handshake: named rtm, a list_items tool, and list_files naming $expected.
           # Fails after 30 s without the replies, or when the server does not exit once stdin closes.
           function Test-Mcp([string] $exe, [string[]] $arguments, [string] $expected) {
             $utf8 = [System.Text.UTF8Encoding]::new($false)
@@ -436,7 +431,7 @@ jobs:
           foreach ($f in @($exe, (Join-Path $installDir 'LICENSE.txt'), (Join-Path $installDir 'Inter-LICENSE.txt'), $startMenu, $desktop)) {
             if (-not (Test-Path -LiteralPath $f)) { throw "Missing after install: $f" }
           }
-          # The taskbar ID (RTM-48), through the shell's property system.
+          # The taskbar ID, through the shell's property system.
           $shell = New-Object -ComObject Shell.Application
           foreach ($lnk in @($startMenu, $desktop)) {
             $id = $shell.NameSpace((Split-Path $lnk)).ParseName((Split-Path $lnk -Leaf)).ExtendedProperty('System.AppUserModel.ID')
@@ -470,7 +465,7 @@ jobs:
             if (Test-Path 'smoke-windows.log') { Get-Content 'smoke-windows.log' }
           }
 
-          # The finish screen's "Launch" action (RTM-216). A silent install never shows that screen, so the
+          # The finish screen's "Launch" action. A silent install never shows that screen, so the
           # action is read from the MSI and its command run here. The client msiexec has the RedirectionTrust
           # mitigation, which the processes it starts inherit, and under it Scoop's shims cannot follow their
           # junctions; the action hands the app to Explorer instead. The runner has no Scoop, and junctions
@@ -647,7 +642,7 @@ jobs:
           if ($mcpError) { throw $mcpError }
           if ($launchError) { throw $launchError }
 
-      # The new MSI must replace a Tauri install instead of sitting beside it, and keep its folder:
+      # The new MSI must replace a 0.1.x install instead of sitting beside it, and keep its folder:
       # installs v0.1.3 into a custom folder, then the new MSI over it without naming a folder, and
       # expects one product at the new version, in the custom folder. Runs even if the fresh install
       # failed, so one run answers both questions.
@@ -790,8 +785,7 @@ jobs:
     steps:
       # git for a real checkout, file for appimagetool, tar and zstd for the cache. Neither crate
       # links a native library, so nothing else. Retried with fresh metadata: a mirror once served
-      # an empty repomd.xml, which dnf reports as a parse error and does not retry itself (the
-      # same idea as RTM-28's apt hardening).
+      # an empty repomd.xml, which dnf reports as a parse error and does not retry itself.
       - name: Install build tools
         timeout-minutes: 10
         shell: bash
@@ -815,20 +809,13 @@ jobs:
         with:
           key: almalinux-9
 
-      # Compiled from source, not installed via a prebuilt-binary action (RTM-29). cargo-deb's
-      # only published asset is a single amd64 .deb, built by upstream CI on ubuntu-latest --
-      # which has been noble (24.04, glibc 2.39) since GitHub's runner migration. This job builds
-      # on AlmaLinux 9 (glibc 2.34) by deliberate choice (see "Linux (RTM-8)" in doc/release-process.md),
-      # so that prebuilt binary cannot run here (RTM-29 hit `GLIBC_2.39' not found` on jammy). No
-      # older cargo-deb release fixes this either -- upstream has built on ubuntu-latest since well
-      # before the runner migration, so every recent release has the same mismatch. Compiling
-      # locally is correct by construction, since it links against this container's own glibc.
-      # Version pinned so a future cargo-deb release can't silently change behaviour mid-run;
-      # --locked uses cargo-deb's own Cargo.lock for reproducible dependency resolution.
+      # Compiled from source: cargo-deb's prebuilt binary is built on ubuntu-latest (glibc 2.39) and
+      # cannot run in this AlmaLinux 9 container (glibc 2.34). Version pinned and --locked, so a new
+      # release cannot change the packages mid-run.
       - name: Install cargo-deb
         run: cargo install cargo-deb --locked --version 3.7.0
 
-      # Compiled for the same reasons as cargo-deb above (RTM-29). It writes the RPMs itself: no
+      # Compiled for the same reasons as cargo-deb above. It writes the RPMs itself: no
       # rpmbuild or spec file to install.
       - name: Install cargo-generate-rpm
         run: cargo install cargo-generate-rpm --locked --version 0.21.1
@@ -836,12 +823,9 @@ jobs:
       - name: Build rtmapp and rtmcli
         run: cargo build --release -p rtmapp -p rtmcli
 
-      # Both debs are described in [package.metadata.deb] of their crate's Cargo.toml, including
-      # the package name. --no-build reuses the binaries from the step above. --deb-revision=""
-      # drops cargo-deb's default "-1" revision suffix. --output writes straight to the final
-      # staged name: cargo-deb's default output directory is `target/debian/` (NOT
-      # `target/release/debian/` -- RTM-30 failed on exactly that wrong assumption), so naming
-      # the destination explicitly removes any dependence on where it would otherwise land.
+      # Both debs are described in [package.metadata.deb] of their crate's Cargo.toml. --no-build
+      # reuses the binaries above, --deb-revision="" drops the default "-1" suffix, and --output
+      # names the file, as cargo-deb writes to target/debian/, not target/release/debian/.
       - name: Package the debs
         shell: bash
         env:
@@ -878,7 +862,6 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: scripts/build-appimage.sh target/release/rtmapp "$VERSION" "dist/rtmapp_${VERSION}_amd64.AppImage"
 
-      # Fail loudly if an asset is missing rather than silently shipping without it.
       - name: Check staged artifacts
         shell: bash
         env:
@@ -935,9 +918,9 @@ jobs:
           path: check-mcp
 
       # Nothing is built here. The package index is refreshed because the install check below
-      # resolves the debs' Depends from it. Same hardened apt pattern as before (RTM-28) -- pin the
-      # mirror, bound retries and timeouts. kernel.org's mirror stands in when Ubuntu's DNS fails
-      # (RTM-213, see doc/ci.md).
+      # resolves the debs' Depends from it. Same hardened apt pattern as before: pin the mirror,
+      # bound retries and timeouts. kernel.org's mirror stands in when Ubuntu's DNS fails (see
+      # doc/ci.md).
       - name: Refresh the apt index
         timeout-minutes: 10
         run: |
@@ -1004,7 +987,7 @@ jobs:
             exit 1
           fi
 
-      # Both installed binaries answer the MCP handshake (RTM-116): rtmcli on -f, rtmapp on the files
+      # Both installed binaries answer the MCP handshake: rtmcli on -f, rtmapp on the files
       # of its config, from a scratch XDG_CONFIG_HOME. One after the other: servers with the same
       # parent count as one client.
       - name: Check the MCP servers
@@ -1109,7 +1092,7 @@ jobs:
 
       # The upgrade users will actually make: the previous release's debs, then the new ones over
       # them. Runs after the fresh install above, which proves the Depends resolve from nothing (an
-      # upgrade could mask a missing one). Unlike on Windows, v0.1.3 is not skipped: it is the Tauri
+      # upgrade could mask a missing one). Unlike on Windows, v0.1.3 is not skipped: it is the 0.1.x
       # deb (also named rtmapp) and nothing else tests that upgrade. Its webkit2gtk dependencies make
       # this the slowest apt step while v0.1.3 is the previous release.
       - name: Verify upgrade from the previous release
@@ -1215,7 +1198,7 @@ jobs:
           debs=("$PWD/dist/rtmapp_${VERSION}_amd64.deb" "$PWD/dist/rtmcli_${VERSION}_amd64.deb")
           apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
           # The image names Ubuntu's hosts directly; kernel.org's mirror stands in when Ubuntu's DNS
-          # fails (RTM-213, see doc/ci.md).
+          # fails (see doc/ci.md).
           if ! getent hosts archive.ubuntu.com > /dev/null; then
             echo "::warning::archive.ubuntu.com does not resolve; using mirrors.edge.kernel.org."
             sed -i -E 's#http://(archive|security)\.ubuntu\.com/ubuntu/?#http://mirrors.edge.kernel.org/ubuntu/#' \
@@ -1260,7 +1243,7 @@ jobs:
             exit 1
           fi
 
-      # Both installed binaries answer the MCP handshake (RTM-116): rtmcli on -f, rtmapp on the files
+      # Both installed binaries answer the MCP handshake: rtmcli on -f, rtmapp on the files
       # of its config, from a scratch XDG_CONFIG_HOME. One after the other: servers with the same
       # parent count as one client.
       - name: Check the MCP servers
@@ -1366,7 +1349,7 @@ jobs:
             exit 1
           fi
 
-      # Both installed binaries answer the MCP handshake (RTM-116): rtmcli on -f, rtmapp on the files
+      # Both installed binaries answer the MCP handshake: rtmcli on -f, rtmapp on the files
       # of its config, from a scratch XDG_CONFIG_HOME. One after the other: servers with the same
       # parent count as one client.
       - name: Check the MCP servers
@@ -1382,8 +1365,8 @@ jobs:
           XDG_CONFIG_HOME="$scratch/config" bash check-mcp/check-mcp.sh "$scratch/todo.txt" /usr/bin/rtmapp mcp
 
       # The same skip logic as the deb upgrade in linux-deb, on Fedora only (gh is packaged there). Installing
-      # the newer RPM over the older one with dnf upgrades it in place. No release before RTM-9 has
-      # RPMs, so this skips until the second release that has them.
+      # the newer RPM over the older one with dnf upgrades it in place. No release before 26.1.0 has
+      # RPMs.
       - name: Verify RPM upgrade from the previous release
         if: matrix.image == 'fedora:latest'
         timeout-minutes: 15
@@ -1470,7 +1453,6 @@ jobs:
           cp target/universal/rtmcli LICENSE "$stage/"
           tar -czf "dist/rtmcli-${VERSION}-macos-universal.tar.gz" -C "$stage" rtmcli LICENSE
 
-      # Fail loudly if an asset is missing rather than silently shipping without it.
       - name: Check staged artifacts
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -1557,7 +1539,7 @@ jobs:
             echo '::notice::Rosetta is not installed: the x86_64 slice of rtmcli was not run.'
           fi
 
-          # Both binaries answer the MCP handshake (RTM-116), one after the other (servers with the
+          # Both binaries answer the MCP handshake, one after the other (servers with the
           # same parent count as one client): rtmcli on -f, rtmapp on the files of its config, read
           # from a scratch HOME (dirs::config_dir() is under it). Under Rosetta too when installed.
           mcp=$(cd "$(mktemp -d)" && pwd -P)
@@ -1657,7 +1639,7 @@ jobs:
           body: ${{ needs.version.outputs.notes }}
           files: dist/*
 
-  # The check the main ruleset requires (RTM-76): passes when the package builds passed, or were
+  # The check the main ruleset requires: passes when the package builds passed, or were
   # skipped because the pull request changes nothing that goes into the packages; fails when any
   # of them failed or was cancelled.
   release:
