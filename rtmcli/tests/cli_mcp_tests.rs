@@ -11,7 +11,6 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-/// An empty scratch directory for test `name`.
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmcli-mcp-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);

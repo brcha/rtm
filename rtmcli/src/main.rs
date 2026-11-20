@@ -294,7 +294,6 @@ impl Repo {
         }
     }
 
-    /// Commits the saved file with `message`, then syncs (pulls and pushes) when there is a remote.
     fn commit_and_sync(&self, message: &str) {
         if let Err(e) = self.vcs.commit(&self.file, message) {
             eprintln!("Not committed: {e}");
@@ -304,7 +303,6 @@ impl Repo {
     }
 }
 
-/// Exits: the repository has conflicts the user resolves by hand.
 fn conflicted(file: &Path) -> ! {
     eprintln!(
         "The repository holding '{}' has conflicts or a stopped rebase or merge; resolve them by \
@@ -314,8 +312,8 @@ fn conflicted(file: &Path) -> ! {
     std::process::exit(1);
 }
 
-/// The write lock rtmapp and the MCP server share (RTM-142, RTM-158), on the file's repository, or
-/// on the file outside one: held while this command reads, pulls, changes and commits it, so no other
+/// The write lock rtmapp and the MCP server share, on the file's repository, or on the file
+/// outside one: held while this command reads, pulls, changes and commits it, so no other
 /// rtm process writes the file meanwhile. Waits for it. A file whose directory does not exist has
 /// nothing to protect (the command reports it); any other failure exits when the command writes or
 /// pulls (`needed`), and is only a warning for a plain read.
@@ -335,7 +333,6 @@ fn lock(file: &str, needed: bool) -> Option<WriteLock> {
     }
 }
 
-/// Pulls (when `repo` has a remote), then reloads `lib` so it holds what the pull brought.
 fn pull_and_reload(repo: Option<&Repo>, lib: &mut TodoLibrary, file_name: &str) {
     if repo.is_some_and(Repo::sync)
         && let Err(e) = lib.load()
@@ -515,7 +512,6 @@ fn main() {
             if let Some(repo) = repo {
                 repo.sync();
             }
-            // Try to load existing items to preserve them
             let _ = lib.load(); // Ignore error if file doesn't exist
             let item: TodoItem = description.parse().unwrap_or_else(|e| {
                 eprintln!("Error parsing todo: {:?}", e);
@@ -589,11 +585,9 @@ fn main() {
                         std::process::exit(1);
                     }
                 } else {
-                    // No second arg, complete all filtered
                     indices_to_complete = filtered_indices;
                 }
             } else {
-                // arg1 is identifier
                 if let Ok(index) = arg1_ref.parse::<usize>() {
                     let uncompleted: Vec<usize> =
                         (0..items.len()).filter(|&i| !items[i].done).collect();

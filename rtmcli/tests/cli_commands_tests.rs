@@ -15,10 +15,8 @@ fn test_cli_add_single_task() {
     let temp_file = temp_dir.join("test_cli_add_single.txt");
     let file_path = temp_file.to_str().unwrap();
 
-    // Clean up any existing file
     fs::remove_file(&temp_file).ok();
 
-    // Run add command
     let output = Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "add", "Buy milk"])
         .output()
@@ -26,11 +24,10 @@ fn test_cli_add_single_task() {
 
     assert!(output.status.success());
 
-    // Check file content — add_item stamps today's date as the creation date
+    // add_item stamps today's date as the creation date.
     let content = fs::read_to_string(&temp_file).unwrap();
     assert_eq!(content.trim(), format!("{} Buy milk", today()));
 
-    // Clean up
     fs::remove_file(&temp_file).unwrap();
 }
 
@@ -42,19 +39,17 @@ fn test_cli_add_multiple_tasks() {
 
     fs::remove_file(&temp_file).ok();
 
-    // Add first task
     Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "add", "Buy milk"])
         .output()
         .expect("Failed to add first task");
 
-    // Add second task
     Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "add", "Call mom"])
         .output()
         .expect("Failed to add second task");
 
-    // Check file has both — add_item stamps today's date as the creation date
+    // add_item stamps today's date as the creation date.
     let content = fs::read_to_string(&temp_file).unwrap();
     let lines: Vec<&str> = content.lines().collect();
     assert_eq!(lines.len(), 2);
@@ -73,7 +68,6 @@ fn test_cli_list_tasks() {
 
     fs::remove_file(&temp_file).ok();
 
-    // Add tasks
     Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "add", "Task 1"])
         .output()
@@ -83,7 +77,6 @@ fn test_cli_list_tasks() {
         .output()
         .unwrap();
 
-    // List tasks
     let output = Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "list"])
         .output()
@@ -106,13 +99,11 @@ fn test_cli_complete_task_by_index() {
 
     fs::remove_file(&temp_file).ok();
 
-    // Add task
     Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "add", "Incomplete task"])
         .output()
         .unwrap();
 
-    // Complete task by index
     let output = Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "complete", "1"])
         .output()
@@ -120,8 +111,7 @@ fn test_cli_complete_task_by_index() {
 
     assert!(output.status.success());
 
-    // Check file has 'x', today's completion date, and today's creation date (stamped by
-    // add_item when the task was first added, moments before completion)
+    // The creation date is today's too: add_item stamped it moments before the completion.
     let content = fs::read_to_string(&temp_file).unwrap();
     let today = today();
     assert!(content.starts_with(&format!("x {} {} Incomplete task", today, today)));
@@ -137,7 +127,6 @@ fn test_cli_list_completed_tasks() {
 
     fs::remove_file(&temp_file).ok();
 
-    // Add and complete task
     Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "add", "Complete this"])
         .output()
@@ -147,13 +136,11 @@ fn test_cli_list_completed_tasks() {
         .output()
         .unwrap();
 
-    // Add another uncompleted
     Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "add", "Keep uncompleted"])
         .output()
         .unwrap();
 
-    // List completed
     let output = Command::new(env!("CARGO_BIN_EXE_rtmcli"))
         .args(["-f", file_path, "list", "--completed"])
         .output()

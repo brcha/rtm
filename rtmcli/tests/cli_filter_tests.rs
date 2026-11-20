@@ -1,5 +1,3 @@
-//! The due-date filters of `list` and `complete`, run on a scratch todo.txt.
-
 use chrono::{Duration, Local};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,7 +5,6 @@ use std::process::{Command, Output};
 
 const UUID: &str = "12345678-1234-1234-1234-123456789abc";
 
-/// The date `days` from today.
 fn day(days: i64) -> String {
     (Local::now().date_naive() + Duration::days(days))
         .format("%Y-%m-%d")
@@ -27,7 +24,6 @@ fn fixture() -> Vec<String> {
     ]
 }
 
-/// A todo.txt holding the fixture, in an empty scratch directory for test `name`.
 fn todo_file(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmcli-test-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
