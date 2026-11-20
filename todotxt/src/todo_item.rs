@@ -75,8 +75,8 @@ struct Token {
     kind: Kind,
 }
 
-/// What a word after the head set. `Pri` is a `pri:` tag that set the priority; one that did
-/// not, like any unreadable tag, is a description `Word`.
+/// What a word after the head set. `Pri` is a `pri:` tag that set the priority (only one on a
+/// done line does); one that did not, like any unreadable tag, is a description `Word`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Kind {
     Word,
@@ -221,11 +221,13 @@ impl FromStr for TodoItem {
             {
                 sub = Some(parsed_sub);
                 Kind::Sub
-            } else if word.starts_with("pri:")
+            } else if done
+                && word.starts_with("pri:")
                 && word.len() > 4
                 && let Ok(parsed) = TodoPriority::from_tag_value(&word[4..])
-                // A `pri:` that disagrees with the leading `(X)` stays text; `(X)` keeps
-                // the priority.
+                // The specification names `pri:` only to keep a complete task's priority: on
+                // an open line it is an ordinary tag, as is a `pri:` that disagrees with the
+                // leading `(X)`, which keeps the priority.
                 && (!priority_from_parens || priority.priority == parsed.priority)
             {
                 priority = parsed;
