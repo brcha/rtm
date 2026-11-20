@@ -13,7 +13,6 @@ fn completing_a_recurring_item_saves_it_and_the_next_occurrence() {
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert!(lines[0].starts_with("x ") && lines[0].contains("due:2026-11-01"));
     assert!(!lines[1].starts_with("x ") && lines[1].contains("due:2026-11-08"));
-    // Re-read after completing, as in the Tauri app.
     assert_eq!(
         app.file().unwrap().library.as_ref().unwrap().item_count(),
         2
@@ -147,7 +146,6 @@ const LINKED: &str = "First\n\
 fn asking_to_delete_counts_the_sub_items() {
     let dir = temp_dir("ask-delete");
     let mut app = app_with(&dir, LINKED);
-    // All five fixture lines are loaded.
     assert_eq!(
         app.file().unwrap().library.as_ref().unwrap().item_count(),
         5

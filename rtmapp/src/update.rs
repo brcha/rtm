@@ -1,4 +1,4 @@
-//! The update check (RTM-138): a few seconds after start, then daily, on a thread of its own.
+//! The update check: a few seconds after start, then daily, on a thread of its own.
 //! A newer release becomes the notice under the header; a failure is only logged. Without the
 //! `update-check` feature (the Nix package) the check is never enabled.
 

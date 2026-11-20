@@ -1,6 +1,5 @@
 use super::*;
 
-/// The text of each link `links` finds in `text`.
 fn found(text: &str) -> Vec<&str> {
     links(text).into_iter().map(|range| &text[range]).collect()
 }

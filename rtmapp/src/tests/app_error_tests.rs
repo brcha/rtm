@@ -1,4 +1,4 @@
-//! The two error lines (RTM-125): the app line and the open file's line, and what clears each.
+//! The two error lines: the app line and the open file's line, and what clears each.
 
 use super::support_tests::*;
 

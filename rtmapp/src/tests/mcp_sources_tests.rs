@@ -2,7 +2,6 @@ use super::*;
 
 use rtmsync::Vcs;
 
-/// A config path in a fresh scratch directory under the system temp directory.
 fn temp_path(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmapp-mcp-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

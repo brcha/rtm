@@ -1,4 +1,4 @@
-//! Changes another program makes to an open file (RTM-142).
+//! Changes another program makes to an open file.
 
 use super::support_tests::*;
 use super::*;

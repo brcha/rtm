@@ -356,9 +356,8 @@ fn the_filter_and_sort_toggles_change_the_list_and_are_saved() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// The menu and the Settings dialog (RTM-134).
+// The menu and the Settings dialog.
 
-/// Opens the title bar's menu.
 fn open_menu(harness: &mut Harness<'_, App>) {
     harness.get_by_label("Menu").click();
     harness.run();
@@ -384,7 +383,6 @@ fn start_buttons(harness: &Harness<'_, App>) -> usize {
         .count()
 }
 
-/// Whether the quick-add input and its Add button are enabled.
 fn add_row_enabled(harness: &Harness<'_, App>) -> bool {
     let input = harness.get_by_role(Role::TextInput);
     let add = harness.get_by_role_and_label(Role::Button, "Add");
@@ -536,7 +534,7 @@ fn quit_closes_the_window_through_the_normal_close() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Tabs (RTM-127).
+// Tabs.
 
 /// The harness on `todo.txt` and `work.txt` ("Report"), both in the session, `work.txt` shown
 /// when `work_active`, labelled "Work".
@@ -653,7 +651,7 @@ fn the_add_button_offers_new_file_and_load_file() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// The page while no file is open (RTM-179).
+// The page while no file is open.
 
 #[test]
 fn with_no_file_open_the_page_offers_new_file_and_load_file() {
@@ -733,9 +731,8 @@ fn a_tab_cannot_be_closed_while_the_edit_dialog_is_open() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Moving an item to another open file (RTM-128).
+// Moving an item to another open file.
 
-/// Opens the edit dialog on the row `item`.
 fn edit_row(harness: &mut Harness<'_, App>, item: &str) {
     harness.get_by_role_and_label(Role::Label, item).click();
     harness.run();
@@ -784,7 +781,7 @@ fn an_item_moves_to_another_tab_after_asking() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// The update notice and its settings (RTM-138).
+// The update notice and its settings.
 
 /// Answers one request with a release list holding the stable release `version`.
 #[cfg(feature = "update-check")]
@@ -942,7 +939,7 @@ fn a_build_without_the_check_has_no_update_settings() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Projects and contexts in the sidebar (RTM-120).
+// Projects and contexts in the sidebar.
 
 /// The sidebar's tag rows, as `<tag> <open count>`, in order: each tag button followed by its
 /// count label, with ` (selected)` while the tag filters the list.
@@ -1042,7 +1039,7 @@ fn a_long_tag_list_scrolls_above_the_total() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Filtering from the sidebar (RTM-121).
+// Filtering from the sidebar.
 
 const TAGGED: &str = "Write the report +work @office\nCall the client +work @phone\n\
                       Fix the fence +home @phone\nx 2026-01-01 Plant bulbs +garden\n";
@@ -1158,7 +1155,7 @@ fn a_selected_tag_that_leaves_the_file_leaves_the_selection() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Renaming a tab (RTM-151).
+// Renaming a tab.
 
 /// Right-clicks the tab `name` and picks Rename tab from its context menu.
 fn start_rename(harness: &mut Harness<'_, App>, name: &str) {
@@ -1275,7 +1272,7 @@ fn clicking_another_tab_keeps_the_new_name_and_switches() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Filtering by a tag clicked in an item row (RTM-150).
+// Filtering by a tag clicked in an item row.
 
 /// Where `click_row` clicks in a row's text.
 enum Side {
@@ -1387,7 +1384,7 @@ fn a_click_past_the_end_of_a_wrapped_rows_last_line_edits() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Links in item text (RTM-193).
+// Links in item text.
 
 /// The URLs the last frame asked the OS to open.
 fn opened_urls(harness: &Harness<'_, App>) -> Vec<String> {

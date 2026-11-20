@@ -1,7 +1,6 @@
 use super::support_tests::*;
 use super::*;
 
-/// Writes `name` in `dir` with `contents` and returns its canonical path.
 fn write(dir: &Path, name: &str, contents: &str) -> PathBuf {
     std::fs::write(dir.join(name), contents).unwrap();
     resolve(&dir.join(name)).unwrap()
@@ -250,7 +249,7 @@ fn switching_waits_for_the_edit_dialog() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Renaming a tab (RTM-151).
+// Renaming a tab.
 
 #[test]
 fn renaming_a_tab_labels_it_and_saves_the_name_in_its_entry() {

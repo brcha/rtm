@@ -1,6 +1,5 @@
 use super::*;
 
-/// `plain_path` of `path`, as a string.
 fn plain(path: &str) -> String {
     plain_path(Path::new(path)).to_string_lossy().into_owned()
 }

@@ -1,4 +1,4 @@
-//! The write lock shared with other rtm processes (RTM-142).
+//! The write lock shared with other rtm processes.
 
 use super::support_tests::*;
 use super::*;

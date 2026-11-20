@@ -55,7 +55,7 @@ winresource = "0.1.34"
 # API (OpenGL ES through EGL, or Vulkan), fontconfig (system fonts for glyphs missing from the bundled
 # Inter), and the XDG portal with a backend that has a file chooser (not the virtual
 # xdg-desktop-portal-backend: xdg-desktop-portal-wlr provides it without one). X11 support is optional,
-# and so are git and pijul (sync through the repository the todo.txt lives in, RTM-64).
+# and so are git and pijul (sync through the repository the todo.txt lives in).
 [package.metadata.deb]
 name = "rtmapp"
 maintainer = "Filip Brcic <filip.brcic@brcha.com>"

@@ -1,11 +1,9 @@
-//! Colours, fonts and egui styling that reproduce the look of the former Tauri
-//! app (`rtmapp/src/styles.css` at 5076649); see "Look" in `rtmapp/AGENTS.md`.
+//! Colours, fonts and egui styling; see "Look" in `rtmapp/AGENTS.md`.
 
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, Theme, Ui,
 };
 
-/// Colours for one theme. Fields are added as the widgets that use them are ported.
 pub struct Palette {
     pub bg: Color32,
     pub header: Color32,
@@ -26,13 +24,11 @@ pub struct Palette {
     pub threshold: Color32,
     pub input_bg: Color32,
     pub input_border: Color32,
-    /// Focused form field border and glow (`.form-group input:focus`).
+    /// Focused form field border and glow.
     pub focus: Color32,
     pub dialog_bg: Color32,
-    /// Transparent in light: only the dark CSS gives the dialog a border.
+    /// Transparent in light: only the dark theme gives the dialog a border.
     pub dialog_border: Color32,
-    /// The calendar popup. Light copies flatpickr's CSS (its translucent colours blended over white);
-    /// dark uses the app's dark palette, as flatpickr has no dark theme.
     pub cal_bg: Color32,
     pub cal_border: Color32,
     /// Month name, year and arrows.
@@ -121,7 +117,7 @@ const DARK: Palette = Palette {
 /// Done-item checkbox colour; the same in both themes.
 pub const GREEN: Color32 = rgb(0x28, 0xa7, 0x45);
 
-/// Priority colour for A, B and C. Other letters have no colour in the CSS and use the text colour.
+/// Priority colour for A, B and C. Other letters use the text colour.
 pub fn priority_color(priority: u8) -> Option<Color32> {
     match priority {
         0 => Some(rgb(0xe7, 0x4c, 0x3c)),
@@ -131,25 +127,22 @@ pub fn priority_color(priority: u8) -> Option<Color32> {
     }
 }
 
-/// CSS `#0366d6`: the primary button and the focused input border (both themes for the add row).
+/// The primary button and the focused input border (both themes for the add row).
 pub const BLUE: Color32 = rgb(0x03, 0x66, 0xd6);
 
-/// The blue "Load File" button with its CSS hover colour.
 pub fn primary_button(ui: &mut Ui, text: &str) -> egui::Response {
     filled_button(ui, text, BLUE, rgb(0x02, 0x56, 0xb9))
 }
 
-/// The green "Add" button with its CSS hover colour.
 pub fn success_button(ui: &mut Ui, text: &str) -> egui::Response {
     filled_button(ui, text, GREEN, rgb(0x21, 0x88, 0x38))
 }
 
-/// The grey "Cancel" button with its CSS hover colour (`.btn-secondary`, the same in both themes).
+/// The same in both themes.
 pub fn secondary_button(ui: &mut Ui, text: &str) -> egui::Response {
     filled_button(ui, text, rgb(0x6a, 0x73, 0x7d), rgb(0x58, 0x60, 0x69))
 }
 
-/// The red "Delete" button (Bootstrap's `.btn-danger` pair, like the other button colours).
 pub fn danger_button(ui: &mut Ui, text: &str) -> egui::Response {
     filled_button(ui, text, rgb(0xdc, 0x35, 0x45), rgb(0xc8, 0x23, 0x33))
 }
@@ -269,8 +262,7 @@ pub fn add_button(ui: &mut Ui, p: &Palette) -> egui::Response {
     response
 }
 
-/// The frame of the app's dialogs, from the Tauri app's CSS: 24 px padding, 8 px corners and a
-/// soft shadow; the dark theme adds a border.
+/// The frame of the app's dialogs; the dark theme adds a border.
 pub fn dialog_frame(p: &Palette) -> egui::Frame {
     egui::Frame::new()
         .fill(p.dialog_bg)
@@ -313,8 +305,8 @@ pub fn question(
         .should_close()
 }
 
-/// A single-line input like the CSS ones: 1 px border, 6 px corners, 12 px side padding and
-/// `pad_y` above and below, and when focused a `focus` border with a soft 3 px glow.
+/// A single-line input with `pad_y` above and below the text, and a `focus` border with a soft
+/// glow while focused.
 pub fn text_input(
     ui: &mut Ui,
     p: &Palette,
@@ -400,7 +392,6 @@ pub fn install(ctx: &egui::Context) {
     ctx.set_fonts(fonts());
     ctx.set_visuals_of(Theme::Light, visuals(Theme::Light, &LIGHT));
     ctx.set_visuals_of(Theme::Dark, visuals(Theme::Dark, &DARK));
-    // CSS: root font-size 14 px, buttons 0.9rem, small text 0.85rem.
     ctx.all_styles_mut(|style| {
         use egui::TextStyle::{Body, Button, Heading, Small};
         style.text_styles.insert(Body, FontId::proportional(14.0));

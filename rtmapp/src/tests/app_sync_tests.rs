@@ -9,7 +9,7 @@ fn a_commit_message_names_only_the_description() {
     assert_eq!(Change::Toggle(item).describe(), "rtm: complete Pay bill");
 }
 
-// Sync (RTM-64, RTM-20): scratch git remotes and clones on local paths, no network.
+// Sync: scratch git remotes and clones on local paths, no network.
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git")
@@ -84,12 +84,10 @@ fn synced_app(dir: &Path, file: &Path) -> App {
     app
 }
 
-/// The worker of the shown file's repository.
 fn worker(app: &App) -> Option<&Worker> {
     app.repo_of(app.file()?).map(|repo| &repo.worker)
 }
 
-/// The sync line of the shown file's repository.
 fn status(app: &App) -> Option<&str> {
     app.repo_of(app.file()?)
         .and_then(|repo| repo.status.as_deref())
@@ -590,7 +588,7 @@ fn a_conflicted_repository_is_not_opened() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Several open files (RTM-126): one worker per repository, shared by its files. These tests open
+// Several open files: one worker per repository, shared by its files. These tests open
 // the files directly, as the session at startup does.
 
 /// An app with `files` open, each connected as at startup, the first one shown.
@@ -727,7 +725,7 @@ fn a_conflict_closes_only_the_files_of_its_repository() {
     let _ = std::fs::remove_dir_all(two);
 }
 
-// The check on open runs on the repository's worker (RTM-126).
+// The check on open runs on the repository's worker.
 
 #[test]
 fn a_change_made_during_the_check_on_open_waits_for_it() {
@@ -800,7 +798,7 @@ fn a_change_during_the_check_of_an_untracked_file_is_written_but_not_committed()
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Turning sync on or off in Settings (RTM-134).
+// Turning sync on or off in Settings.
 
 /// Saves the Settings dialog with `sync` changed to `on`.
 fn set_sync(app: &mut App, on: bool) {
@@ -867,7 +865,7 @@ fn a_new_interval_keeps_the_worker() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Closing tabs and questions in background tabs (RTM-127).
+// Closing tabs and questions in background tabs.
 
 #[test]
 fn closing_waits_for_the_repository_and_its_last_tab_pushes_once_more() {
@@ -924,9 +922,8 @@ fn a_question_in_a_background_tab_brings_it_to_front_without_writing_the_config(
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Moving an item to another open file (RTM-128).
+// Moving an item to another open file.
 
-/// The repository key of the open file at `file`.
 fn key_of(app: &App, file: &Path) -> RepoKey {
     let file = resolve(file).unwrap();
     let open = app.files.iter().find(|open| open.is(&file)).unwrap();
@@ -1151,7 +1148,7 @@ fn the_source_cannot_be_closed_until_its_moved_item_reached_the_target() {
     let _ = std::fs::remove_dir_all(two);
 }
 
-// Changes another program makes to an open synced file (RTM-142).
+// Changes another program makes to an open synced file.
 
 #[test]
 fn a_committed_outside_change_is_reloaded_without_asking() {

@@ -1,9 +1,5 @@
-//! The date fields of the edit dialog: a text input with a calendar popup below it, styled like the
-//! flatpickr popup the former Tauri app used (`rtmapp/src/assets/flatpickr.min.css` at 5076649).
-//! Typing a date still works, as flatpickr's `allowInput: true` allows. Deliberate differences: the
-//! dark theme uses the app's dark palette (flatpickr is light only), a Clear button empties the
-//! field, the week starts on the locale's first day (flatpickr: Sunday), and the month is stepped
-//! with arrows (no month dropdown).
+//! The date fields of the edit dialog: a text input, where a date can still be typed, with a
+//! calendar popup below it. The week starts on the locale's first day.
 
 use std::sync::OnceLock;
 
@@ -17,7 +13,6 @@ use crate::theme::{self, Palette};
 
 const DATE_FORMAT: &str = "%Y-%m-%d";
 
-// flatpickr: 307.875 px wide, a 34 px month header, a 28 px weekday row and 39 px round days.
 const WIDTH: f32 = 307.875;
 const HEADER: f32 = 34.0;
 const WEEKDAYS: f32 = 28.0;
@@ -41,7 +36,6 @@ const MONTHS: [&str; 12] = [
     "December",
 ];
 
-/// What the user did in the popup.
 enum Pick {
     Day(NaiveDate),
     Clear,
@@ -89,7 +83,6 @@ pub fn date_field(ui: &mut Ui, p: &Palette, text: &mut String, hint: &str) -> Re
     response
 }
 
-/// CSS `.flatpickr-calendar`: 5 px corners, a 1 px outline and a soft shadow.
 fn frame(p: &Palette) -> Frame {
     Frame::new()
         .fill(p.cal_bg)
@@ -112,9 +105,9 @@ fn month(ui: &mut Ui, p: &Palette, view_id: egui::Id, selected: Option<NaiveDate
     let mut pick = None;
     ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
     // Everything here senses `Sense::CLICK` without `FOCUSABLE`, so Tab skips the popup and goes
-    // from the date field to the next field, as in flatpickr.
+    // from the date field to the next field.
 
-    // Header: ‹ Month Year ›, with the year's up and down arrows shown on hover as in flatpickr.
+    // Header: ‹ Month Year ›, with the year's up and down arrows shown on hover.
     let (header, _) = ui.allocate_exact_size(vec2(WIDTH, HEADER), Sense::hover());
     let arrow_color = p.cal_header;
     let prev = Rect::from_min_size(header.min, vec2(HEADER, HEADER));
@@ -187,7 +180,7 @@ fn month(ui: &mut Ui, p: &Palette, view_id: egui::Id, selected: Option<NaiveDate
         ui.data_mut(|d| d.insert_temp(wheel_id, if steps != 0.0 { 0.0 } else { total }));
     }
 
-    // Weekday row: CSS 90 %, bolder.
+    // Weekday row.
     let first = first_weekday_cached();
     let (row, _) = ui.allocate_exact_size(vec2(WIDTH, WEEKDAYS), Sense::hover());
     let column = WIDTH / 7.0;
@@ -255,7 +248,7 @@ fn month(ui: &mut Ui, p: &Palette, view_id: egui::Id, selected: Option<NaiveDate
         }
     }
 
-    // Clear: not in flatpickr; empties the field.
+    // Clear empties the field.
     let (footer, _) = ui.allocate_exact_size(vec2(WIDTH, FOOTER), Sense::hover());
     let clear = ui
         .interact(
@@ -286,7 +279,7 @@ fn month(ui: &mut Ui, p: &Palette, view_id: egui::Id, selected: Option<NaiveDate
     pick
 }
 
-/// A month arrow: a 14 px chevron pointing left (`dir < 0`) or right, as flatpickr's SVG.
+/// A month arrow: a 14 px chevron pointing left (`dir < 0`) or right.
 fn arrow_button(ui: &Ui, id: egui::Id, rect: Rect, color: Color32, dir: f32) -> Response {
     let response = ui
         .interact(rect, id, Sense::CLICK)
@@ -352,7 +345,7 @@ fn step(view: NaiveDate, months: i32) -> NaiveDate {
 }
 
 /// The 42 days shown for the month of `view`: six weeks starting on the `first` weekday on or
-/// before the 1st, as flatpickr shows the end of the previous month and the start of the next.
+/// before the 1st, so the end of the previous month and the start of the next are shown.
 fn grid(view: NaiveDate, first: Weekday) -> [NaiveDate; 42] {
     let start = first_of_month(view);
     let back = (start.weekday().num_days_from_monday() + 7 - first.num_days_from_monday()) % 7;
