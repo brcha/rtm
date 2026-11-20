@@ -65,3 +65,25 @@ fn test_save_to_new_file() {
 
     std::fs::remove_file(&path).unwrap();
 }
+
+#[test]
+fn a_new_library_is_saved_with_a_final_newline() {
+    let path = std::env::temp_dir().join(format!("{}.txt", uuid::Uuid::new_v4()));
+    let mut lib = TodoLibrary::new(path.to_str().unwrap().to_string());
+    lib.items.push("Buy milk".parse().unwrap());
+    lib.save().unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "Buy milk\n");
+    fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn an_empty_file_gets_a_final_newline_once_it_has_an_item() {
+    let path = std::env::temp_dir().join(format!("{}.txt", uuid::Uuid::new_v4()));
+    fs::write(&path, "").unwrap();
+    let mut lib = TodoLibrary::new(path.to_str().unwrap().to_string());
+    lib.load().unwrap();
+    lib.items.push("Buy milk".parse().unwrap());
+    lib.save().unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "Buy milk\n");
+    fs::remove_file(&path).unwrap();
+}
