@@ -6,7 +6,6 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-/// How long a network call (pull, push) may run before it is killed.
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A failure to run a version control system's executable.
@@ -19,7 +18,6 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
-    /// The executable ran and failed.
     #[error("{program} failed ({status}): {stderr}")]
     Failed {
         program: &'static str,
@@ -34,7 +32,7 @@ pub enum Error {
     Timeout { program: &'static str },
 }
 
-/// The state of a file in its repository, which rtm checks when it opens the file (RTM-63).
+/// The state of a file in its repository, which rtm checks when it opens the file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum State {
     /// Tracked, with nothing uncommitted.
@@ -57,7 +55,6 @@ pub enum Vcs {
 impl Vcs {
     pub const ALL: [Vcs; 2] = [Vcs::Git, Vcs::Pijul];
 
-    /// The entry that marks a repository.
     pub fn marker(self) -> &'static str {
         match self {
             Vcs::Git => ".git",
@@ -65,7 +62,6 @@ impl Vcs {
         }
     }
 
-    /// Whether `file` is tracked by its repository.
     pub fn is_tracked(self, file: &Path) -> Result<bool, Error> {
         let file = resolve(file);
         let dir = file.parent().unwrap_or(Path::new("."));
@@ -267,7 +263,6 @@ impl Vcs {
     }
 }
 
-/// `true` for success, `false` for a program that ran and said no; other errors pass through.
 fn succeeded(result: Result<(), Error>) -> Result<bool, Error> {
     match result {
         Ok(()) => Ok(true),
@@ -305,7 +300,6 @@ fn git_stopped(dir: &Path) -> Result<bool, Error> {
     Ok(paths.lines().any(|path| dir.join(path).exists()))
 }
 
-/// `file` with its symlinks resolved, or made absolute when it does not exist.
 fn resolve(file: &Path) -> PathBuf {
     let Ok(resolved) = std::fs::canonicalize(file) else {
         return std::path::absolute(file).unwrap_or_else(|_| file.to_path_buf());
@@ -317,14 +311,12 @@ fn resolve(file: &Path) -> PathBuf {
     }
 }
 
-/// Runs `program` with `args`, then `--` and `file`, in `dir`.
 fn run(program: &'static str, dir: &Path, args: &[&str], file: &OsStr) -> Result<(), Error> {
     let mut command = command(program, dir);
     command.args(args).arg("--").arg(file);
     output(program, &mut command).map(drop)
 }
 
-/// A command for `program` in `dir`.
 fn command(program: &str, dir: &Path) -> Command {
     let mut command = Command::new(program);
     command
@@ -340,7 +332,6 @@ fn command(program: &str, dir: &Path) -> Command {
     command
 }
 
-/// Runs `command` to completion and returns its stdout.
 /// A run blocked by another git process's `index.lock` (the app and the CLI at once) is retried
 /// for about 3 s; the lock is never removed.
 fn output(program: &'static str, command: &mut Command) -> Result<String, Error> {
@@ -421,7 +412,6 @@ fn private_temp_file() -> std::io::Result<(PathBuf, std::fs::File)> {
     }
 }
 
-/// `Failed` with `stderr` unless `status` is a success.
 fn check(program: &'static str, status: ExitStatus, stderr: &[u8]) -> Result<(), Error> {
     if status.success() {
         Ok(())
@@ -456,7 +446,6 @@ pub fn lock_target(file: &Path) -> PathBuf {
     root(file).unwrap_or_else(|| file.to_path_buf())
 }
 
-/// The nearest directory holding a marker, and the VCSs whose markers it holds.
 fn nearest(file: &Path) -> Option<(PathBuf, Vec<Vcs>)> {
     let file = resolve(file);
     file.parent()?.ancestors().find_map(|d| {

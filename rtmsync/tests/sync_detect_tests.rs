@@ -1,13 +1,9 @@
-//! `detect` and `root` on files in repositories made by `git init` and `pijul init`, and outside any
-//! repository.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use rtmsync::{Vcs, detect, root};
 
-/// An empty scratch directory for test `name`.
 fn scratch(name: &str) -> PathBuf {
     let dir =
         std::env::temp_dir().join(format!("rtmsync detect test {} {name}", std::process::id()));
@@ -26,7 +22,6 @@ fn canonical_root(file: &Path) -> Option<PathBuf> {
     root(file).map(|dir| canonical(&dir))
 }
 
-/// A new Git repository in `dir`.
 fn git_init(dir: &Path) {
     let output = Command::new("git")
         .args(["init", "-q"])
