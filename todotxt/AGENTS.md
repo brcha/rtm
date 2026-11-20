@@ -90,11 +90,14 @@ todotxt/tests/
   in the specification's form even unchanged (`x 2011-03-02 … pri:A`).
 - **Priority has two serialization forms, chosen by `done`:** an open item writes `(X)`
   before the description; a completed item writes `pri:X` (appended at the end of the line
-  when rtm completes it). Both forms parse regardless of `done`; an unchanged line keeps the
-  form it was read in. If a line carries both and the letters agree (`(C) … pri:C`), the
-  duplicate is accepted; if the letters disagree
-  (`(C) … pri:A`), `(C)` stays the priority and `pri:A` stays in the description as text. A
-  malformed `pri:` value (`pri:xyz`) is text like any other unreadable tag (below).
+  when rtm completes it). `(X)` parses on any line; `pri:X` sets the priority only on a done
+  line (RTM-211), as the specification names it only to keep a complete task's priority. On
+  an open line `pri:A` is an ordinary tag kept as written, so it becomes the priority once the
+  task is completed and the file is read again. An unchanged line keeps the form it was read
+  in. If a done line carries both and the letters agree (`x (C) … pri:C`), the duplicate is
+  accepted; if the letters disagree (`x (C) … pri:A`), `(C)` stays the priority and `pri:A`
+  stays in the description as text. A malformed `pri:` value (`pri:xyz`) is text like any
+  other unreadable tag (below).
 - **`TodoItem::from_str` accepts every line.** A known tag (`due:`, `t:`, `rec:`, `uuid:`,
   `sub:`, `pri:`) whose value rtm cannot read and a leading `(X)` that is not A-Z (`(b)`, `(1)`)
   stay in the description as written, so `TodoLibrary::load`, which skips lines that fail to
