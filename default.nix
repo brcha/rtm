@@ -45,7 +45,6 @@ let
     };
 
 in {
-  # ── rtmcli ──────────────────────────────────────────────────────────────────
   rtmcli = let crate = fromCargo "rtmcli"; in pkgs.rustPlatform.buildRustPackage (crate // {
     inherit src;
     cargoLock.lockFile = ./Cargo.lock;
@@ -63,7 +62,6 @@ in {
     };
   });
 
-  # ── rtmapp ──────────────────────────────────────────────────────────────────
   # The egui desktop app. No native build inputs: on Linux every library is loaded at run time, on
   # macOS the system frameworks come from stdenv's Apple SDK.
   rtmapp = let crate = fromCargo "rtmapp"; in pkgs.rustPlatform.buildRustPackage (crate // {
@@ -80,7 +78,6 @@ in {
       install -Dm644 $src/rtmapp/assets/fonts/Inter-LICENSE.txt \
         $out/share/licenses/rtmapp/Inter-LICENSE.txt
 
-      # XDG desktop entry and hicolor icons
       install -Dm644 $src/rtmapp/assets/rtmapp.desktop $out/share/applications/rtmapp.desktop
       icons=$src/rtmapp/assets/icons
       hicolor=$out/share/icons/hicolor

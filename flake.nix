@@ -16,20 +16,17 @@
         # The packages are defined once, in default.nix.
         inherit (import ./default.nix { inherit pkgs; }) rtmcli rtmapp;
       in {
-        # ── Packages ──────────────────────────────────────────────────────────
         packages = {
           inherit rtmcli rtmapp;
           default = rtmcli;
         };
 
-        # ── Apps ──────────────────────────────────────────────────────────────
         apps = {
           rtmcli = flake-utils.lib.mkApp { drv = rtmcli; };
           rtmapp = flake-utils.lib.mkApp { drv = rtmapp; };
           default = flake-utils.lib.mkApp { drv = rtmcli; };
         };
 
-        # ── Dev shell ─────────────────────────────────────────────────────────
         devShells.default = import ./shell.nix { inherit pkgs; };
       }
     );
