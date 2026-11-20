@@ -1,5 +1,3 @@
-//! The MCP server and its tools.
-
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -73,7 +71,6 @@ impl Server {
     }
 }
 
-/// A tool's text result.
 fn text(text: impl Into<String>) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(text)])
 }

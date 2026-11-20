@@ -32,7 +32,6 @@ pub struct Source {
 }
 
 impl Source {
-    /// The name shown to the client.
     pub fn name(&self) -> String {
         self.name.clone().unwrap_or_else(|| {
             self.path

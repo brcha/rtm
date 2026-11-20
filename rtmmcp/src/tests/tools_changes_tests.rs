@@ -146,7 +146,6 @@ fn test_writes_at_once_all_land() {
     remove(source);
 }
 
-/// Runs git in `dir` and returns its trimmed stdout, panicking on failure.
 fn git(dir: &std::path::Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git")
         .current_dir(dir)

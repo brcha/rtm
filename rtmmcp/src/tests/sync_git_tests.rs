@@ -3,7 +3,6 @@
 use super::*;
 use std::process::Command;
 
-/// Runs git in `dir` and returns its trimmed stdout, panicking on failure.
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(dir)
@@ -14,7 +13,6 @@ fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
-/// An empty scratch directory under the system temp directory.
 fn scratch() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmmcp sync {}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(dir.join("no hooks")).unwrap();
