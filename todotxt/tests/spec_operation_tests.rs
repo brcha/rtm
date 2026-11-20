@@ -28,7 +28,6 @@ fn library(line: &str) -> TodoLibrary {
     library
 }
 
-/// Completes the only item of a library holding `line` and returns the library.
 fn complete(line: &str) -> TodoLibrary {
     let mut library = library(line);
     library.complete_item(0).unwrap();

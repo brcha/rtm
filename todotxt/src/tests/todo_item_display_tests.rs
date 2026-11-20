@@ -114,11 +114,8 @@ fn display_legacy_bare_x_round_trip() {
 
 #[test]
 fn display_done_item_with_creation_date_but_no_completion_date_omits_it() {
-    // A done item can end up with a creation date and no completion date only via
-    // direct construction (e.g. a pre-fix file, or manual struct construction) since
-    // TodoLibrary::complete_item always sets a completion date. Display must never
-    // emit that lone creation date on a done line: FromStr would read it back as the
-    // completion date, silently turning it into a different fact on the next load.
+    // Only built by hand (`complete_item` always sets a completion date): a lone creation date
+    // on a done line would be read back as the completion date.
     let item = TodoItem {
         done: true,
         priority: TodoPriority { priority: None },
@@ -139,9 +136,6 @@ fn display_done_item_with_creation_date_but_no_completion_date_omits_it() {
 
 #[test]
 fn display_done_item_date_handling_is_a_parse_display_fixed_point() {
-    // Guards the defect directly: constructing the corrupting shape by hand and
-    // round-tripping it must converge to a stable, information-preserving line rather
-    // than silently reinterpreting the lone date as something it is not.
     let corrupting_shape = TodoItem {
         done: true,
         priority: TodoPriority { priority: None },

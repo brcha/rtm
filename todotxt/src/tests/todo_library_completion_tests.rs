@@ -41,10 +41,7 @@ fn test_complete_item_preserves_existing_creation_date() {
 
 #[test]
 fn test_complete_item_with_no_creation_date_emits_one_date() {
-    // add_item always stamps a creation date (see test_add_item_stamps_creation_date),
-    // so the only way an item lacks one at completion time is if it entered the library
-    // some other way — e.g. loaded from a pre-existing file. Push directly to bypass
-    // add_item and exercise that path.
+    // Pushed directly, as a loaded line can lack the creation date `add_item` would stamp.
     let mut lib = TodoLibrary::new("dummy.txt".to_string());
     let today = chrono::Local::now().date_naive();
     let item: TodoItem = "Task".parse().unwrap();
