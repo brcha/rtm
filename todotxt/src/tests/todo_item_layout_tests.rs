@@ -141,6 +141,14 @@ fn a_head_is_added_to_a_line_without_one() {
 }
 
 #[test]
+fn a_head_added_to_a_line_starting_with_whitespace_replaces_it() {
+    let mut done = item(" (A) Call Mom");
+    done.done = true;
+    done.completion_date = Some(date("2026-01-06"));
+    assert_eq!(done.to_string(), "x 2026-01-06 (A) Call Mom");
+}
+
+#[test]
 fn a_removed_head_leaves_no_leading_space() {
     assert_eq!(
         item("(A) Call Mom")

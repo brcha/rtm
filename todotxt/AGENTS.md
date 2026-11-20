@@ -86,7 +86,8 @@ todotxt/tests/
   fields equal those read is written byte for byte; otherwise only what changed is patched:
   - a changed `done`, priority, completion or creation date writes a new head (`x` and the
     dates, or `(A)` and the creation date); a changed `done` or priority also removes the `pri:`
-    tag that set the priority and appends `pri:X` for a done item with one;
+    tag that set the priority and appends `pri:X` for a done item with one; a head written on
+    a line that starts with whitespace replaces that whitespace;
   - a changed `due:`, `t:`, `rec:`, `uuid:` or `sub:` replaces its tag in place (the last one,
     which set the field), `None` removes every such tag, and a field that had none appends one;
   - projects and contexts still listed keep their place (a repeated one as often as it is still
@@ -117,6 +118,9 @@ todotxt/tests/
   stay in the description as written, so `TodoLibrary::load`, which skips lines that fail to
   parse, never drops one and the next save keeps it. A date (creation, completion, `due:`,
   `t:`) is exactly `YYYY-MM-DD` (RTM-205, `strict_date`): `2011-3-2` or `11-03-02` is text.
+  The head (`x`, `(A)`, the dates) is read only at the start of the line, and `x` and `(A)`
+  only when a space follows (RTM-212): a line that starts with whitespace, or `x` or `(A)`
+  followed by a tab, is an open task with that text in its description.
 - **`Display` never emits a creation date without a completion date on a done line.** A
   completed item's creation date is written only immediately after its completion date; if
   there is no completion date, no date is written at all, even if a creation date is present.
