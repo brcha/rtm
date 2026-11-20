@@ -83,11 +83,11 @@ fn parse_pri_tag_on_completed_item() {
 }
 
 #[test]
-fn parse_pri_tag_on_open_item() {
+fn a_pri_tag_on_an_open_item_is_text() {
     let item: TodoItem = "Task pri:B".parse().unwrap();
     assert!(!item.done);
-    assert_eq!(item.priority.priority, Some(1));
-    assert_eq!(item.description, "Task");
+    assert_eq!(item.priority.priority, None);
+    assert_eq!(item.description, "Task pri:B");
 }
 
 #[test]

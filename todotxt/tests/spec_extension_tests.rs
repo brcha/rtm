@@ -79,7 +79,6 @@ fn a_recurrence_is_written_back_as_spelled() {
 /// a complete task. On an open task the priority is the leading `(A)` (incomplete tasks, rule 1),
 /// and `pri:A` is an ordinary key:value tag that stays as written.
 #[test]
-#[ignore = "RTM-211: pri: on an open line is read as the priority"]
 fn a_pri_tag_on_an_open_task_is_an_ordinary_tag() {
     let item = parse("Call Mom pri:A");
     assert_eq!(item.priority.priority, None);
