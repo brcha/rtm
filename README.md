@@ -268,6 +268,22 @@ it to add it to the filter or remove it, and click the rest of the item to edit 
 item's text (`http://`, `https://` or `mailto:`) is underlined; click it to open it in your
 browser or mail program.
 
+## Archiving done items
+
+`rtmcli archive` moves the done items out of the todo.txt into `done.txt` next to it (a file with
+another name archives to `<name>.done.<ext>`, for example `notes.done.txt`), and lists what it moved.
+To keep recently completed items, give an age in days with `--older-than` or `RTM_ARCHIVE_DAYS`;
+items completed more recently stay, and a done item without a completion date always moves:
+
+```
+$ rtmcli archive --older-than 30
+```
+
+When the todo.txt syncs, the todo.txt and its archive are committed together. A `done.txt` edited by
+hand stops the command, as the todo.txt does; run it with `--commit-changes` to commit the edits
+first. If the repository ignores the archive, rtmcli says so: the archived items then stay on this
+computer only.
+
 ## Syncing through Git or Pijul
 
 `rtmcli` and the desktop app sync your todo.txt when it is tracked in a Git or Pijul repository.
@@ -280,7 +296,8 @@ title bar), or set it to 0 to sync only on open, on close and on demand; it is s
 
 - Commit the todo.txt to the repository once (`git add todo.txt` and commit, or `pijul add` and
   `pijul record`), or let rtm do it: rtmcli with `--commit-changes`, the desktop app when it asks
-  on open. rtm never adds an untracked file on its own. rtmcli reminds you of an untracked todo.txt
+  on open. rtm never adds an untracked file on its own, except the archive of a synced todo.txt,
+  which `rtmcli archive` adds with the first archive. rtmcli reminds you of an untracked todo.txt
   on every run, and the desktop app asks every time it opens it; ignore the file in the repository
   (`.gitignore`, or `.ignore` for Pijul) to silence them; rtm then never syncs it.
 - If the todo.txt has changes rtm did not commit (edited by hand, or with `--no-sync`), rtmcli

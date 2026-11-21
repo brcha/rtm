@@ -23,6 +23,7 @@ fn rtmcli(file: &Path, args: &[&str]) -> Output {
         .env_remove("RTM_NO_SYNC")
         .env_remove("RTM_VCS")
         .env_remove("RTM_UPDATE_URL")
+        .env_remove("RTM_ARCHIVE_DAYS")
         .output()
         .unwrap()
 }
@@ -315,4 +316,73 @@ fn commit_changes_never_commits_a_deleted_todo_txt() {
     let output = rtmcli(&todo, &["--commit-changes", "list"]);
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert_eq!(last_subject(&dir.join("a")), "start");
+}
+
+const WITH_DONE: &str = "Buy milk\nx 2026-01-02 Pay rent\n";
+
+/// The files the last commit of `repo` changed.
+fn last_files(repo: &Path) -> String {
+    git(repo, &["show", "--name-only", "--format=", "HEAD"])
+}
+
+#[test]
+fn archive_commits_the_file_and_its_archive_together() {
+    let dir = remote_and_clones("archive", WITH_DONE);
+    let output = rtmcli(&dir.join("a/todo.txt"), &["archive"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let remote = dir.join("remote");
+    assert_eq!(last_subject(&remote), "rtm: archive x 2026-01-02 Pay rent");
+    assert_eq!(last_files(&remote), "done.txt\ntodo.txt");
+}
+
+#[test]
+fn an_edited_archive_stops_archive_until_commit_changes() {
+    let dir = remote_and_clones("archive edited", WITH_DONE);
+    let a = dir.join("a");
+    let todo = a.join("todo.txt");
+    std::fs::write(a.join("done.txt"), "x 2025-12-01 Old\n").unwrap();
+    git(&a, &["add", "done.txt"]);
+    git(&a, &["commit", "--quiet", "-m", "archive"]);
+    std::fs::write(a.join("done.txt"), "x 2025-12-01 Old\nBy hand\n").unwrap();
+
+    let output = rtmcli(&todo, &["archive"]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("done.txt") && stderr.contains("--commit-changes"),
+        "{stderr}"
+    );
+    assert_eq!(std::fs::read_to_string(&todo).unwrap(), WITH_DONE);
+    assert_eq!(last_subject(&a), "archive");
+
+    let output = rtmcli(&todo, &["--commit-changes", "archive"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        git(&dir.join("remote"), &["log", "-2", "--format=%s"]),
+        "rtm: archive x 2026-01-02 Pay rent\nrtm: commit outside changes"
+    );
+    assert_eq!(
+        std::fs::read_to_string(a.join("done.txt")).unwrap(),
+        "x 2025-12-01 Old\nBy hand\nx 2026-01-02 Pay rent\n"
+    );
+}
+
+#[test]
+fn an_ignored_archive_is_left_out_with_a_note() {
+    let dir = remote_and_clones("archive ignored", WITH_DONE);
+    let a = dir.join("a");
+    std::fs::write(a.join(".gitignore"), "done.txt\n").unwrap();
+    git(&a, &["add", ".gitignore"]);
+    git(&a, &["commit", "--quiet", "-m", "ignore"]);
+
+    let output = rtmcli(&a.join("todo.txt"), &["archive"]);
+    assert!(output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("done.txt' is ignored by Git"), "{stderr}");
+    assert_eq!(last_files(&dir.join("remote")), "todo.txt");
+    assert_eq!(
+        std::fs::read_to_string(a.join("done.txt")).unwrap(),
+        "x 2026-01-02 Pay rent\n"
+    );
 }

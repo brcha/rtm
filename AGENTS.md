@@ -121,7 +121,7 @@ them.
   - Every test works in scratch directories under the system temp directory and never reads or
     writes the user's real `rtm/config.toml` or todo.txt. A new test that runs a program removes
     the environment variables that would change its result (`TODOTXT`, `RTM_NO_SYNC`, `RTM_VCS`,
-    `RTM_UPDATE_URL`).
+    `RTM_UPDATE_URL`, `RTM_ARCHIVE_DAYS`).
 - **Epic close** (RTM-159): before closing an epic whose changes touch `rtmmcp/`, `todotxt/src/`
   (how a line is printed and parsed, which the MCP tools show and match on) or the `mcp` entry
   points (`rtmcli/src/main.rs`'s `mcp`, `rtmapp/src/mcp.rs`), run the LLM eval of the MCP tools,
