@@ -66,7 +66,8 @@ todotxt/tests/
   the new due date. Business days (`b`) skip Saturdays and Sundays, as in topydo and SimpleTask
   (no holidays). Every recurring item gets a next occurrence (RTM-209): one with only `t:`
   moves its threshold (strict from the old `t:`, normal from today) and gets no `due:`; one with
-  neither date is due the interval from today, strict too.
+  neither date is due the interval from today, strict too. The completed item is then taken
+  from its own line parsed again, so it equals what `save` writes and `load` reads back.
 - `uncomplete_item(index)` clears `done` and `completion_date`, returns `Option<()>` (None =
   out of bounds). Priority and creation date are untouched — priority re-serializes as `(X)`
   automatically because `Display` keys that choice off `done`, and the `pri:` tag goes.
@@ -130,10 +131,11 @@ todotxt/tests/
   before the description; a completed item writes `pri:X` (appended at the end of the line
   when rtm completes it). `(X)` parses on any line; `pri:X` sets the priority only on a done
   line (RTM-211), as the specification names it only to keep a complete task's priority. On
-  an open line `pri:A` is an ordinary tag kept as written, so it becomes the priority once the
-  task is completed and the file is read again. An unchanged line keeps the form it was read
-  in. If a done line carries both and the letters agree (`x (C) … pri:C`), the duplicate is
-  accepted; if the letters disagree (`x (C) … pri:A`), `(C)` stays the priority and `pri:A`
+  an open line `pri:A` is an ordinary tag kept as written; `complete_item` reads the completed
+  item back from its line, so the tag becomes the priority at once and stays where it stands,
+  while a recurring item's next occurrence keeps it as a tag. An unchanged line keeps the form
+  it was read in. If a done line carries both and the letters agree (`x (C) … pri:C`), the
+  duplicate is accepted; if the letters disagree (`x (C) … pri:A`), `(C)` stays the priority and `pri:A`
   stays in the description as text. A malformed `pri:` value (`pri:xyz`) is text like any
   other unreadable tag (below).
 - **`TodoItem::from_str` accepts every line.** A known tag (`due:`, `t:`, `rec:`, `uuid:`,

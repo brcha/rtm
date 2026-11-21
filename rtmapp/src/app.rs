@@ -2181,12 +2181,7 @@ impl OpenFile {
         if changes.is_empty() {
             return true;
         }
-        // Read again: an open line's `pri:` tag is the done line's priority only once parsed again.
-        let reread = changes.iter().any(Change::completes);
-        let saved = library
-            .save()
-            .and_then(|()| if reread { library.load() } else { Ok(()) });
-        if let Err(e) = saved {
+        if let Err(e) = library.save() {
             self.error = Some(format!("{}: {e}", library.file_name));
             return false;
         }
@@ -2508,10 +2503,6 @@ impl Change {
             }
         }
         true
-    }
-
-    fn completes(&self) -> bool {
-        matches!(self, Change::Toggle(item) if !item.done)
     }
 
     fn move_out(&self) -> Option<u64> {

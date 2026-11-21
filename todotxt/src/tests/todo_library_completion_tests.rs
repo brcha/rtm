@@ -75,6 +75,44 @@ fn test_complete_item_with_priority_writes_pri_tag() {
 }
 
 #[test]
+fn test_complete_item_reads_an_open_pri_tag_as_the_priority() {
+    let mut lib = TodoLibrary::new("dummy.txt".to_string());
+    let today = chrono::Local::now().date_naive();
+    lib.items.push("Task pri:B +p".parse().unwrap());
+    lib.complete_item(0);
+    let line = lib.items[0].to_string();
+    assert_eq!(
+        line,
+        format!("x {} Task pri:B +p", today.format("%Y-%m-%d"))
+    );
+    assert_eq!(lib.items[0], line.parse::<TodoItem>().unwrap());
+    assert_eq!(lib.items[0].priority.priority, Some(1));
+    assert_eq!(lib.items[0].description, "Task");
+}
+
+#[test]
+fn test_complete_item_with_priority_and_pri_tag_equals_its_line() {
+    let mut lib = TodoLibrary::new("dummy.txt".to_string());
+    lib.items.push("(A) Task pri:B".parse().unwrap());
+    lib.complete_item(0);
+    let read_back: TodoItem = lib.items[0].to_string().parse().unwrap();
+    assert_eq!(lib.items[0], read_back);
+    assert_eq!(lib.items[0].priority.priority, Some(0));
+}
+
+#[test]
+fn test_complete_item_next_occurrence_keeps_the_pri_tag() {
+    let mut lib = TodoLibrary::new("dummy.txt".to_string());
+    lib.items.push("Task pri:B rec:1w".parse().unwrap());
+    assert_eq!(lib.complete_item(0), Some(true));
+    let next = &lib.items[1];
+    assert!(!next.done);
+    assert_eq!(next.priority.priority, None);
+    assert_eq!(next.description, "Task pri:B");
+    assert!(next.to_string().contains(" Task pri:B rec:1w"), "{next}");
+}
+
+#[test]
 fn test_complete_item_is_idempotent_on_completion_date() {
     let mut lib = TodoLibrary::new("dummy.txt".to_string());
     lib.add_item("Task".parse().unwrap());

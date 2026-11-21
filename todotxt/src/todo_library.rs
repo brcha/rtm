@@ -218,6 +218,10 @@ impl TodoLibrary {
             };
             self.items.push(new_item);
         }
+        // A done line reads `pri:X` as the priority: take the item as its saved line reads back.
+        if let Ok(item) = self.items[index].to_string().parse() {
+            self.items[index] = item;
+        }
         Some(has_recurrence)
     }
 

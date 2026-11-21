@@ -202,13 +202,11 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   creation date when the item has none) then `save`, after the add row's line parses and passes
   `check_dates` (otherwise the app error line says why and the input stays); uncomplete is
   `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
-  recurring item) then `save`, then `load` once the save succeeded (a `pri:` tag on the open line
-  becomes the done line's priority only when the line is parsed again); delete is
-  `remove_item` (which also removes the item's sub-items) then `save`. Errors go to
-  the error lines above the list, not to a dialog; the quick-add input is cleared only after a
-  successful save. Every save rewrites the whole file, but each line is written as read except
-  for what changed (`todotxt/AGENTS.md`); a new or edited recurrence goes through `Display`, so it
-  is written with its count (`rec:1w`).
+  recurring item) then `save`; delete is `remove_item` (which also removes the item's sub-items)
+  then `save`. Errors go to the error lines above the list, not to a dialog; the quick-add input
+  is cleared only after a successful save. Every save rewrites the whole file, but each line is
+  written as read except for what changed (`todotxt/AGENTS.md`); a new or edited recurrence goes
+  through `Display`, so it is written with its count (`rec:1w`).
 - **Open files and error lines (RTM-125, epic RTM-66):** what belongs to one todo.txt lives in
   `OpenFile` (its path and tab name, its library, pending changes, the sync questions, the edit
   dialog's `edited`, `deleting` and `stale`, and its error line); `App` holds `files` and `active`,
