@@ -39,6 +39,11 @@ latest=$(sed -n 's|.*<p>Version \([^ ]*\)\. The desktop app.*|\1|p' site/public/
 [[ -n $latest ]] || die "no version in the landing page's download section"
 jq -e --arg v "$latest" 'any(.releases[]; .version == $v and .channel == "stable")' \
     "$releases" > /dev/null || die "$releases has no stable entry for $latest, the landing page's release"
+# The hero's release notice links to the post of that same release.
+notice=$(sed -n 's|.*class="release-notice" href="\([^"]*\)".*|\1|p' site/public/index.html | sed 's|&#x2F;|/|g')
+jq -e --arg v "$latest" --arg url "$notice" 'any(.releases[]; .version == $v and .url == $url)' \
+    "$releases" > /dev/null ||
+    die "the landing page's release notice links to '$notice', not to the post of $latest"
 
 # The pages use absolute URLs under base_url; map them to the built files, or lychee would treat
 # them as remote and skip them offline.

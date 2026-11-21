@@ -109,8 +109,9 @@ in `vercel.json`:
   its file name (`news-post.html`, set as `page_template` in `content/news/_index.md`); the landing
   page's downloads link to the latest release's files.
   The notice at the top of the landing page's hero links to the newest stable post on its own
-  (Zola's `get_section`, RTM-103; beta posts are skipped); the downloads follow the posts too
-  (below).
+  (Zola's `get_section`, RTM-103; beta posts and posts with `older_line` are skipped, as for the
+  downloads, and `check.sh` checks that both name the same release); the downloads follow the
+  posts too (below).
 - The only JavaScript is the screenshot viewer (RTM-99), inline at the end of
   `templates/index.html`: it wraps each screenshot in a button that opens it enlarged in a native
   `<dialog>`, so without JavaScript the screenshots stay plain images. Keep it dependency-free and

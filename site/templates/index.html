@@ -4,11 +4,11 @@
 {% block content %}
 <section class="hero">
   {#- The newest stable post in content/news, so publishing a release's post updates the notice;
-      a beta's post does not. #}
+      a beta's post and an older line's patch (`older_line`) do not, as for the downloads. #}
   {%- set news = get_section(path="news/_index.md") %}
   {%- set_global latest = false %}
   {%- for post in news.pages %}
-    {%- if post.extra.channel | default(value="stable") == "stable" %}{% set_global latest = post %}{% break %}{% endif %}
+    {%- if not post.extra.older_line and post.extra.channel | default(value="stable") == "stable" %}{% set_global latest = post %}{% break %}{% endif %}
   {%- endfor %}
   {%- if latest %}
   <a class="release-notice" href="{{ latest.permalink }}">
