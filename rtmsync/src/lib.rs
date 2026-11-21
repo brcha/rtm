@@ -127,7 +127,8 @@ impl Vcs {
             }
             // Lists untracked files that are not ignored, and leaves ignored ones out; `pijul add`
             // cannot tell, it reports success for an ignored file. Such a file shows as `U <path>`
-            // at the repository root and as `A <path>` below it (pijul 1.0.0-beta.18).
+            // at the repository root and as `A <path>` below it (pijul 1.0.0-beta.18). `U` lines
+            // use the OS separator (`\` on Windows), so they are compared as paths.
             (Vcs::Pijul, false) => {
                 let path = pijul_path(&file).unwrap_or_default();
                 let listed = output(
@@ -136,7 +137,7 @@ impl Vcs {
                 )?;
                 let untracked = listed.lines().any(|line| {
                     let listed = line.strip_prefix("A ").or_else(|| line.strip_prefix("U "));
-                    listed.map(str::trim_start) == Some(&path)
+                    listed.map(|listed| Path::new(listed.trim_start())) == Some(Path::new(&path))
                 });
                 Ok(if untracked {
                     State::Untracked

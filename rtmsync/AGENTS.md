@@ -91,6 +91,8 @@ rtmsync/
   whether `pijul diff --short -- <file>` prints anything, or whether `pijul diff --short
   --untracked .` in the file's directory lists it, as `U <path>` at the repository root and
   `A <path>` below it (pijul 1.0.0-beta.18; beta.11 has the flag); an ignored file is left out.
+  `U` lines use the OS separator (`sub\done.txt` on Windows), so the paths are compared as paths,
+  not strings.
   Without `--untracked` an untracked file at the root is not listed, and `pijul add` cannot tell
   either, as it reports success for an ignored file. A missing file is not classified reliably (a
   deleted tracked file is `Modified` for Git, a missing untracked one `Ignored` for Pijul), so
