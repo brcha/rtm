@@ -342,7 +342,7 @@ jobs:
           Get-ChildItem dist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
 
       # The last 0.1.x MSI, for the upgrade check below.
-      - name: Download the v0.1.3 Tauri MSI
+      - name: Download the v0.1.3 MSI
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -646,7 +646,7 @@ jobs:
       # installs v0.1.3 into a custom folder, then the new MSI over it without naming a folder, and
       # expects one product at the new version, in the custom folder. Runs even if the fresh install
       # failed, so one run answers both questions.
-      - name: Verify upgrade from the v0.1.3 Tauri MSI
+      - name: Verify upgrade from the v0.1.3 MSI
         if: always()
         shell: pwsh
         env:
@@ -703,7 +703,7 @@ jobs:
         run: |
           if (-not $env:PREVIOUS) { Write-Host '::notice::No previous release: upgrade test skipped.'; exit 0 }
           if ($env:PREVIOUS -eq 'v0.1.3' -and -not $env:PREVIOUS_INPUT) {
-            Write-Host '::notice::The previous release is v0.1.3, covered by the Tauri MSI upgrade step: skipped.'
+            Write-Host '::notice::The previous release is v0.1.3, covered by the v0.1.3 MSI upgrade step: skipped.'
             exit 0
           }
           $oldVersion = $env:PREVIOUS -replace '^v', ''

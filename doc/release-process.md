@@ -157,8 +157,8 @@
   only — no ARM64, no 32-bit; macOS is one universal (arm64 + x86_64) build (RTM-11).
 - **Assets:** `rtmapp_<v>_x64_en-US.msi`, `rtmcli-<v>-x64.exe`, `rtmapp_<v>_amd64.deb`,
   `rtmapp_<v>_amd64.AppImage`, `rtmcli_<v>_amd64.deb`, `rtmapp-<v>-1.x86_64.rpm`,
-  `rtmcli-<v>-1.x86_64.rpm`, `rtmapp_<v>_universal.dmg`, `rtmcli-<v>-macos-universal.tar.gz`. Since
-  RTM-38 they are built without Tauri: cargo-wix, cargo-deb, cargo-generate-rpm (RTM-9), appimagetool,
+  `rtmcli-<v>-1.x86_64.rpm`, `rtmapp_<v>_universal.dmg`, `rtmcli-<v>-macos-universal.tar.gz`. They
+  are built with cargo-wix, cargo-deb, cargo-generate-rpm (RTM-9), appimagetool,
   and (RTM-11) `scripts/build-macos.sh`.
 - **Previous release (RTM-49):** the `version` job also outputs `previous`, the newest published
   (non-draft, betas included) release below the version being built, for the upgrade tests. A
@@ -216,7 +216,7 @@
 - **Identity:** the binary is `rtmapp` everywhere (`default.nix` `mainProgram`, the desktop
   entry's `Exec=rtmapp`, `Icon=rtmapp` and `StartupWMClass=rtmapp`, the deb package name); the display
   name is "Rusty Todo.txt Manager", also the macOS bundle's name (`Rusty Todo.txt Manager.app`, whose
-  executable is `rtmapp`); the reverse-DNS identifier (Tauri's `identifier`) is `com.brcha.rtm`. It is
+  executable is `rtmapp`); the reverse-DNS identifier is `com.brcha.rtm`. It is
   the macOS `CFBundleIdentifier` (RTM-11) and the Windows AppUserModelID, set by the app at startup and
   on both MSI shortcuts (RTM-48).
 - **Merges are squashes.** One PR becomes exactly one commit on its target branch, so PR titles are
@@ -241,16 +241,16 @@
 
 - **MSI source:** `rtmapp/wix/main.wxs` (WiX v3), built by `cargo wix -p rtmapp` (cargo-wix 0.3.9,
   `cargo install --locked`; WiX 3.14.1 is on the runner image, installed with choco if a future image
-  drops it). Its header lists what it keeps from the Tauri MSI; `rtmapp/AGENTS.md` has the details.
-- **`UpgradeCode` `E0E423D1-1101-50D4-BAEE-4A27FA127509` must never change.** It is the Tauri MSI's
-  (Tauri derived it from the product name), and with it `MajorUpgrade` replaces an installed version
+  drops it). Its header lists what it keeps from the 0.1.x MSI; `rtmapp/AGENTS.md` has the details.
+- **`UpgradeCode` `E0E423D1-1101-50D4-BAEE-4A27FA127509` must never change.** It is the 0.1.x MSI's,
+  and with it `MajorUpgrade` replaces an installed version
   instead of installing beside it. Per-machine install, downgrades allowed (the build's only ICE
   warning, ICE61, comes from that).
 - **Exe resources:** `rtmapp/build.rs` embeds `icon.ico` and the product name in `rtmapp.exe` with
   `winresource`, checking `CARGO_CFG_TARGET_OS` (not `#[cfg]`, which tests the host).
 - **Tests in the job:** a silent fresh install (files, both shortcuts and their AppUserModelID, the
   exe's version information, a smoke launch, the launch action's check, the MCP check, uninstall),
-  then an upgrade from the v0.1.3 Tauri MSI
+  then an upgrade from the v0.1.3 MSI
   installed into a custom folder (one product afterwards, at the new version, still in that folder),
   then an upgrade from the previous release's MSI in the default folder (skipped with a notice when that
   is v0.1.3, already covered, or when it has no MSI). All read the product from the uninstall entries in
@@ -332,7 +332,7 @@
   under a headless Weston (non-blocking, a warning on failure). Then both debs are purged, the
   previous release's debs installed and the new ones over them (`dpkg-query` must report the new
   version; skipped with a notice when the release lacks a deb). v0.1.3 is not skipped here: it is the
-  Tauri deb, also named `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked,
+  0.1.x deb, also named `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked,
   and its `AppRun mcp` passes the MCP check. Before the smoke launches, the MCP check (below) runs
   on the installed binaries.
 - **The MCP check (RTM-116)** runs in `linux-deb`, `linux-deb-install`, each `linux-rpm` container and

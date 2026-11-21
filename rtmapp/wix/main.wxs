@@ -2,23 +2,23 @@
 <!--
   WiX v3 source for the rtmapp MSI, built by `cargo wix -p rtmapp` (cargo-wix 0.3.9) in the Release
   workflow. Started from the template that `cargo wix print wxs` prints (Copyright (C) 2017
-  Christopher R. Field, Apache License 2.0) and edited to replace the Tauri MSI that versions up to
-  0.1.3 shipped:
+  Christopher R. Field, Apache License 2.0) and edited to replace the MSI that versions up to 0.1.3
+  shipped:
 
-  - UpgradeCode is the Tauri MSI's and must never change: with it, MajorUpgrade removes an installed
-    Tauri (or older) version instead of installing beside it.
-  - Per-machine install into "Program Files\Rusty Todo.txt Manager", the exe at its root, as Tauri had.
-  - Downgrades allowed, as Tauri's default.
-  - Manufacturer "brcha" and the registry key Software\brcha\Rusty Todo.txt Manager, as Tauri had; the
-    install folder is saved there and reused on upgrade, so a custom folder from a Tauri install stays.
-  - The template's PATH feature is gone (a GUI app). Start Menu (directly in Programs, where Tauri used
+  - UpgradeCode is the 0.1.x MSI's and must never change: with it, MajorUpgrade removes an installed
+    older version, 0.1.x included, instead of installing beside it.
+  - Per-machine install into "Program Files\Rusty Todo.txt Manager", the exe at its root, as 0.1.x had.
+  - Downgrades allowed, as in 0.1.x.
+  - Manufacturer "brcha" and the registry key Software\brcha\Rusty Todo.txt Manager, as 0.1.x had; the
+    install folder is saved there and reused on upgrade, so a custom folder from a 0.1.x install stays.
+  - The template's PATH feature is gone (a GUI app). Start Menu (directly in Programs, where 0.1.x used
     a folder) and desktop shortcuts are optional features (on by default, deselectable in the
-    installer). The finish screen offers to launch the app, as Tauri's did, through Explorer rather
-    than as a child of msiexec (see LaunchApplication); Tauri's Uninstall shortcut is not kept
+    installer). The finish screen offers to launch the app, as 0.1.x did, through Explorer rather
+    than as a child of msiexec (see LaunchApplication); the 0.1.x Uninstall shortcut is not kept
     (Settings > Apps uninstalls).
-  - Both shortcuts carry the AppUserModelID com.brcha.rtm, which Tauri's Start Menu shortcut had and the
-    app sets at startup (main.rs): the taskbar groups the window with the shortcut, and pins made with
-    a Tauri install keep working.
+  - Both shortcuts carry the AppUserModelID com.brcha.rtm, which the 0.1.x Start Menu shortcut had and
+    the app sets at startup (main.rs): the taskbar groups the window with the shortcut, and pins made
+    with a 0.1.x install keep working.
 
   cargo-wix sets Version (from rtmapp/Cargo.toml) and CargoTargetBinDir. Paths to repository files are
   relative to this file, so the build does not depend on the working directory.
@@ -67,7 +67,7 @@
         <Property Id='ARPPRODUCTICON' Value='ProductICO'/>
         <Property Id='ARPHELPLINK' Value='https://github.com/brcha/rtm'/>
 
-        <!-- The folder of a previous install, Tauri's or this MSI's (InstallDirRegistry below). -->
+        <!-- The folder of a previous install, the 0.1.x MSI's or this one's (InstallDirRegistry below). -->
         <Property Id='APPLICATIONFOLDER'>
             <RegistrySearch Id='PrevInstallDir'
                 Root='HKCU'
@@ -122,7 +122,7 @@
                         Icon='ProductICO'>
                         <ShortcutProperty Key='System.AppUserModel.ID' Value='com.brcha.rtm'/>
                     </Shortcut>
-                    <!-- An HKCU key path, as Tauri's per-machine template had for its shortcut. -->
+                    <!-- An HKCU key path, as the 0.1.x MSI had for its shortcut. -->
                     <RegistryValue Root='HKCU'
                         Key='$(var.RegistryKey)'
                         Name='StartMenuShortcut'
@@ -206,7 +206,7 @@
 
         <UI>
             <UIRef Id='WixUI_FeatureTree'/>
-            <!-- No licence dialog, as the Tauri MSI had none. -->
+            <!-- No licence dialog, as the 0.1.x MSI had none. -->
             <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='99'>1</Publish>
             <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='99'>1</Publish>
             <Publish Dialog='ExitDialog' Control='Finish' Event='DoAction' Value='LaunchApplication'>WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
