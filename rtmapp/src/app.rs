@@ -858,6 +858,12 @@ impl App {
         }
     }
 
+    /// Closes the edit dialog without a change and writes an archive held while it was open.
+    fn cancel_edit(&mut self) {
+        self.close_editor();
+        self.flush();
+    }
+
     /// Opens the edit dialog on the item at `index`, with the other open, loaded files to move it
     /// to.
     fn open_editor(&mut self, index: usize) {
@@ -2152,7 +2158,9 @@ impl OpenFile {
         let mut changes = std::mem::take(&mut self.pending);
         // Nothing is committed while the todo file's question is open, so the archive waits for
         // the answer; written now, it would look like an outside change to the archive later.
-        if self.asking.is_some() {
+        // It also waits while the edit dialog is open on an item here: the dialog keeps its item
+        // by position, which the archive would shift.
+        if self.asking.is_some() || self.edited.is_some() {
             let (archives, rest) = changes
                 .into_iter()
                 .partition(|change| matches!(change, Change::Archive { .. }));
@@ -2389,7 +2397,7 @@ impl eframe::App for App {
         if let Some(form) = &mut self.editing {
             match edit::show(ui.ctx(), p, form) {
                 Some(Outcome::Save) => self.save_edit(),
-                Some(Outcome::Cancel) => self.close_editor(),
+                Some(Outcome::Cancel) => self.cancel_edit(),
                 Some(Outcome::AskDelete) => self.ask_delete(),
                 Some(Outcome::Delete) => self.delete_item(),
                 Some(Outcome::AskMove(target)) => self.ask_move(target),
