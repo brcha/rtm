@@ -291,3 +291,18 @@ fn test_files_outside_any_repository_do_not_wait_for_each_other() {
     remove(home);
     remove(work);
 }
+
+#[cfg(unix)]
+#[test]
+fn test_adding_to_a_symlinked_file_is_refused_and_changes_nothing() {
+    let (source, refusal) = symlinked_source_with("Buy milk\n");
+    assert_eq!(
+        add_item(&source, "Call mom").unwrap_err(),
+        format!("{refusal} Nothing was changed.")
+    );
+    assert_eq!(
+        std::fs::read_to_string(source.path.with_file_name("real.txt")).unwrap(),
+        "Buy milk\n"
+    );
+    remove(source);
+}
