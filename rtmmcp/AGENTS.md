@@ -139,7 +139,11 @@ with real clients: Claude Code and Grok Build.
   `RTM_EVAL_CLIENTS` picks the clients (default `claude`, plus `grok` when it is on `PATH`),
   `RTM_EVAL_CLAUDE_MODEL` and `RTM_EVAL_GROK_MODEL` the models (default `claude-sonnet-5-5` and
   Grok Build's own, grok-4.7 in November 2026). Full results, with the models' answers and tool
-  calls: `target/mcp-eval/results.json`, or `npx promptfoo@0.125.1 view`.
+  calls: `target/mcp-eval/results.json`, or `npx promptfoo@0.125.1 view`. Before the build it
+  checks that each selected client is signed in, without a model request: `claude auth status`
+  (so `claude` must be on `PATH`, although the SDK runs its own copy on the same login) and
+  `grok models`, which says whether Grok is logged in. A missing login stops the run with exit 2
+  and the sign-in command; a signed-out Grok otherwise answers every prompt with nothing.
 - **Claude:** Claude Code through promptfoo's `anthropic:claude-agent-sdk` provider, on the Claude
   Code login (the script unsets `ANTHROPIC_API_KEY`, which would be billed). It sees only rtm's
   tools: no built-in tools (it cannot read the files around `list_items`), no other MCP server,
