@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # The LLM eval of rtm's MCP tools (rtmmcp/eval, see rtmmcp/AGENTS.md): runs each scenario a few
 # times with Claude Code and with Grok Build on the rtm server, on scratch files only, and prints
-# the passes per scenario. Needs node 22.22 or newer (`nix develop`), a Claude Code login, and for
-# Grok, `grok` on PATH, logged in.
+# the passes per scenario. Needs node 22.22 or newer (`nix develop`), `claude` (Claude Code) on
+# PATH, signed in, and for Grok, `grok` on PATH, signed in. It checks the login of each selected
+# client first (`claude auth status`, `grok models`, no model request) and exits 2 when one is
+# missing.
 #
 # Usage: scripts/mcp-eval.sh
 #
@@ -37,8 +39,19 @@ clients=${RTM_EVAL_CLIENTS:-claude}
 if [ -z "${RTM_EVAL_CLIENTS:-}" ] && command -v grok >/dev/null; then clients="claude grok"; fi
 for client in $clients; do
   case $client in
-    claude) ;;
-    grok) command -v grok >/dev/null || fail "grok is not on PATH" ;;
+    claude)
+      command -v claude >/dev/null || fail "claude (Claude Code) is not on PATH"
+      # Without the API key, as promptfoo runs it below.
+      env -u ANTHROPIC_API_KEY claude auth status >/dev/null 2>&1 ||
+        fail "Claude Code is not signed in: run \`claude auth login\`"
+      ;;
+    grok)
+      command -v grok >/dev/null || fail "grok is not on PATH"
+      out=$(grok models </dev/null 2>&1) ||
+        fail "\`grok models\` failed (${out:0:200}); is Grok signed in? Run \`grok login\`"
+      # Exits 0 signed out too; only the text tells.
+      [[ $out == *"You are logged in"* ]] || fail "Grok is not signed in: run \`grok login\`"
+      ;;
     *) fail "unknown client $client (claude, grok)" ;;
   esac
 done
