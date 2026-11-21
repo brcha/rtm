@@ -15,7 +15,7 @@ rtmcli/src/
 └── main.rs     ← Single file: CLI definition + all command handlers
 rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ├── cli_commands_tests.rs  ← add, list, complete, delete
-├── cli_filter_tests.rs    ← The due-date filters of list and complete
+├── cli_filter_tests.rs    ← The date filters of list and complete
 ├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
 └── cli_sync_tests.rs      ← Sync through git
 ```
@@ -38,7 +38,8 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 
 - **Edition:** Rust 2024
 - File path resolved from: `-f <file>` flag → `$TODOTXT` env var → `todo.txt` (cwd fallback).
-- Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
+- Filters: `today`, `week`, `all`, `overdue`, `future`, as `todotxt::DateFilter` (due or
+  threshold date, see `todotxt/AGENTS.md`).
 - `add` refuses an item whose threshold date is after its due date (`TodoItem::check_dates`):
   it prints `Error: <message>` and exits 1 without writing.
 - `complete` accepts: a filter name (optionally + index/UUID), an absolute index, or a UUID.
