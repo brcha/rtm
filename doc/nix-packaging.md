@@ -3,7 +3,8 @@
 - **`default.nix`** — the packages, defined once: `nix-build -A rtmcli`, `nix-build -A rtmapp`.
 - **`flake.nix`** — the flake entry point: `nix build .#rtmcli`, `nix build .#rtmapp`. It imports
   the packages from `default.nix` and the dev shell from `shell.nix`, both with its pinned nixpkgs,
-  and defines only the apps itself.
+  and defines only the apps itself. It covers flake-utils' default systems: `x86_64-linux`,
+  `aarch64-linux` and `aarch64-darwin`, not Intel Macs (`x86_64-darwin`).
 - **`shell.nix`** — the dev shell, defined once (see Dev shell); it takes `eguiDeps` from
   `default.nix` (`rtmapp.eguiDeps`, a `passthru`).
 - **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
