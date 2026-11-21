@@ -186,3 +186,53 @@ fn a_done_txt_open_in_another_tab_shows_the_archived_items() {
     assert_eq!(lines, ["Older", "Pay rent"]);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_file_override_archives_that_file_only() {
+    let dir = temp_dir("archive override");
+    let old = days_ago(60);
+    std::fs::write(dir.join("work.txt"), format!("x {old} Work done\n")).unwrap();
+    let mut app = app_with(&dir, &format!("x {old} Home done\n"));
+    let work = load_library(&dir.join("work.txt")).unwrap();
+    let work_path = PathBuf::from(&work.file_name);
+    app.files.push(OpenFile::loaded(work, None));
+    for file in &app.files {
+        app.config.add_file(&file.path.to_string_lossy());
+    }
+    app.config
+        .set_archive(&work_path.to_string_lossy(), Some((true, 30)));
+
+    app.archive_due(Instant::now());
+
+    assert!(!dir.join("done.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(dir.join("work.done.txt")).unwrap(),
+        format!("x {old} Work done\n")
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn saving_a_file_s_archive_settings_archives_it_again_only_when_they_changed() {
+    let dir = temp_dir("archive dialog save");
+    let mut app = app_with(&dir, "Open\n");
+    let path = todo_path(&app);
+    app.config.add_file(&path.to_string_lossy());
+    app.files[0].archived_at = Some(Instant::now());
+
+    app.open_archive_settings(&path);
+    app.save_archive_settings();
+    assert!(app.files[0].archived_at.is_some());
+
+    app.open_archive_settings(&path);
+    let form = app.archive_settings.as_mut().unwrap();
+    assert_eq!(form.archive, path.with_file_name("done.txt"));
+    form.use_app_wide = false;
+    form.days = 3;
+    app.save_archive_settings();
+    assert!(app.files[0].archived_at.is_none());
+    assert_eq!(app.config.archive_rule(&path), (false, 3));
+    let saved = AppConfig::load(&dir.join("config.toml"));
+    assert_eq!(saved.archive_rule(&path), (false, 3));
+    let _ = std::fs::remove_dir_all(dir);
+}

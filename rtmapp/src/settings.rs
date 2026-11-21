@@ -125,27 +125,35 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) -> Option<Outcome>
 fn archive_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
-        ui.checkbox(
-            &mut form.auto_archive,
-            RichText::new("Archive done items automatically").size(12.6),
-        );
-        // The age stays editable with the checkbox off: the menu's Archive Done Items uses it.
-        ui.horizontal(|ui| {
-            let label = ui.label(RichText::new("Older than").size(12.6));
-            ui.add(
-                egui::DragValue::new(&mut form.archive_days)
-                    .range(0..=MAX_ARCHIVE_DAYS)
-                    .clamp_existing_to_range(false)
-                    .suffix(" days"),
-            )
-            .labelled_by(label.id);
-        });
+        archive_fields(ui, &mut form.auto_archive, &mut form.archive_days);
         hint(
             ui,
             p,
             "Moves done items to done.txt (or <name>.done.txt) next to the file, on open and once \
              a day. 0: everything completed before today.",
         );
+    });
+}
+
+/// The automatic-archiving checkbox and the age, here and in a file's archive settings.
+pub fn archive_fields(ui: &mut Ui, auto_archive: &mut bool, days: &mut u64) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        ui.checkbox(
+            auto_archive,
+            RichText::new("Archive done items automatically").size(12.6),
+        );
+        // The age stays editable with the checkbox off: the menu's Archive Done Items uses it.
+        ui.horizontal(|ui| {
+            let label = ui.label(RichText::new("Older than").size(12.6));
+            ui.add(
+                egui::DragValue::new(days)
+                    .range(0..=MAX_ARCHIVE_DAYS)
+                    .clamp_existing_to_range(false)
+                    .suffix(" days"),
+            )
+            .labelled_by(label.id);
+        });
     });
 }
 

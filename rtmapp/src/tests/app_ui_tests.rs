@@ -1219,6 +1219,62 @@ fn a_selected_tag_that_leaves_the_file_leaves_the_selection() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+// A file's archive settings.
+
+/// Right-clicks the tab `name` and picks Archive Settings… from its context menu.
+fn open_archive_settings(harness: &mut Harness<'_, App>, name: &str) {
+    tab(harness, name).click_secondary();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Archive Settings…")
+        .click();
+    harness.run();
+}
+
+fn use_app_wide<'h>(harness: &'h Harness<'_, App>) -> egui_kittest::Node<'h> {
+    harness.get_by(|node| {
+        node.role() == Role::CheckBox
+            && node
+                .label()
+                .is_some_and(|label| label.starts_with("Use the app-wide setting"))
+    })
+}
+
+#[test]
+fn a_tab_s_archive_settings_turn_archiving_on_for_its_file_and_back() {
+    let dir = temp_dir("ui-archive-settings");
+    let mut harness = harness(&dir, "Alpha\nx 2026-01-02 Pay rent\n", |_| {});
+    open_archive_settings(&mut harness, "todo.txt");
+    assert!(harness.query_by_label_contains("done.txt").is_some());
+    use_app_wide(&harness).click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Archive done items automatically")
+        .click();
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+
+    let path = dir.join("todo.txt").canonicalize().unwrap();
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert_eq!(config.archive_rule(&path), (true, 30));
+    // On now, so the file is archived at once.
+    assert_eq!(file_lines(&dir), ["Alpha"]);
+
+    open_archive_settings(&mut harness, "todo.txt");
+    use_app_wide(&harness).click();
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+    let config = AppConfig::load(&dir.join("config.toml"));
+    let entry = config.entry(&path).unwrap();
+    assert_eq!(
+        (entry.auto_archive, entry.archive_older_than_days),
+        (None, None)
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 // Renaming a tab.
 
 /// Right-clicks the tab `name` and picks Rename tab from its context menu.

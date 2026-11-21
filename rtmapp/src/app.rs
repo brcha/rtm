@@ -10,6 +10,7 @@ use eframe::egui::{
 };
 use todotxt::{TodoContext, TodoItem, TodoLibrary, TodoProject, WriteLock};
 
+use crate::archive::{self, ArchiveForm};
 use crate::config::{self, AppConfig};
 use crate::edit::{self, ConfirmMove, EditForm, MoveTarget, Outcome};
 use crate::list::{self, RowAction, same_tag};
@@ -60,6 +61,8 @@ pub struct App {
     new_item: String,
     editing: Option<EditForm>,
     settings: Option<SettingsForm>,
+    /// A file's archive settings, opened from its tab's context menu.
+    archive_settings: Option<ArchiveForm>,
     /// The file whose tab's close button was clicked, while the app asks before closing it.
     confirm_close: Option<PathBuf>,
     /// The file whose tab is being renamed, and the name typed so far.
@@ -151,6 +154,9 @@ struct OpenFile {
     /// The archive has changes rtm did not commit: the question about them is open (shown when
     /// the file's tab is).
     archive_asking: bool,
+    /// The repository ignores the archive, as its last check found; unknown before the first
+    /// check and while the archive is missing.
+    archive_ignored: Option<bool>,
 }
 
 impl App {
@@ -179,6 +185,7 @@ impl App {
             new_item: String::new(),
             editing: None,
             settings: None,
+            archive_settings: None,
             confirm_close: None,
             renaming: None,
             reconnect: false,
@@ -322,7 +329,7 @@ impl App {
     /// number of days ago. A synced file's archive is checked for outside changes on the
     /// repository's worker first (`archive_state`); nothing happens when no item would move.
     fn archive(&mut self, path: &Path, now: Instant) {
-        let days = self.config.archive_older_than_days;
+        let (_, days) = self.config.archive_rule(path);
         let cutoff = Local::now()
             .date_naive()
             .checked_sub_days(Days::new(days))
@@ -354,6 +361,7 @@ impl App {
         let Some(file) = self.files.iter_mut().find(|file| file.is(path)) else {
             return;
         };
+        file.archive_ignored = state.map(|state| state == State::Ignored);
         let Some(cutoff) = file.archive_wait else {
             return;
         };
@@ -395,11 +403,10 @@ impl App {
     /// Archives each loaded file once a day while automatic archiving is on, the first time once
     /// its check on open is done, and asks for a repaint when the next one is due.
     fn archive_due(&mut self, now: Instant) {
-        if !self.config.auto_archive {
-            return;
-        }
+        let config = &self.config;
         let due = |file: &&OpenFile| {
-            file.library.is_some()
+            config.archive_rule(&file.path).0
+                && file.library.is_some()
                 && !file.checking
                 && file.choose_vcs.is_none()
                 && file.asking.is_none()
@@ -421,6 +428,7 @@ impl App {
         let next = self
             .files
             .iter()
+            .filter(|file| self.config.archive_rule(&file.path).0)
             .filter_map(|file| file.archived_at)
             .map(|at| (at + ARCHIVE_INTERVAL).saturating_duration_since(now))
             .min();
@@ -1345,22 +1353,10 @@ impl App {
         };
         let sync = self.config.sync;
         let updates = (self.config.check_for_updates, self.config.beta());
-        let archive = (
-            self.config.auto_archive,
-            self.config.archive_older_than_days,
-        );
+        let rules = self.archive_rules();
         form.apply(&mut self.config);
         self.save_config();
-        // A new rule archives at once.
-        if (
-            self.config.auto_archive,
-            self.config.archive_older_than_days,
-        ) != archive
-        {
-            for file in &mut self.files {
-                file.archived_at = None;
-            }
-        }
+        self.rearchive(&rules);
         if self.config.sync != sync {
             self.reconnect = true;
         }
@@ -1368,6 +1364,62 @@ impl App {
             self.updates
                 .set(self.config.check_for_updates, Instant::now());
         }
+    }
+
+    /// Each open file's archive rule, to tell which a save changed (`rearchive`).
+    fn archive_rules(&self) -> Vec<(bool, u64)> {
+        let rules = self.files.iter();
+        rules.map(|f| self.config.archive_rule(&f.path)).collect()
+    }
+
+    /// Archives again at once the files whose rule changed since `before` (`archive_rules`).
+    fn rearchive(&mut self, before: &[(bool, u64)]) {
+        let after = self.archive_rules();
+        for ((file, before), after) in self.files.iter_mut().zip(before).zip(after) {
+            if *before != after {
+                file.archived_at = None;
+            }
+        }
+    }
+
+    /// Opens the archive settings of the open file at `path`. For a synced file, the archive's
+    /// state is checked again, so the dialog can say whether the repository ignores it.
+    fn open_archive_settings(&mut self, path: &Path) {
+        let Some(file) = find_file(&mut self.files, Some(path)) else {
+            return;
+        };
+        let archive = TodoLibrary::new(file.path.to_string_lossy().into_owned()).archive_path();
+        if file.library.is_some()
+            && let Some(repo) = find_repo(&mut self.repos, file.repo.as_ref())
+        {
+            repo.worker
+                .archive_state(file.path.clone(), archive.clone());
+        }
+        let form = ArchiveForm::new(&self.config, &file.path, &file.name, archive);
+        self.archive_settings = Some(form);
+    }
+
+    /// Saves a file's archive settings; a new rule archives it at once.
+    fn save_archive_settings(&mut self) {
+        let Some(form) = self.archive_settings.take() else {
+            return;
+        };
+        let rules = self.archive_rules();
+        form.apply(&mut self.config);
+        self.save_config();
+        self.rearchive(&rules);
+    }
+
+    /// The VCS ignoring the archive of the open file at `path`, as its last check found.
+    fn archive_ignored_by(&self, path: &Path) -> Option<&'static str> {
+        let file = self.files.iter().find(|file| file.is(path))?;
+        if file.archive_ignored != Some(true) {
+            return None;
+        }
+        file.repo.as_ref().map(|repo| match repo.vcs {
+            rtmsync::Vcs::Git => "Git",
+            rtmsync::Vcs::Pijul => "Pijul",
+        })
     }
 
     /// Starts or stops sync after Settings changed `sync`, once no job is outstanding: a running
@@ -1384,6 +1436,7 @@ impl App {
     fn modal_open(&self) -> bool {
         self.editing.is_some()
             || self.settings.is_some()
+            || self.archive_settings.is_some()
             || self.confirm_close.is_some()
             || self.file().is_some_and(|file| {
                 file.choose_vcs.is_some() || file.asking.is_some() || file.archive_asking
@@ -2308,6 +2361,9 @@ impl eframe::App for App {
             Some(Clicked::Tab(TabAction::Switch(path))) => self.switch(&path),
             Some(Clicked::Tab(TabAction::Close(path))) => self.confirm_close = Some(path),
             Some(Clicked::Tab(TabAction::Rename(path))) => self.start_rename(&path),
+            Some(Clicked::Tab(TabAction::ArchiveSettings(path))) => {
+                self.open_archive_settings(&path)
+            }
             Some(Clicked::Tab(TabAction::Menu(action)) | Clicked::Menu(action)) => {
                 self.menu_action(action, &ctx, frame)
             }
@@ -2349,6 +2405,15 @@ impl eframe::App for App {
             match settings::show(ui.ctx(), p, form) {
                 Some(settings::Outcome::Save) => self.save_settings(),
                 Some(settings::Outcome::Cancel) => self.settings = None,
+                None => {}
+            }
+        }
+        let ignored_by =
+            (self.archive_settings.as_ref()).and_then(|form| self.archive_ignored_by(&form.path));
+        if let Some(form) = &mut self.archive_settings {
+            match archive::show(ui.ctx(), p, form, ignored_by) {
+                Some(settings::Outcome::Save) => self.save_archive_settings(),
+                Some(settings::Outcome::Cancel) => self.archive_settings = None,
                 None => {}
             }
         }
@@ -2778,6 +2843,7 @@ enum TabAction {
     Switch(PathBuf),
     Close(PathBuf),
     Rename(PathBuf),
+    ArchiveSettings(PathBuf),
     Menu(MenuAction),
 }
 
@@ -2843,6 +2909,9 @@ fn tab(
     response.context_menu(|ui| {
         if ui.button("Rename tab").clicked() {
             menu = Some(TabAction::Rename(file.path.clone()));
+        }
+        if ui.button("Archive Settings…").clicked() {
+            menu = Some(TabAction::ArchiveSettings(file.path.clone()));
         }
     });
     response

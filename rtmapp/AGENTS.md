@@ -40,6 +40,7 @@ rtmapp/
 │   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
     ├── main.rs             ← `rtmapp mcp`, else window options and eframe::run_native
+    ├── archive.rs          ← A file's archive settings: the form (`ArchiveForm`) and the modal
     ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, the
     │                         title bar's menu and shortcuts, the tab strip, New File and Load
     │                         File, closing and switching files, filters, the sidebar's
@@ -114,7 +115,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   - **The file list (RTM-124, epic RTM-66):** `[[files]]` tables, the saved session, written last
     (after the plain keys). Each has `path`, an optional `name` (the tab label, set by hand) and an
     optional `vcs` (`"git"` or `"pijul"`, any case, the answer when the file's directory has both;
-    anything else means ask). `file_name` stays and names the active file, so an older rtmapp still
+    anything else means ask), and optional `auto_archive` and `archive_older_than_days`, the
+    file's own archive settings (see Archiving). `file_name` stays and names the active file, so an older rtmapp still
     opens it. Opening a file adds its entry (`add_file`), closing its tab removes it
     (`remove_file`), and clicking a tab makes it `file_name` (`set_active`).
   - **Migration**, in `AppConfig::load`, in memory only (written with the next save): entries
@@ -230,7 +232,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     is over its tab or it has focus. At the end a painted `+` (`theme::add_button`, "Open a file")
     opens New File… and Load File…, the menu's entries.
   - **Renaming (RTM-151):** a right click on a tab opens its context menu (`response.context_menu`
-    in `tab`; new entries go there), for now only "Rename tab". It turns the label into a text field
+    in `tab`; new entries go there): "Rename tab" and "Archive Settings…" (see Archiving). Rename tab
+    turns the label into a text field
     (`App::renaming`: the path and the text typed) holding the name, all selected, with the file
     name as its hint. Enter or a click elsewhere keeps it, Escape cancels; Escape also ends the
     field's focus, so `tab` checks it before treating the lost focus as Enter. The strip reports
@@ -474,13 +477,22 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     [`doc/release-process.md`](../doc/release-process.md)).
 - **Archiving** moves done items to the file's archive
   (`TodoLibrary::archive_path`: `done.txt` next to `todo.txt`, `<stem>.done.<ext>` otherwise; see
-  `todotxt/AGENTS.md`), the items completed before today minus `archive_older_than_days`
+  `todotxt/AGENTS.md`), the items completed before today minus the file's age
   (`App::archive`; a done item without a completion date always moves), from the menu's Archive
-  Done Items for the shown file, and, with `auto_archive`, for every loaded file once its check on
-  open is done and then every 24 h (`archive_due`, in `logic`; `archived_at` per file, set by
-  either). Saving Settings with a new `auto_archive` or age clears `archived_at`, so the new rule
-  runs at once. Nothing happens when no item would move (`archivable`, tested against the
-  library).
+  Done Items for the shown file, and, when the file's rule says so, for every loaded file once its
+  check on open is done and then every 24 h (`archive_due`, in `logic`; `archived_at` per file,
+  set by either). The rule is `AppConfig::archive_rule`: each of the file's `[[files]]` keys
+  `auto_archive` and `archive_older_than_days` where set, else the app-wide one. Saving Settings
+  or a file's archive settings clears `archived_at` of each file whose rule changed
+  (`rearchive`), so the new rule runs at once. Nothing happens when no item would move
+  (`archivable`, tested against the library).
+  - **A file's archive settings** (`archive.rs`, from the tab's context menu): "Use the app-wide
+    setting (on|off, N days)", or the file's own checkbox and age (the Settings dialog's fields,
+    `settings::archive_fields`); Save stores both keys in the file's entry, or clears both
+    (`AppConfig::set_archive`). It shows the archive's path, and, when the archive's last check
+    found it ignored (`archive_ignored`), that the archived items stay on this computer. Opening
+    it on a synced file queues an `ArchiveState` job, so that note is current; a missing archive
+    gives no note. Escape and the backdrop cancel.
   - **`Change::Archive`** changes nothing in the list when applied: `OpenFile::flush` archives
     (`TodoLibrary::archive`, which appends to the archive at once) under the write lock with the
     worker idle, right before the save, so a pull never meets half an archive. An archive asked

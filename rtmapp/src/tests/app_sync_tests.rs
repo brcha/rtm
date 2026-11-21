@@ -1377,6 +1377,11 @@ fn an_ignored_archive_is_written_and_left_out_of_the_commit() {
         std::fs::read_to_string(a.join("done.txt")).unwrap(),
         "x 2026-01-02 Pay rent\n"
     );
+    // The first archive created it; the archive settings' check finds it ignored.
+    let path = app.active.clone().unwrap();
+    app.open_archive_settings(&path);
+    wait(&mut app);
+    assert_eq!(app.archive_ignored_by(&path), Some("Git"));
     let _ = std::fs::remove_dir_all(dir);
 }
 

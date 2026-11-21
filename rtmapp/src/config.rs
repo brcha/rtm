@@ -49,6 +49,10 @@ pub struct FileEntry {
     pub name: Option<String>,
     /// `"git"` or `"pijul"`: the user's choice when the file's directory belongs to both.
     pub vcs: Option<String>,
+    /// This file's archive settings, in place of the app-wide `auto_archive` and
+    /// `archive_older_than_days`; unset, the app-wide value applies.
+    pub auto_archive: Option<bool>,
+    pub archive_older_than_days: Option<u64>,
 }
 
 impl Default for AppConfig {
@@ -160,6 +164,29 @@ impl AppConfig {
     pub fn set_name(&mut self, file: &str, name: Option<&str>) {
         if let Some(entry) = self.entry_mut(Path::new(file)) {
             entry.name = name.map(str::to_owned);
+        }
+    }
+
+    /// Whether `file` is archived automatically, and the age of the items archived: its entry's
+    /// values where set, else the app-wide ones.
+    pub fn archive_rule(&self, file: &Path) -> (bool, u64) {
+        let entry = self.entry(file);
+        (
+            entry
+                .and_then(|entry| entry.auto_archive)
+                .unwrap_or(self.auto_archive),
+            entry
+                .and_then(|entry| entry.archive_older_than_days)
+                .unwrap_or(self.archive_older_than_days),
+        )
+    }
+
+    /// Sets the archive settings of `file`, or clears them with `None` so the app-wide ones
+    /// apply. A file without an entry is left alone: every tab has one.
+    pub fn set_archive(&mut self, file: &str, rule: Option<(bool, u64)>) {
+        if let Some(entry) = self.entry_mut(Path::new(file)) {
+            entry.auto_archive = rule.map(|(auto, _)| auto);
+            entry.archive_older_than_days = rule.map(|(_, days)| days);
         }
     }
 

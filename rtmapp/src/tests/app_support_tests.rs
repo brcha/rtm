@@ -32,6 +32,7 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         new_item: String::new(),
         editing: None,
         settings: None,
+        archive_settings: None,
         confirm_close: None,
         renaming: None,
         reconnect: false,

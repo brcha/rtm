@@ -268,6 +268,22 @@ it to add it to the filter or remove it, and click the rest of the item to edit 
 item's text (`http://`, `https://` or `mailto:`) is underlined; click it to open it in your
 browser or mail program.
 
+## Archiving done items
+
+The desktop app moves done items out of the todo.txt into `done.txt` next to it (a file with another
+name archives to `<name>.done.<ext>`, for example `notes.done.txt`). Choose **Archive Done Items**
+in the menu at the left of its title bar to archive the file you are looking at, or turn on "Archive
+done items automatically" in **Settings** to archive every open file when the app opens it and once
+a day after that. By default only items completed more than 30 days ago move (set the age in
+**Settings**; 0 moves everything completed before today), and a done item without a completion date
+always moves. To give one file its own settings, right-click its tab and choose **Archive
+Settings…**.
+
+When the todo.txt syncs, the todo.txt and its archive are committed together, and the first archive
+adds the `done.txt` to the repository. If the `done.txt` has changes rtm did not commit, the app
+asks first: commit them and archive, or archive later. If the repository ignores the archive, the
+archived items stay on this computer; the file's Archive Settings say so.
+
 ## Syncing through Git or Pijul
 
 `rtmcli` and the desktop app sync your todo.txt when it is tracked in a Git or Pijul repository.

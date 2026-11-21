@@ -33,6 +33,8 @@ fn round_trip() {
             path: "/home/user/todo.txt".into(),
             name: Some("Home".into()),
             vcs: Some("pijul".into()),
+            auto_archive: Some(false),
+            archive_older_than_days: Some(14),
         }],
     };
     config.save(&path).unwrap();
@@ -117,6 +119,7 @@ fn entry(path: &str, vcs: Option<&str>) -> FileEntry {
         path: path.into(),
         name: None,
         vcs: vcs.map(Into::into),
+        ..FileEntry::default()
     }
 }
 
@@ -312,6 +315,7 @@ fn renaming_an_entry_keeps_its_name_and_choice() {
                 path: "/real/b.txt".into(),
                 name: Some("Work".into()),
                 vcs: Some("pijul".into()),
+                ..FileEntry::default()
             },
             entry("/tmp/a.txt", None),
         ]
@@ -351,4 +355,45 @@ fn set_name_sets_and_clears_the_tab_label_of_a_listed_file_only() {
     assert_eq!(config.files[0].name, None);
     config.set_name("/tmp/b.txt", Some("Home"));
     assert_eq!(config.files, [entry("/tmp/a.txt", None)]);
+}
+
+#[test]
+fn a_file_without_archive_settings_writes_none_and_follows_the_app() {
+    let path = temp_path("archive override");
+    let mut config = AppConfig {
+        auto_archive: true,
+        archive_older_than_days: 7,
+        ..AppConfig::default()
+    };
+    config.add_file("/tmp/a.txt");
+    config.save(&path).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.matches("auto_archive").count(), 1, "{text}");
+    assert_eq!(config.archive_rule(Path::new("/tmp/a.txt")), (true, 7));
+    cleanup(&path);
+}
+
+#[test]
+fn a_file_override_replaces_the_app_wide_rule_until_cleared() {
+    let mut config = AppConfig::default();
+    config.add_file("/tmp/a.txt");
+    config.set_archive("/tmp/a.txt", Some((true, 3)));
+    assert_eq!(config.archive_rule(Path::new("/tmp/a.txt")), (true, 3));
+    assert_eq!(config.archive_rule(Path::new("/tmp/b.txt")), (false, 30));
+    config.set_archive("/tmp/a.txt", None);
+    assert_eq!(config.archive_rule(Path::new("/tmp/a.txt")), (false, 30));
+    assert_eq!(
+        config.entry(Path::new("/tmp/a.txt")).unwrap().auto_archive,
+        None
+    );
+}
+
+#[test]
+fn each_archive_key_falls_back_on_its_own() {
+    let config = load_text(
+        "archive fallback",
+        "auto_archive = true\narchive_older_than_days = 9\n\n[[files]]\npath = \"/tmp/a.txt\"\n\
+         archive_older_than_days = 2\n",
+    );
+    assert_eq!(config.archive_rule(Path::new("/tmp/a.txt")), (true, 2));
 }
