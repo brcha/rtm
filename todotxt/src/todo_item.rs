@@ -726,6 +726,12 @@ impl TodoItem {
             _ => Ok(()),
         }
     }
+
+    /// Not actionable yet: it has a threshold or due date, and every one it has is after `today`.
+    pub fn is_future(&self, today: NaiveDate) -> bool {
+        let dates = [self.threshold, self.due];
+        dates.iter().any(Option::is_some) && dates.iter().flatten().all(|&date| date > today)
+    }
 }
 
 /// A date in exactly the `YYYY-MM-DD` form the specification requires. chrono's `%Y-%m-%d`

@@ -141,6 +141,9 @@ todotxt/tests/
   `add_item`, `replace_item`, `complete_item` and `Display` accept such an item, so a line already
   in a file loads and saves unchanged. The next occurrence of a recurring item never breaks the
   rule: both dates move by the same interval, or keep their distance.
+- **`is_future(today)`** says whether an item is not actionable yet: it has a threshold (`t:`) or
+  due date, and every one it has is after `today`. A passed threshold or due date makes it current;
+  an item without either is never future. rtmapp's "Show future items" uses it.
 - **`Display` never emits a creation date without a completion date on a done line.** A
   completed item's creation date is written only immediately after its completion date; if
   there is no completion date, no date is written at all, even if a creation date is present.

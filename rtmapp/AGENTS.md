@@ -4,9 +4,9 @@
 
 The egui/eframe desktop app for the Todo.txt manager. Targets GNU/Linux, macOS and Windows.
 
-It replaced a Tauri app of the same name in RTM-39 (epic RTM-32), keeping its look, its features and
-its config file. Until RTM-39 it was developed as `rtmgui`. The Tauri app's sources are gone; comments
-that refer to them name commit `5076649`, the last commit that had them.
+It replaced the app of the same name of versions up to 0.1.3, keeping its look, its features and
+its config file. Until RTM-39 it was developed as `rtmgui`. The earlier app's sources are gone;
+comments that refer to them name commit `5076649`, the last commit that had them.
 
 Done: window shell in the Inter-based theme, config loading, "Load File" through a native dialog and
 the item list (RTM-34); logging of file dialog failures (RTM-42); filters, sorting, quick-add and
@@ -97,9 +97,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   `StartupWMClass`; `Exec=rtmapp` and `Icon=rtmapp` match the binary and the installed icons, and
   `CFBundleExecutable` in `assets/Info.plist` matches the binary (the macOS bundle does not start
   otherwise). Keep them all in agreement.
-- **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one the Tauri app wrote,
-  so existing users' settings carry over: do not rename fields or change defaults (`#[serde(default)]`
-  on `AppConfig`). The file is written after a successful file load (or creation), a tab
+- **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one versions up to 0.1.3
+  wrote, so existing users' settings carry over: do not rename fields or change defaults
+  (`#[serde(default)]` on `AppConfig`). The file is written after a successful file load (or creation), a tab
   closed, clicked or renamed, a filter change or Save in the Settings dialog, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
   default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
   false turns off commits as well as pulls and pushes) and, until RTM-124, a top-level `vcs`.
@@ -134,12 +134,13 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   is set. A `Popup` shown from inside a `Modal` must be made a sublayer of the modal's layer
   (`ctx.set_sublayer`), or a click in the dialog draws the dialog over it. `Sense::click()` includes
   `FOCUSABLE`: hit areas inside a popup use `Sense::CLICK`, so Tab does not walk into them.
-- **Look:** reproduces the Tauri app's `styles.css`; see "Look" below.
-- **Filtering and sorting** (`list::visible`) follow the Tauri app's `get_items`, and a test checks the
-  filters against its predicate (rewritten for clippy, equivalent), for every flag combination. Sorting puts items
-  without a due date first, then dated items, with priority as the tie-break (none last). **One
-  deliberate difference:** dates run earliest first and `reverse_sort` gives latest first; the Tauri
-  app had it the other way round, so the saved `reverse_sort` setting now gives the opposite order.
+- **Look:** see "Look" below.
+- **Filtering and sorting** (`list::visible`): "Show future items" goes by `TodoItem::is_future`:
+  an item is shown once its threshold date (`t:`) or its due date is today or earlier, and is a
+  future item only while every date it has is after today. Sorting puts items without a due date
+  first, then dated items earliest first (`reverse_sort`: latest first), with priority as the
+  tie-break (none last). A test checks the filters against a predicate written out separately, for
+  every flag combination, on items without `t:`; other tests cover `t:`.
 - **Projects and contexts (RTM-120, epic RTM-118):** the sidebar shows the shown tab's
   `TodoLibrary::projects` and `contexts` below the view checkboxes (`App::tags`, `tag_section`):
   a collapsing header per section ("Projects", "Contexts") and a row per tag, in the list's
@@ -153,8 +154,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   - **Filtering (RTM-121):** each tag is a selectable button; a click toggles it in the shown
     file's selection (`OpenFile::projects` / `contexts`, per tab, for the run, never saved).
     `tabs_and_page` keeps only the items of `list::visible` that carry every selected tag
-    (`TodoItem::matches`), so the view checkboxes still apply and `visible` stays as the Tauri app
-    had it. "Clear filter (N)" above the Projects section, shown while tags are selected, empties
+    (`TodoItem::matches`), so the view checkboxes still apply and `visible` itself does not
+    change. "Clear filter (N)" above the Projects section, shown while tags are selected, empties
     the selection. A selected tag no longer in the file (deleted, or removed by a pull) leaves the
     selection when the sidebar is drawn. Tag names compare case-insensitively (`same_tag`). The
     counts do not follow the selection.
@@ -185,11 +186,10 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   appears as `rec:+1m`; the file keeps its own spelling).
   The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had
   it. Rows report the clicked item's index in the file, never its position in the filtered list.
-- **Mutations** call the same `TodoLibrary` methods in the same order as the Tauri app did and save at
-  once: add is `add_item` (which sets a creation date when the item has none) then `save`, after the
-  add row's line parses and passes `check_dates` (otherwise the app error line says why and the
-  input stays); uncomplete
-  is `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
+- **Mutations** call `TodoLibrary` methods and save at once: add is `add_item` (which sets a
+  creation date when the item has none) then `save`, after the add row's line parses and passes
+  `check_dates` (otherwise the app error line says why and the input stays); uncomplete is
+  `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
   recurring item) then `save`, then `load` once the save succeeded; delete is
   `remove_item` (which also removes the item's sub-items) then `save`. Errors go to
   the error lines above the list, not to a dialog; the quick-add input is cleared only after a
@@ -299,16 +299,13 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   pending changes are written first. The Git-or-Pijul choice is per file (RTM-124) and is not in
   the dialog: it stays the question asked on open. Escape and the backdrop cancel, as in the edit
   dialog.
-- **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled as the Tauri app's
-  `openEditDialog` did; Save (or Enter in a field) writes the fields as its `update_item` did, then
-  `save`. Fields the dialog does not show (done, dates of completion and creation, `uuid`, `sub`) are
-  kept. **Deliberate differences from the Tauri app:** the priority dropdown offers A to Z, not just A
-  to C; an invalid date or recurrence, or a threshold after the due date (`check_dates`, shown as
-  `Dates: …`), keeps the dialog open with a message and writes nothing, where
-  the Tauri app dropped the field silently; one leading `+` or `@` on a project or context name is
-  stripped, and a name with whitespace is refused, where the Tauri app wrote it as typed and it split
-  into several words on reload; Escape and a click outside the dialog cancel, where the Tauri app
-  closed only on its buttons. **Delete** (RTM-24, the Tauri app had none): a trash button at the
+- **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled from the item; Save (or
+  Enter in a field) writes the fields, then `save`. Fields the dialog does not show (done, dates of
+  completion and creation, `uuid`, `sub`) are kept. The priority dropdown offers A to Z; an invalid
+  date or recurrence, or a threshold after the due date (`check_dates`, shown as `Dates: …`), keeps
+  the dialog open with a message and writes nothing; one leading `+` or `@` on a project or context
+  name is stripped, and a name with whitespace is refused, since it would split into several words
+  on reload; Escape and a click outside the dialog cancel. **Delete** (RTM-24): a trash button at the
   left of the button row, opposite Cancel/Save, asks inline. The question gets its own line above
   the row ("Delete this item?", or "… and N sub-items?" with the count from `remove_item` on a copy
   of the library, since `uuid`/`sub` are not shown anywhere), and Delete (red) and Keep replace the
@@ -318,8 +315,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   same way ("Move this item to Work?", or "… and N sub-items to Work?"), with Move and Keep. Move
   applies the dialog's fields as Save does, then moves the item (see "Moving an item" under Sync).
 - **Calendar** (`calendar.rs`): Due Date and Threshold are text fields (typing still works, as
-  flatpickr's `allowInput` did) with a popup drawn at the sizes of the flatpickr popup the Tauri app
-  used (`rtmapp/src/assets/flatpickr.min.css` at `5076649`). It opens on a click or focus and closes on
+  flatpickr's `allowInput` did) with a popup drawn at the sizes of the flatpickr popup of versions up
+  to 0.1.3 (`rtmapp/src/assets/flatpickr.min.css` at `5076649`). It opens on a click or focus and closes on
   a pick, Clear, Escape, Tab or a click outside. Escape and a click elsewhere in the dialog close only
   the calendar; a click on the backdrop still cancels the dialog (egui's `Modal` does not hold that
   back for open popups, as with the priority dropdown). **Deliberate differences from flatpickr:** dark
@@ -332,8 +329,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   Finder); `icu_calendar`'s CLDR week data gives the first day for it. `C`, `POSIX`, an empty or
   unparsable locale start on Sunday. The explicit "first day of week" setting of macOS and Windows is
   not read yet (RTM-44).
-- **Windows:** release builds use the `windows` subsystem (`#![cfg_attr(...)]` in `main.rs`), as the
-  Tauri app did, so no console window opens behind the GUI. The window opens centred at 900 × 650.
+- **Windows:** release builds use the `windows` subsystem (`#![cfg_attr(...)]` in `main.rs`), so no
+  console window opens behind the GUI. The window opens centred at 900 × 650.
   Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
   uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
 - **`rtmapp mcp` (RTM-116)** serves the files of the config (`mcp.rs`) to an MCP client over stdin
@@ -512,23 +509,23 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 
 ## Look
 
-`theme.rs` and the widgets reproduce the palettes, spacing, radii, borders and shadows of the Tauri
-app's `rtmapp/src/styles.css` (at `5076649`), in both themes. The theme follows the system preference;
+`theme.rs` and the widgets reproduce the palettes, spacing, radii, borders and shadows of
+`rtmapp/src/styles.css` at `5076649`, in both themes. The theme follows the system preference;
 `RTMAPP_THEME=light` or `dark` forces one.
 
-- **Reference sizes,** read from the Tauri app's DOM: header 50 px, sidebar 220 px, text input 37 px,
-  list rows 46 px, dialog 500 px wide. The sidebar and dialog widths are set directly; the others
+- **Reference sizes,** read from the DOM of the app at `5076649`: header 50 px, sidebar 220 px,
+  text input 37 px, list rows 46 px, dialog 500 px wide. The sidebar and dialog widths are set directly; the others
   follow from the CSS paddings and font sizes the code reproduces.
-- **How it was compared (RTM-33):** the unmodified Tauri frontend in Chromium with a mocked
-  `window.__TAURI__`, against screenshots of an egui prototype with the same sample items. Chromium is
-  not the WebKitGTK webview the Tauri app used, so small text-rendering differences were expected.
+- **How it was compared (RTM-33):** the unmodified frontend at `5076649` in Chromium with its
+  backend mocked, against screenshots of an egui prototype with the same sample items. Chromium is
+  not the webview that frontend ran in, so small text-rendering differences were expected.
 - **Focus ring:** a 3 px translucent stroke painted outside the input's border.
 - **Dialogs** share `theme::dialog_frame` (the edit dialog's CSS frame). The questions (Git or
   Pijul, outside changes, untracked, closing a tab) go through `theme::question`: a bold title, a
   muted explanation, and the buttons on the right with the main answer rightmost.
 - **Item text:** one `LayoutJob` per row (`list::row_job`), with per-span font, colour and
   strikethrough.
-- **Known differences from the Tauri look:**
+- **Known differences from `styles.css`:**
   - egui has no font weights: Inter Regular is the text face and SemiBold is the `bold` family (title,
     headings, priorities). The CSS weight 500 of the labels rendered regular under
     `font-synthesis: none`, so labels are regular.
@@ -692,9 +689,9 @@ the binary, `Info.plist`, the icon and both licences.
   ad-hoc signature. The
   Release workflow passes a universal binary; a local `target/release/rtmapp` works too, for the host's
   architecture only. Gatekeeper blocks the first launch of a downloaded copy (see the README).
-- **MSI:** `wix/main.wxs`, built with `cargo wix -p rtmapp --no-build` on Windows. It replaces the Tauri
-  MSI of versions up to 0.1.3, so it keeps what that MSI had where it matters. The Tauri MSI, decompiled
-  with WiX's `dark.exe` during RTM-38, had:
+- **MSI:** `wix/main.wxs`, built with `cargo wix -p rtmapp --no-build` on Windows. It replaces the MSI
+  of versions up to 0.1.3, so it keeps what that MSI had where it matters. That MSI, decompiled with
+  WiX's `dark.exe` during RTM-38, had:
   - UpgradeCode `E0E423D1-1101-50D4-BAEE-4A27FA127509`, per-machine, `MajorUpgrade` allowing
     downgrades — **kept** (the UpgradeCode must never change);
   - Manufacturer `brcha` and the HKCU key `Software\brcha\Rusty Todo.txt Manager`, whose `InstallDir`
