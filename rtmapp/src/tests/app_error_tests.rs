@@ -52,6 +52,23 @@ fn a_successful_change_clears_both_lines() {
 }
 
 #[test]
+fn adding_a_threshold_after_the_due_date_is_refused() {
+    let dir = temp_dir("error threshold after due");
+    let mut app = app_with(&dir, "First\n");
+
+    app.new_item = "Pay rent due:2026-01-05 t:2026-01-10".to_owned();
+    app.add_item();
+
+    assert_eq!(
+        app.error.as_deref(),
+        Some("Could not add the item: threshold date 2026-01-10 is after due date 2026-01-05")
+    );
+    assert_eq!(app.new_item, "Pay rent due:2026-01-05 t:2026-01-10");
+    assert_eq!(file_lines(&dir), ["First"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn opening_another_file_clears_the_old_file_message() {
     let dir = temp_dir("error other file");
     std::fs::write(dir.join("other.txt"), "Other\n").unwrap();

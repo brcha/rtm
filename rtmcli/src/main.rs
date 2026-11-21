@@ -517,6 +517,10 @@ fn main() {
                 eprintln!("Error parsing todo: {:?}", e);
                 std::process::exit(1);
             });
+            if let Err(e) = item.check_dates() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
             lib.add_item(item);
             if let Err(e) = lib.save() {
                 eprintln!("Error saving file: {}", e);

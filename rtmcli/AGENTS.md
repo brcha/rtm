@@ -55,6 +55,8 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 - `projects` / `contexts` sync first and load like `list`, then print `<tag> (<open items>)`
   lines from `TodoLibrary::projects` / `contexts` (order, case merging and `(0)` for done-only
   tags come from `todotxt`, see `todotxt/AGENTS.md`). They never write.
+- `add` refuses an item whose threshold date is after its due date (`TodoItem::check_dates`):
+  it prints `Error: <message>` and exits 1 without writing.
 - `complete` accepts: a filter name (optionally + index/UUID), an absolute index, or a UUID.
 - `delete` takes one item: a number as shown by `list` (with `-c`, as shown by `list -c`) or a
   UUID (open or completed; `-c` does not apply). It also removes the item's sub-items

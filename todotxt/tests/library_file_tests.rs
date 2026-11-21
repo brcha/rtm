@@ -60,6 +60,20 @@ fn a_loaded_file_is_saved_unchanged() {
 }
 
 #[test]
+fn a_threshold_after_the_due_date_loads_and_saves_unchanged() {
+    let line = "Pay rent due:2026-01-05 t:2026-01-10";
+    let file = todo_file("threshold after due", &[line]);
+
+    let mut library = load(&file);
+    assert_eq!(library.list_items()[0].to_string(), line);
+    library.add_item("2026-01-01 Buy milk".parse().unwrap());
+    library.save().unwrap();
+
+    assert_eq!(file_lines(&file), [line, "2026-01-01 Buy milk"]);
+    cleanup(&file);
+}
+
+#[test]
 fn edits_are_written_and_read_back() {
     let file = todo_file(
         "edits",

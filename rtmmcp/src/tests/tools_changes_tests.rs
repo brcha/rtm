@@ -24,6 +24,37 @@ fn test_add_refuses_an_invalid_line() {
 }
 
 #[test]
+fn test_add_refuses_a_threshold_after_the_due_date() {
+    let source = source_with("Buy milk\n");
+    let error = add_item(&source, "Pay rent due:2026-01-05 t:2026-01-10").unwrap_err();
+    assert_eq!(
+        error,
+        "'Pay rent due:2026-01-05 t:2026-01-10' cannot be saved: \
+         threshold date 2026-01-10 is after due date 2026-01-05."
+    );
+    assert_eq!(lines(&source), ["Buy milk"]);
+    remove(source);
+}
+
+#[test]
+fn test_edit_refuses_a_threshold_after_the_due_date() {
+    let source = source_with("Pay rent due:2026-01-05\n");
+    let error = edit_item(
+        &source,
+        1,
+        "Pay rent due:2026-01-05",
+        "Pay rent due:2026-01-05 t:2026-01-10",
+    )
+    .unwrap_err();
+    assert!(
+        error.contains("threshold date 2026-01-10 is after due date 2026-01-05"),
+        "{error}"
+    );
+    assert_eq!(lines(&source), ["Pay rent due:2026-01-05"]);
+    remove(source);
+}
+
+#[test]
 fn test_add_creates_a_missing_file() {
     let source = source_with("");
     std::fs::remove_file(&source.path).unwrap();
