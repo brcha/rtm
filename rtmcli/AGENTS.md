@@ -39,6 +39,8 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 - **Edition:** Rust 2024
 - File path resolved from: `-f <file>` flag → `$TODOTXT` env var → `todo.txt` (cwd fallback).
 - Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
+- `add` refuses an item whose threshold date is after its due date (`TodoItem::check_dates`):
+  it prints `Error: <message>` and exits 1 without writing.
 - `complete` accepts: a filter name (optionally + index/UUID), an absolute index, or a UUID.
 - `delete` takes one item: a number as shown by `list` (with `-c`, as shown by `list -c`) or a
   UUID (open or completed; `-c` does not apply). It also removes the item's sub-items
