@@ -332,7 +332,7 @@ fn archive_commits_the_file_and_its_archive_together() {
     assert!(output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
     let remote = dir.join("remote");
-    assert_eq!(last_subject(&remote), "rtm: archive x 2026-01-02 Pay rent");
+    assert_eq!(last_subject(&remote), "rtm: archive Pay rent");
     assert_eq!(last_files(&remote), "done.txt\ntodo.txt");
 }
 
@@ -360,7 +360,7 @@ fn an_edited_archive_stops_archive_until_commit_changes() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         git(&dir.join("remote"), &["log", "-2", "--format=%s"]),
-        "rtm: archive x 2026-01-02 Pay rent\nrtm: commit outside changes"
+        "rtm: archive Pay rent\nrtm: commit outside changes"
     );
     assert_eq!(
         std::fs::read_to_string(a.join("done.txt")).unwrap(),
