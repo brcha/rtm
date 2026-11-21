@@ -76,12 +76,13 @@
     credentials go into the repository's secrets. Three flows in the RTM space (Space settings →
     Automation) send a remote link to `/rest/api/3/issue/{{issue.key}}/remotelink`: "Add pull
     requests to the issue's links" on "Pull request created", so the PR shows in the issue's
-    links area and not only in the Development panel; "Mark merged pull requests resolved in the
-    issue's links" and "Mark declined pull requests resolved in the issue's links" on those
-    events, with `"status": { "resolved": true }`, which strikes the link through. The link's
-    `globalId` is the PR's URL, so a repeated request updates the link instead of adding one. A
-    PR opened before the flows existed has no link, and when a PR's title later names another
-    issue, the link stays on the first one until removed by hand.
+    web links, which the issue view lists under Attachments, and not only in the Development
+    panel; "Mark merged pull requests resolved in the issue's links" and "Mark declined pull
+    requests resolved in the issue's links" on those events, with
+    `"status": { "resolved": true }`, which strikes the link through. The link's `globalId` is
+    the PR's URL, so a repeated request updates the link instead of adding one. A PR opened
+    before the flows existed has no link, and when a PR's title later names another issue, the
+    link stays on the first one until removed by hand.
   - The flows authenticate with a Basic `Authorization` header built from the Atlassian email
     and an API token named "rtm automation: PR links", entered as a hidden header in each flow's
     "Send web request" action. The token expires on 2027-11-21; tokens last at most a year.
