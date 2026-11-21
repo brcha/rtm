@@ -27,6 +27,7 @@ impl TodoLibrary {
     }
 
     pub fn load(&mut self) -> Result<(), std::io::Error> {
+        refuse_symlink(Path::new(&self.file_name))?;
         let content = std::fs::read_to_string(&self.file_name)?;
         // `lines` also drops the `\r` of CRLF line endings, so they are saved as LF.
         self.items = content
@@ -278,6 +279,44 @@ impl TodoLibrary {
             .filter(|&i| self.items[i].matches(projects, contexts))
             .collect()
     }
+}
+
+/// A todo file that is a symbolic link, refused because files kept next to the todo file (the
+/// archive) would land next to the link rather than the file.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("'{}' is a symbolic link to '{}'; open '{}' instead", link.display(), target.display(), target.display())]
+pub struct SymlinkError {
+    pub link: PathBuf,
+    /// The file at the end of the link chain, or the path the link names when it does not exist.
+    pub target: PathBuf,
+}
+
+/// Refuses `path` when it is a symbolic link, with an `InvalidInput` error carrying a
+/// `SymlinkError`. Links among its parent directories are allowed: they change the path's
+/// spelling, not the directory the file is in. A missing path passes.
+pub fn refuse_symlink(path: &Path) -> std::io::Result<()> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if !metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    let target = match std::fs::canonicalize(path) {
+        Ok(target) => target,
+        Err(_) => {
+            let named = std::fs::read_link(path)?;
+            path.parent().unwrap_or(Path::new("")).join(named)
+        }
+    };
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        SymlinkError {
+            link: path.to_path_buf(),
+            target,
+        },
+    ))
 }
 
 /// The date `count` business days after `from`, skipping Saturdays and Sundays as topydo and
