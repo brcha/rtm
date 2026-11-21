@@ -100,11 +100,12 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   (`ctx.set_sublayer`), or a click in the dialog draws the dialog over it. `Sense::click()` includes
   `FOCUSABLE`: hit areas inside a popup use `Sense::CLICK`, so Tab does not walk into them.
 - **Look:** reproduces the Tauri app's `styles.css`; see "Look" below.
-- **Filtering and sorting** (`list::visible`) follow the Tauri app's `get_items`, and a test checks the
-  filters against its predicate (rewritten for clippy, equivalent), for every flag combination. Sorting puts items
-  without a due date first, then dated items, with priority as the tie-break (none last). **One
-  deliberate difference:** dates run earliest first and `reverse_sort` gives latest first; the Tauri
-  app had it the other way round, so the saved `reverse_sort` setting now gives the opposite order.
+- **Filtering and sorting** (`list::visible`): "Show future items" goes by `TodoItem::is_future`:
+  an item is shown once its threshold date (`t:`) or its due date is today or earlier, and is a
+  future item only while every date it has is after today. Sorting puts items without a due date
+  first, then dated items earliest first (`reverse_sort`: latest first), with priority as the
+  tie-break (none last). A test checks the filters against a predicate written out separately, for
+  every flag combination, on items without `t:`; other tests cover `t:`.
 - **Item rows** show the visible items in that order. A done item is struck through entirely, as the
   CSS did. Recurrence is shown through `TodoRecurrence`'s `Display`, always with its count (`rec:+m`
   appears as `rec:+1m`; the file keeps its own spelling).
