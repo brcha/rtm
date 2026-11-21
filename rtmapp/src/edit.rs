@@ -77,21 +77,24 @@ impl EditForm {
         let projects = names(&self.projects, '+', "Projects")?;
         let contexts = names(&self.contexts, '@', "Contexts")?;
 
-        item.description = description.to_owned();
-        item.priority = TodoPriority {
+        let mut new = item.clone();
+        new.description = description.to_owned();
+        new.priority = TodoPriority {
             priority: self.priority,
         };
-        item.due = due;
-        item.threshold = threshold;
-        item.recurrence = recurrence;
-        item.projects = projects
+        new.due = due;
+        new.threshold = threshold;
+        new.recurrence = recurrence;
+        new.projects = projects
             .into_iter()
             .map(|name| TodoProject { name })
             .collect();
-        item.contexts = contexts
+        new.contexts = contexts
             .into_iter()
             .map(|name| TodoContext { name })
             .collect();
+        new.check_dates().map_err(|e| format!("Dates: {e}"))?;
+        *item = new;
         Ok(())
     }
 }

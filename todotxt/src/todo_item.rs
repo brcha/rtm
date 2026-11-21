@@ -108,6 +108,16 @@ pub enum TodoItemParseError {
     ConflictingPriority(char, char),
 }
 
+/// Dates a user may not enter together; lines already in a file are never checked.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TodoItemDateError {
+    #[error("threshold date {threshold} is after due date {due}")]
+    ThresholdAfterDue {
+        threshold: NaiveDate,
+        due: NaiveDate,
+    },
+}
+
 impl FromStr for TodoItem {
     type Err = TodoItemParseError;
 
@@ -701,6 +711,16 @@ impl TodoItem {
             ..self.clone()
         }
     }
+
+    /// Refuses a threshold date after the due date; the same day is allowed.
+    pub fn check_dates(&self) -> Result<(), TodoItemDateError> {
+        match (self.threshold, self.due) {
+            (Some(threshold), Some(due)) if threshold > due => {
+                Err(TodoItemDateError::ThresholdAfterDue { threshold, due })
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// A date in exactly the `YYYY-MM-DD` form the specification requires. chrono's `%Y-%m-%d`
@@ -731,3 +751,7 @@ mod editing_tests;
 #[cfg(test)]
 #[path = "tests/todo_item_layout_tests.rs"]
 mod layout_tests;
+
+#[cfg(test)]
+#[path = "tests/todo_item_dates_tests.rs"]
+mod dates_tests;

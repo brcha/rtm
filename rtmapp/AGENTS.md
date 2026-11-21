@@ -111,7 +111,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had
   it. Rows report the clicked item's index in the file, never its position in the filtered list.
 - **Mutations** call the same `TodoLibrary` methods in the same order as the Tauri app did and save at
-  once: add is `add_item` (which sets a creation date when the item has none) then `save`; uncomplete
+  once: add is `add_item` (which sets a creation date when the item has none) then `save`, after the
+  add row's line parses and passes `check_dates` (otherwise the app error line says why and the
+  input stays); uncomplete
   is `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
   recurring item) then `save`, then `load` once the save succeeded; delete is
   `remove_item` (which also removes the item's sub-items) then `save`. Errors go to
@@ -123,7 +125,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   `openEditDialog` did; Save (or Enter in a field) writes the fields as its `update_item` did, then
   `save`. Fields the dialog does not show (done, dates of completion and creation, `uuid`, `sub`) are
   kept. **Deliberate differences from the Tauri app:** the priority dropdown offers A to Z, not just A
-  to C; an invalid date or recurrence keeps the dialog open with a message and writes nothing, where
+  to C; an invalid date or recurrence, or a threshold after the due date (`check_dates`, shown as
+  `Dates: …`), keeps the dialog open with a message and writes nothing, where
   the Tauri app dropped the field silently; one leading `+` or `@` on a project or context name is
   stripped, and a name with whitespace is refused, where the Tauri app wrote it as typed and it split
   into several words on reload; Escape and a click outside the dialog cancel, where the Tauri app

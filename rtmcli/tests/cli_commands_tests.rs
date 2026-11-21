@@ -348,3 +348,52 @@ fn test_cli_delete_invalid_index() {
     assert!(!output.status.success());
     assert_eq!(after, OPEN_AND_DONE);
 }
+
+fn rtmcli(file: &std::path::Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_rtmcli"))
+        .arg("-f")
+        .arg(file)
+        .args(args)
+        .env_remove("TODOTXT")
+        .env_remove("RTM_NO_SYNC")
+        .env_remove("RTM_VCS")
+        .env_remove("RTM_UPDATE_URL")
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn test_cli_add_refuses_a_threshold_after_the_due_date() {
+    let temp_file = std::env::temp_dir().join("test_cli_add_threshold_after_due.txt");
+    fs::write(&temp_file, "Buy milk\n").unwrap();
+
+    let output = rtmcli(&temp_file, &["add", "Pay rent due:2026-01-05 t:2026-01-10"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("threshold date 2026-01-10 is after due date 2026-01-05"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read_to_string(&temp_file).unwrap(), "Buy milk\n");
+    fs::remove_file(&temp_file).unwrap();
+}
+
+#[test]
+fn test_cli_keeps_an_existing_threshold_after_the_due_date() {
+    let temp_file = std::env::temp_dir().join("test_cli_keep_threshold_after_due.txt");
+    let line = "Pay rent due:2026-01-05 t:2026-01-10";
+    fs::write(&temp_file, format!("{line}\n")).unwrap();
+
+    let output = rtmcli(&temp_file, &["list", "all"]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains(&format!("1. {line}")), "{stdout}");
+
+    assert!(rtmcli(&temp_file, &["add", "Buy milk"]).status.success());
+    assert_eq!(
+        fs::read_to_string(&temp_file).unwrap(),
+        format!("{line}\n{} Buy milk\n", today())
+    );
+    fs::remove_file(&temp_file).unwrap();
+}

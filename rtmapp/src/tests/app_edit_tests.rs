@@ -98,6 +98,23 @@ fn adding_without_a_file_is_an_error_and_writes_nothing() {
 }
 
 #[test]
+fn adding_a_threshold_after_the_due_date_is_refused() {
+    let dir = temp_dir("threshold after due");
+    let mut app = app_with(&dir, "First\n");
+
+    app.new_item = "Pay rent due:2026-01-05 t:2026-01-10".to_owned();
+    app.add_item();
+
+    assert_eq!(
+        app.error.as_deref(),
+        Some("Could not add the item: threshold date 2026-01-10 is after due date 2026-01-05")
+    );
+    assert_eq!(app.new_item, "Pay rent due:2026-01-05 t:2026-01-10");
+    assert_eq!(file_lines(&dir), ["First"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn saving_an_edit_writes_the_item_and_keeps_the_others() {
     let dir = temp_dir("edit");
     let mut app = app_with(&dir, "First\n(D) Second +Home\nThird\n");
