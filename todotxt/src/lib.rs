@@ -8,7 +8,7 @@ pub mod write_lock;
 
 pub use todo_context::TodoContext;
 pub use todo_item::{DateFilter, TodoItem};
-pub use todo_library::{SymlinkError, TodoLibrary, refuse_symlink};
+pub use todo_library::{SymlinkError, TodoLibrary, refuse_symlink, write_atomic};
 pub use todo_priority::TodoPriority;
 pub use todo_project::TodoProject;
 pub use write_lock::WriteLock;
