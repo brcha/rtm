@@ -23,7 +23,7 @@ pub fn visible(items: &[TodoItem], config: &AppConfig, today: NaiveDate) -> Vec<
     let mut indices: Vec<usize> = (0..items.len())
         .filter(|&i| {
             let item = &items[i];
-            (config.show_future_items || item.due.is_none_or(|due| due <= today))
+            (config.show_future_items || !item.is_future(today))
                 && (config.show_completed_items || !item.done)
                 && !(config.hide_no_date && item.due.is_none())
         })
