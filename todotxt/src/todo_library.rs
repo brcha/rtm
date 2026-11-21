@@ -48,8 +48,7 @@ impl TodoLibrary {
         if self.final_newline && !self.items.is_empty() {
             content.push('\n');
         }
-        std::fs::write(&self.file_name, content)?;
-        Ok(())
+        write_atomic(Path::new(&self.file_name), content)
     }
 
     pub fn add_item(&mut self, mut item: TodoItem) {
@@ -293,28 +292,83 @@ pub struct SymlinkError {
 /// `SymlinkError`. Links among its parent directories are allowed: they change the path's
 /// spelling, not the directory the file is in. A missing path passes.
 pub fn refuse_symlink(path: &Path) -> std::io::Result<()> {
+    match link_target(path)? {
+        None => Ok(()),
+        Some(target) => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            SymlinkError {
+                link: path.to_path_buf(),
+                target,
+            },
+        )),
+    }
+}
+
+/// The file a symbolic link at `path` leads to: the end of the link chain, or for a dangling
+/// link the path it names. `None` when `path` is missing or not a link.
+fn link_target(path: &Path) -> std::io::Result<Option<PathBuf>> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e),
     };
     if !metadata.file_type().is_symlink() {
-        return Ok(());
+        return Ok(None);
     }
-    let target = match std::fs::canonicalize(path) {
+    Ok(Some(match std::fs::canonicalize(path) {
         Ok(target) => target,
         Err(_) => {
             let named = std::fs::read_link(path)?;
             path.parent().unwrap_or(Path::new("")).join(named)
         }
+    }))
+}
+
+/// Writes a temporary file next to `path` and renames it over the original, keeping the
+/// original's permissions. A symbolic link stays a link: the file it leads to is replaced. A
+/// read-only file is refused with `PermissionDenied`, as writing it in place would be.
+pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let target = link_target(path)?.unwrap_or_else(|| path.to_path_buf());
+    let Some(name) = target.file_name() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "the path does not name a file",
+        ));
     };
-    Err(std::io::Error::new(
-        std::io::ErrorKind::InvalidInput,
-        SymlinkError {
-            link: path.to_path_buf(),
-            target,
-        },
-    ))
+    let permissions = match std::fs::metadata(&target) {
+        Ok(metadata) if metadata.permissions().readonly() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "the file is read-only",
+            ));
+        }
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
+    // Hidden, and never one of the names rtm commits, should a crash leave it behind.
+    let mut temp_name = OsString::from(".");
+    temp_name.push(name);
+    temp_name.push(format!(".{}.tmp", Uuid::new_v4()));
+    let temp = target.with_file_name(temp_name);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)?;
+    let contents = contents.as_ref();
+    let result = (|| {
+        if let Some(permissions) = permissions {
+            file.set_permissions(permissions)?;
+        }
+        file.write_all(contents)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temp, &target)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
 }
 
 /// The date `count` business days after `from`, skipping Saturdays and Sundays as topydo and
@@ -372,3 +426,7 @@ mod tags_tests;
 #[cfg(test)]
 #[path = "tests/todo_library_archive_tests.rs"]
 mod archive_tests;
+
+#[cfg(test)]
+#[path = "tests/todo_library_atomic_write_tests.rs"]
+mod atomic_write_tests;

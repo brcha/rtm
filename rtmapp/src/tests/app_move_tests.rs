@@ -173,3 +173,26 @@ fn a_target_that_is_no_longer_loaded_is_named() {
     assert_eq!(file_lines(&dir), ["Alpha"]);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_move_whose_target_save_failed_waits_and_is_written_later() {
+    let dir = temp_dir("move failed save");
+    let (mut app, work) = two_files(&dir, "Alpha\nBravo\n", "Report\n");
+    let original = read_only(&work);
+
+    open_editor(&mut app, 1);
+    app.move_item(&work);
+
+    assert_eq!(file_lines(&dir), ["Alpha", "Bravo"]);
+    assert_eq!(lines(&work), ["Report"]);
+    assert!(app.files.iter().all(|file| file.pending.len() == 1));
+    assert!(!app.can_close(app.file().unwrap()));
+
+    std::fs::set_permissions(&work, original).unwrap();
+    app.flush();
+
+    assert_eq!(file_lines(&dir), ["Alpha"]);
+    assert_eq!(lines(&work), ["Report", "Bravo"]);
+    assert!(app.files.iter().all(|file| file.pending.is_empty()));
+    let _ = std::fs::remove_dir_all(dir);
+}

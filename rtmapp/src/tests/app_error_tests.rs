@@ -84,3 +84,30 @@ fn opening_another_file_clears_the_old_file_message() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_change_whose_save_failed_stays_pending_and_is_saved_on_quit() {
+    let dir = temp_dir("error failed save");
+    let mut app = app_with(&dir, "Alpha\nBravo\n");
+    let todo = dir.join("todo.txt");
+    let original = read_only(&todo);
+
+    app.toggle(0);
+
+    let error = app.file().unwrap().error.clone().unwrap();
+    assert!(error.contains("todo.txt"), "{error}");
+    assert_eq!(app.file().unwrap().pending.len(), 1);
+    assert_eq!(file_lines(&dir), ["Alpha", "Bravo"]);
+
+    std::fs::set_permissions(&todo, original).unwrap();
+    eframe::App::on_exit(&mut app);
+
+    assert!(app.file().unwrap().pending.is_empty());
+    let lines = file_lines(&dir);
+    assert!(
+        lines[0].starts_with("x ") && lines[0].ends_with("Alpha"),
+        "{lines:?}"
+    );
+    assert_eq!(lines[1], "Bravo");
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -46,7 +46,7 @@ jobs:
       # the issue named in the title: added when missing, replaced when the title's key changes,
       # left alone when it is already right. Title and body are read from the API because the
       # step above may just have changed the title. Fork PRs get a read-only token and are
-      # skipped; a failed edit would fail this required check.
+      # skipped; a failed read or edit fails this required check.
       - name: Link the description to the issue
         if: github.event.pull_request.head.repo.full_name == github.repository
         env:
@@ -64,7 +64,7 @@ jobs:
           line="Issue: [${key}](https://brcha.atlassian.net/browse/${key})"
 
           # The trailing x keeps the body's own trailing newlines through $(...); --jq adds one.
-          body=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json body --jq .body; printf x)
+          body=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json body --jq .body && printf x)
           body=${body%x}
           body=${body%$'\n'}
 

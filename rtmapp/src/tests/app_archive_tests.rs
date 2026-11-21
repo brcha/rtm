@@ -283,3 +283,37 @@ fn cancelling_the_edit_writes_the_archive_held_meanwhile() {
     assert_eq!(done_lines(&dir), [old]);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn an_archive_whose_save_failed_is_saved_later_and_archived_once() {
+    let dir = temp_dir("archive failed save");
+    let old = days_ago(30);
+    let mut app = app_with(&dir, &format!("Open\nx {old} Old\n"));
+    app.config.archive_older_than_days = 7;
+    let todo = dir.join("todo.txt");
+    let original = read_only(&todo);
+
+    app.archive(&todo_path(&app), Instant::now());
+
+    assert_eq!(done_lines(&dir), [format!("x {old} Old")]);
+    assert_eq!(file_lines(&dir), ["Open", &format!("x {old} Old")]);
+    let pending = &app.file().unwrap().pending;
+    assert!(
+        matches!(pending.as_slice(), [Change::Archive { archived, .. }] if archived.len() == 1),
+        "{} pending",
+        pending.len()
+    );
+    // A reload meanwhile (a pull, another program) keeps the archived item out of the list.
+    app.file_mut().unwrap().reload(None);
+    assert_eq!(app.library().unwrap().items.len(), 1);
+    assert_eq!(app.file().unwrap().pending.len(), 1);
+
+    std::fs::set_permissions(&todo, original).unwrap();
+    let path = todo_path(&app);
+    app.close(&path);
+
+    assert!(app.files.is_empty());
+    assert_eq!(file_lines(&dir), ["Open"]);
+    assert_eq!(done_lines(&dir), [format!("x {old} Old")]);
+    let _ = std::fs::remove_dir_all(dir);
+}
