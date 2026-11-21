@@ -156,6 +156,10 @@ todotxt/tests/
 - **`is_future(today)`** says whether an item is not actionable yet: it has a threshold (`t:`) or
   due date, and every one it has is after `today`. A passed threshold or due date makes it current;
   an item without either is never future. rtmapp's "Show future items" uses it.
+- **`DateFilter`** is the one definition of the date filters of rtmcli (`list`, `complete`) and
+  the MCP `list_items` `due` argument: `today` selects an item whose due or threshold date is
+  today, `week` one whose due or threshold date is within the next 7 days, `overdue` one due
+  before today, `future` what `is_future` reports, `all` every item.
 - **`Display` never emits a creation date without a completion date on a done line.** A
   completed item's creation date is written only immediately after its completion date; if
   there is no completion date, no date is written at all, even if a creation date is present.

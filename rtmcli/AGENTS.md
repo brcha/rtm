@@ -16,7 +16,7 @@ rtmcli/src/
 rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ├── cli_archive_tests.rs   ← archive outside a repository: which items move where
 ├── cli_commands_tests.rs  ← add, list, complete, delete
-├── cli_filter_tests.rs    ← The due-date filters of list and complete
+├── cli_filter_tests.rs    ← The date filters of list and complete
 ├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
 ├── cli_lock_tests.rs      ← The write lock shared with rtmapp and the MCP server
 ├── cli_mcp_tests.rs       ← mcp: the MCP server over stdio
@@ -51,7 +51,8 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   `-f` is global: it may come before or after the subcommand. A file that is a symbolic link is
   refused right after the path is known, before the lock and the repository check
   (`todotxt::refuse_symlink`): `Error: <message>`, exit 1, nothing pulled or written.
-- Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
+- Filters: `today`, `week`, `all`, `overdue`, `future`, as `todotxt::DateFilter` (due or
+  threshold date, see `todotxt/AGENTS.md`).
 - `list` takes any number of filter terms, in any order (RTM-123): at most one date filter, plus
   `+project` and `@context` terms. An item must match all of them (`TodoItem::matches`, see
   `todotxt/AGENTS.md`). Rows are numbered `1..n` within the filter. An unknown term, a bare `+` or

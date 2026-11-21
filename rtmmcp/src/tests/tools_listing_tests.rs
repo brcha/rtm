@@ -1,5 +1,6 @@
 use super::support_tests::*;
 use super::*;
+use chrono::Duration;
 
 const FILE: &str = "2026-01-01 Buy milk +home @shop\n\
     x 2026-01-03 2026-01-01 Pay rent +home\n\
@@ -64,11 +65,48 @@ fn test_items_are_filtered_by_due_date() {
         )
         .unwrap()
     };
-    assert!(due(Due::Today).starts_with("1 Today"));
-    assert!(due(Due::Week).starts_with("1 Today"));
-    assert!(due(Due::Overdue).starts_with("2 Late"));
-    assert!(due(Due::Future).starts_with("3 Later"));
-    assert_eq!(due(Due::All).lines().count(), 4);
+    assert!(due(DateFilter::Today).starts_with("1 Today"));
+    assert!(due(DateFilter::Week).starts_with("1 Today"));
+    assert!(due(DateFilter::Overdue).starts_with("2 Late"));
+    assert!(due(DateFilter::Future).starts_with("3 Later"));
+    assert_eq!(due(DateFilter::All).lines().count(), 4);
+    remove(source);
+}
+
+#[test]
+fn test_items_are_filtered_by_threshold_date() {
+    let today = Local::now().date_naive();
+    let source = source_with(&format!(
+        "Report t:{} due:{}\nHall t:{today} due:{}\nTrip t:{}\n",
+        today - Duration::days(5),
+        today + Duration::days(10),
+        today + Duration::days(10),
+        today + Duration::days(3),
+    ));
+    let due = |due| {
+        list_items(
+            &source,
+            &Filter {
+                due,
+                ..Filter::default()
+            },
+        )
+        .unwrap()
+    };
+    assert!(due(DateFilter::Today).starts_with("2 Hall"));
+    assert_eq!(due(DateFilter::Today).lines().count(), 1);
+    let week = due(DateFilter::Week);
+    assert_eq!(week.lines().count(), 2, "{week}");
+    assert!(
+        week.starts_with("2 Hall") && week.contains("3 Trip"),
+        "{week}"
+    );
+    let future = due(DateFilter::Future);
+    assert!(
+        future.starts_with("3 Trip") && future.lines().count() == 1,
+        "{future}"
+    );
+    assert_eq!(due(DateFilter::Overdue), "No matching items.");
     remove(source);
 }
 

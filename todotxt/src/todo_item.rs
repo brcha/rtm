@@ -734,6 +734,40 @@ impl TodoItem {
     }
 }
 
+/// Which items a date filter selects: rtmcli's `today`, `week`, ... and the MCP `due` argument.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DateFilter {
+    #[default]
+    All,
+    /// Due or threshold date today.
+    Today,
+    /// Due or threshold date within the next 7 days, today included.
+    Week,
+    /// Due before today.
+    Overdue,
+    /// Not actionable yet (`TodoItem::is_future`).
+    Future,
+}
+
+impl DateFilter {
+    pub fn matches(self, item: &TodoItem, today: NaiveDate) -> bool {
+        let due_or_threshold_within = |days| {
+            let last = today + chrono::Duration::days(days);
+            [item.due, item.threshold]
+                .into_iter()
+                .flatten()
+                .any(|date| date >= today && date <= last)
+        };
+        match self {
+            DateFilter::All => true,
+            DateFilter::Today => due_or_threshold_within(0),
+            DateFilter::Week => due_or_threshold_within(6),
+            DateFilter::Overdue => item.due.is_some_and(|due| due < today),
+            DateFilter::Future => item.is_future(today),
+        }
+    }
+}
+
 /// A date in exactly the `YYYY-MM-DD` form the specification requires. chrono's `%Y-%m-%d`
 /// alone also takes `2011-3-2` and `11-03-02`, which are text.
 fn strict_date(word: &str) -> Option<NaiveDate> {
