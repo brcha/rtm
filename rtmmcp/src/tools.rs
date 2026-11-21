@@ -6,8 +6,8 @@
 //! and a change names its item by that number and its line as listed: when the line at the number
 //! differs (the file changed), the one item with that line is used, else nothing changes.
 
-use chrono::{Duration, Local, NaiveDate};
-use todotxt::{TodoContext, TodoItem, TodoLibrary, TodoProject, WriteLock};
+use chrono::Local;
+use todotxt::{DateFilter, TodoContext, TodoItem, TodoLibrary, TodoProject, WriteLock};
 
 use crate::Source;
 use crate::sync::RepoWrite;
@@ -21,22 +21,11 @@ pub(crate) enum Status {
     All,
 }
 
-/// Which items `list_items` shows by due date, as rtmcli's filters.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Due {
-    #[default]
-    All,
-    Today,
-    Week,
-    Overdue,
-    Future,
-}
-
 /// The filters of `list_items`.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Filter {
     pub(crate) status: Status,
-    pub(crate) due: Due,
+    pub(crate) due: DateFilter,
     pub(crate) projects: Vec<String>,
     pub(crate) contexts: Vec<String>,
     pub(crate) text: Option<String>,
@@ -74,13 +63,6 @@ pub(crate) fn list_items(source: &Source, filter: &Filter) -> Result<String, Str
     let projects = tags::<TodoProject>(&filter.projects, '+')?;
     let contexts = tags::<TodoContext>(&filter.contexts, '@')?;
     let today = Local::now().date_naive();
-    let range = match filter.due {
-        Due::All => None,
-        Due::Today => Some((today, today)),
-        Due::Week => Some((today, today + Duration::days(6))),
-        Due::Overdue => Some((NaiveDate::MIN, today - Duration::days(1))),
-        Due::Future => Some((today + Duration::days(1), NaiveDate::MAX)),
-    };
     let text = filter.text.as_deref().map(str::to_lowercase);
     let lines: Vec<String> = lib
         .filter_items(&projects, &contexts)
@@ -92,8 +74,7 @@ pub(crate) fn list_items(source: &Source, filter: &Filter) -> Result<String, Str
                 Status::Open => !item.done,
                 Status::Done => item.done,
                 Status::All => true,
-            } && range
-                .is_none_or(|(start, end)| item.due.is_some_and(|d| d >= start && d <= end))
+            } && filter.due.matches(item, today)
                 && text
                     .as_deref()
                     .is_none_or(|text| line.to_lowercase().contains(text));

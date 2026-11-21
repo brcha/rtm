@@ -165,3 +165,64 @@ fn a_number_past_the_filtered_rows_changes_nothing() {
     assert_eq!(file_lines(&file), fixture());
     cleanup(&file);
 }
+
+/// A passed threshold and one of today, both due in ten days, and a threshold in three days
+/// without a due date.
+fn threshold_fixture() -> Vec<String> {
+    vec![
+        format!("Write the report t:{} due:{}", day(-5), day(10)),
+        format!("Book the hall t:{} due:{}", day(0), day(10)),
+        format!("Plan the trip t:{}", day(3)),
+    ]
+}
+
+fn threshold_file(name: &str) -> PathBuf {
+    let file = todo_file(name);
+    fs::write(&file, threshold_fixture().join("\n") + "\n").unwrap();
+    file
+}
+
+/// `threshold_fixture()` rows `indices`, numbered as `list` numbers them.
+fn threshold_rows(indices: &[usize]) -> Vec<String> {
+    let items = threshold_fixture();
+    indices
+        .iter()
+        .enumerate()
+        .map(|(n, &i)| format!("{}. {}", n + 1, items[i]))
+        .collect()
+}
+
+#[test]
+fn list_reads_the_threshold_date() {
+    let file = threshold_file("threshold-list");
+
+    assert_eq!(
+        rows(&rtmcli(&file, &["list", "today"])),
+        threshold_rows(&[1])
+    );
+    assert_eq!(
+        rows(&rtmcli(&file, &["list", "week"])),
+        threshold_rows(&[1, 2])
+    );
+    assert_eq!(
+        rows(&rtmcli(&file, &["list", "overdue"])),
+        threshold_rows(&[])
+    );
+    assert_eq!(
+        rows(&rtmcli(&file, &["list", "future"])),
+        threshold_rows(&[2])
+    );
+    cleanup(&file);
+}
+
+#[test]
+fn complete_future_leaves_items_whose_threshold_has_passed() {
+    let file = threshold_file("threshold-complete");
+
+    let output = rtmcli(&file, &["complete", "future"]);
+    assert!(output.status.success(), "{output:?}");
+    let mut expected = threshold_fixture();
+    expected[2] = format!("x {} {}", day(0), expected[2]);
+    assert_eq!(file_lines(&file), expected);
+    cleanup(&file);
+}
