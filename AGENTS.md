@@ -145,7 +145,7 @@ them.
   - Work types: Epic, Story, Task, Bug, Spike; an issue's epic is its parent field. Links:
     "depends on", "blocks", "relates to".
   - Access: the Atlassian MCP, or the REST API with the credentials in `~/.config/rtm-jira/env`.
-  - Each new pull request is added to its issue's links by Jira Automation flows whose API token
+  - Each new pull request is added to its issue's links by a Jira Automation flow whose API token
     expires on 2027-11-21; see "PR title and issue links" in [CI](doc/ci.md).
   - History before 2026-11-11 is also in the frozen YouTrack project RTM. `PER-N` keys are
     perseus_helm issues, which are still in YouTrack.
