@@ -1413,10 +1413,13 @@ impl App {
             return;
         }
         match text.parse::<TodoItem>() {
-            Ok(item) => {
-                self.apply(Change::Add(item));
-                self.new_item.clear();
-            }
+            Ok(item) => match item.check_dates() {
+                Ok(()) => {
+                    self.apply(Change::Add(item));
+                    self.new_item.clear();
+                }
+                Err(e) => self.error = Some(format!("Could not add the item: {e}")),
+            },
             Err(e) => self.error = Some(format!("Could not parse the item: {e}")),
         }
     }
