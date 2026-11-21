@@ -103,7 +103,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one versions up to 0.1.3
   wrote, so existing users' settings carry over: do not rename fields or change defaults
   (`#[serde(default)]` on `AppConfig`). The file is written after a successful file load (or creation), a tab
-  closed, clicked or renamed, a filter change or Save in the Settings dialog, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
+  closed, clicked or renamed, a filter change or Save in the Settings dialog, never at startup. It is replaced atomically
+  (`todotxt::write_atomic`); a symlinked `config.toml` keeps its link. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
   default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
   false turns off commits as well as pulls and pushes) and, until RTM-124, a top-level `vcs`.
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
@@ -204,7 +205,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   `uncomplete_item` then `save`; complete is `complete_item` (which appends the next occurrence of a
   recurring item) then `save`; delete is `remove_item` (which also removes the item's sub-items)
   then `save`. Errors go to the error lines above the list, not to a dialog; the quick-add input
-  is cleared only after a successful save. Every save rewrites the whole file, but each line is
+  is cleared only after a successful save. Every save replaces the whole file atomically (`todotxt::write_atomic`), but each line is
   written as read except for what changed (`todotxt/AGENTS.md`); a new or edited recurrence goes
   through `Display`, so it is written with its count (`rec:1w`).
 - **Open files and error lines (RTM-125, epic RTM-66):** what belongs to one todo.txt lives in

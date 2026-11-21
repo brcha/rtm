@@ -41,7 +41,22 @@ todotxt/tests/
 - `TodoLibrary` owns a `Vec<TodoItem>` and a file path string. `load()` reads from disk,
   `save()` writes back. No async. The file's final newline is kept as read (RTM-210): a file
   that ends with one keeps it, one without stays without, and a new or empty file gets one.
-  CRLF line endings are saved as LF.
+  CRLF line endings are saved as LF. `save()` writes through `write_atomic` (below), so a crash
+  or a full disk never leaves the file empty or cut short.
+- **`write_atomic(path, contents)`** replaces a file so that readers see the old
+  content or the new one, never a part. It writes `.<name>.<uuid>.tmp` in the same directory
+  (`create_new`), gives it the original's permissions, `sync_all`s it and renames it over the
+  original; on any error the temporary file is removed and the original is untouched. rtm
+  commits only the files it names, so a temporary file a crash leaves behind is never
+  committed. A symbolic link stays a link: the file it leads to is replaced (for a dangling
+  link, the path it names is created); this is for rtmapp's `config.toml`, as todo files are
+  never links. A read-only file (`Permissions::readonly`) is refused with `PermissionDenied`, as
+  an in-place write would be; the error texts carry no path, as callers prefix it. Saving needs
+  write permission on the directory, not only on the file. The replacement is owned by the writing user and breaks hard
+  links, as with editors that save by rename. On Windows the rename fails while another process
+  holds the file open without share-delete; that error reaches the caller like any write error.
+  The directory is not synced, so a power loss right after the rename may bring back the
+  previous version, never a partial one.
 - **Symlinked todo files are refused.** `refuse_symlink(path)` fails with an `InvalidInput`
   `io::Error` carrying a `SymlinkError` (`link`, `target`; `downcast_ref` it from the error) when
   the file itself is a symbolic link, dangling or not: "'<link>' is a symbolic link to

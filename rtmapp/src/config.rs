@@ -244,7 +244,7 @@ impl AppConfig {
             std::fs::create_dir_all(dir)?;
         }
         let text = toml::to_string(self).map_err(std::io::Error::other)?;
-        std::fs::write(path, text)
+        todotxt::write_atomic(path, text)
     }
 }
 
