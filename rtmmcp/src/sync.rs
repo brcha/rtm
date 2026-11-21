@@ -129,14 +129,59 @@ impl RepoWrite {
         }
     }
 
-    /// Commits the saved file with `message`, then pulls and pushes when there is a remote. The
-    /// change is saved by then, so nothing here fails the tool (a client might repeat it): a
-    /// failed commit or push, and a conflict on the pull, are notes.
-    pub(crate) fn commit_and_push(&mut self, message: &str) {
+    /// Refuses a change when `archive` has changes rtm did not commit: the archive commit would
+    /// carry them. Nothing to check when the file is not synced or the archive is missing (a
+    /// missing file's state cannot be told reliably).
+    pub(crate) fn check_archive(&mut self, archive: &Path) -> Result<(), String> {
+        let Some(repo) = &self.repo else {
+            return Ok(());
+        };
+        if !archive.exists() {
+            return Ok(());
+        }
+        match repo.vcs.state(archive) {
+            Ok(State::Modified) => Err(format!(
+                "'{}' has changes not committed by rtm (made by hand, or with sync off). The user \
+                 has to commit or revert them first (rtmapp asks when it archives, rtmcli has \
+                 --commit-changes).",
+                archive.display()
+            )),
+            Ok(_) => Ok(()),
+            Err(e) => {
+                self.notes
+                    .push(format!("Cannot check '{}': {e}", archive.display()));
+                Ok(())
+            }
+        }
+    }
+
+    /// Notes that `archive` is ignored by the repository, so its items are not synced. Checked after
+    /// the archive is written: the first archive creates it.
+    pub(crate) fn note_if_ignored(&mut self, archive: &Path) {
         let Some(repo) = &self.repo else {
             return;
         };
-        if let Err(e) = repo.vcs.commit(&repo.file, message) {
+        if repo.vcs.state(archive).is_ok_and(|s| s == State::Ignored) {
+            self.notes.push(format!(
+                "'{}' is ignored by {:?}, so the archived items are not synced.",
+                archive.display(),
+                repo.vcs
+            ));
+        }
+    }
+
+    /// Commits the saved file, and `others` of its repository, in one commit with `message`, then
+    /// pulls and pushes when there is a remote. The change is saved by then, so nothing here fails
+    /// the tool (a client might repeat it): a failed commit or push, and a conflict on the pull, are
+    /// notes.
+    pub(crate) fn commit_and_push(&mut self, others: &[&Path], message: &str) {
+        let Some(repo) = &self.repo else {
+            return;
+        };
+        let files: Vec<&Path> = std::iter::once(repo.file.as_path())
+            .chain(others.iter().copied())
+            .collect();
+        if let Err(e) = repo.vcs.commit_files(&files, message) {
             self.notes.push(format!("Not committed: {e}"));
             return;
         }

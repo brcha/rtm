@@ -29,6 +29,7 @@ providers:
         - mcp__rtm__complete_item
         - mcp__rtm__uncomplete_item
         - mcp__rtm__edit_item
+        - mcp__rtm__archive_items
       mcp:
         enabled: true
         servers:
@@ -136,3 +137,26 @@ tests:
     assert:
       - type: javascript
         value: file://checks.mjs:recurring
+
+  - description: finished items move to the archive
+    vars:
+      request: Move my finished items to the archive.
+      home: |
+        2026-11-01 Buy milk +groceries
+        x 2026-09-15 2026-09-01 Pay rent
+        2026-11-02 Call the plumber @phone
+        x 2026-10-20 2026-10-18 Water the plants
+    assert:
+      - type: javascript
+        value: file://checks.mjs:archiveAll
+
+  - description: only items finished before a date are archived
+    vars:
+      request: Archive the items I finished before October 2026.
+      home: |
+        2026-11-01 Buy milk +groceries
+        x 2026-09-15 2026-09-01 Pay rent
+        x 2026-10-20 2026-10-18 Water the plants
+    assert:
+      - type: javascript
+        value: file://checks.mjs:archiveBefore

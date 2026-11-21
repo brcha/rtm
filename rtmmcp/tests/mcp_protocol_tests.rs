@@ -85,6 +85,7 @@ async fn test_initialize_list_and_call_a_tool() {
     assert_eq!(hints("add_item"), Some(false));
     assert_eq!(hints("edit_item"), Some(false));
     assert_eq!(hints("delete_item"), Some(true));
+    assert_eq!(hints("archive_items"), Some(false));
 
     let added = call(
         &client,
@@ -104,6 +105,15 @@ async fn test_initialize_list_and_call_a_tool() {
         .unwrap();
     assert_eq!(refused.is_error, Some(true));
     assert_eq!(std::fs::read_to_string(&file).unwrap().lines().count(), 2);
+    let both = client
+        .call_tool(
+            CallToolRequestParams::new("archive_items").with_arguments(object(
+                json!({"older_than_days": 7, "completed_before": "2026-10-01"}),
+            )),
+        )
+        .await
+        .unwrap();
+    assert_eq!(both.is_error, Some(true));
 
     client.cancel().await.unwrap();
     server.await.unwrap().unwrap();

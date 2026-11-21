@@ -291,11 +291,15 @@ to archive every open file when the app opens it and once a day after that. Its 
 unless you change it in **Settings** (0 moves everything completed before today). To give one file
 its own settings, right-click its tab and choose **Archive Settings…**.
 
+An AI assistant connected through rtm's [MCP server](#using-rtm-with-ai-assistants-mcp) archives
+with its `archive_items` tool, when you ask it to, with an age in days or a date.
+
 When the todo.txt syncs, the todo.txt and its archive are committed together, and the first archive
 adds the `done.txt` to the repository. A `done.txt` edited by hand stops rtmcli, as the todo.txt
 does; run it with `--commit-changes` to commit the edits first. The desktop app asks instead: commit
-them and archive, or archive later. If the repository ignores the archive, the archived items stay
-on this computer only: rtmcli says so, and so do the file's Archive Settings in the desktop app.
+them and archive, or archive later. An assistant is refused until you commit or revert them. If the repository ignores the archive, the archived items stay
+on this computer only: rtmcli and the assistant's tool say so, and so do the file's Archive
+Settings in the desktop app.
 
 ## Syncing through Git or Pijul
 
@@ -335,7 +339,7 @@ title bar), or set it to 0 to sync only on open, on close and on demand; it is s
 
 Both programs include an [MCP](https://modelcontextprotocol.io) server, so an AI assistant such as
 Claude Desktop or Claude Code can list your items, projects and contexts, and add, edit, complete,
-reopen and delete items. Use whichever program you installed:
+reopen, delete and archive items. Use whichever program you installed:
 
 - `rtmcli mcp` serves one file, from `-f` or `$TODOTXT`.
 - `rtmapp mcp` serves the files open in the desktop app (its `[[files]]` in `rtm/config.toml`), the

@@ -19,7 +19,8 @@ rtmmcp/
 │   ├── tools.rs    ← What each tool does, synchronously, on one file; the write sequence
 │   ├── sync.rs     ← RepoWrite: rtmcli's sync rules for one change, returning messages
 │   ├── claim.rs    ← One rtm server per client
-│   └── tests/      ← Unit tests: claim, the server's duplicate check, sync (git), tools
+│   └── tests/      ← Unit tests: claim, the server's duplicate check and archive arguments,
+│                     sync (git), tools (listing, changes, archive)
 ├── tests/
 │   └── mcp_protocol_tests.rs  ← The server through rmcp's client on an in-memory pipe
 └── eval/           ← LLM eval of the tools (promptfoo), run by scripts/mcp-eval.sh
@@ -61,13 +62,14 @@ rtmmcp/
 - **Tools:** `list_files`, `list_items` (status open/done/all, due all/today/week/overdue/future as
   `todotxt::DateFilter`, the same as rtmcli's filters, projects and contexts with or without their
   sigil, text ignoring case; an explicit `null` counts as left out), `list_projects_and_contexts` (`TodoLibrary::projects` and
-  `contexts`, RTM-119), `add_item`, `complete_item`, `uncomplete_item`, `edit_item`, `delete_item`.
+  `contexts`, RTM-119), `add_item`, `complete_item`, `uncomplete_item`, `edit_item`, `delete_item`,
+  `archive_items` (below).
   Results are text: one `<number> <line>` per item. A failure is a result with `isError` (the
   assistant reads it), not a protocol error.
 - **Annotations:** the reads carry `read_only_hint`. MCP counts a tool without
-  `destructiveHint` as destructive, so `add_item`, `complete_item`, `uncomplete_item` and
-  `edit_item` say `destructive_hint = false`; only `delete_item` is destructive, so clients confirm
-  deletes and nothing else.
+  `destructiveHint` as destructive, so `add_item`, `complete_item`, `uncomplete_item`, `edit_item`
+  and `archive_items` say `destructive_hint = false` (archived items stay in the archive); only
+  `delete_item` is destructive, so clients confirm deletes and nothing else.
 - **Items:** every call loads the file from disk; nothing is kept between calls. An item's number
   is its place in the file, from 1. A change takes the number and the line as `list_items` printed
   it (`TodoItem`'s `Display`, not the raw file line): the item at the number if its line matches,
@@ -88,19 +90,34 @@ rtmmcp/
   choice, or a choice the directory lacks → refused; a conflicted repository → refused, checked
   before the outside changes, since a file in a stopped rebase is also modified; outside changes →
   refused, the user commits or reverts them. No remote → commit only.
+- **`archive_items`** moves done items to the file's archive (`TodoLibrary::archive`, see
+  `todotxt/AGENTS.md`): all of them, or with `older_than_days` (today minus that many days,
+  `NaiveDate::MIN` when it underflows, as rtmcli) or `completed_before` (YYYY-MM-DD) only those
+  completed before the cutoff, plus undated ones. Both arguments, or an invalid date, are refused
+  before anything starts (`server::archive_cutoff`). In `write`, the archive is checked before the
+  pull (`RepoWrite::check_archive`: changes rtm did not commit refuse it, as the file's own do; a
+  missing archive is not checked), committed with the file in one commit
+  (`RepoWrite::commit_and_push` takes the other files), and, once written, an archive the
+  repository ignores adds a note (`note_if_ignored`; checked after the write, so the first archive,
+  which creates it, is reported too). A change returns its commit message as an `Option`: none
+  means nothing changed, so nothing is saved or committed (nothing to archive). The result is
+  `Archived <n> item(s) to '<archive>':` with the moved lines, or `No items to archive in
+  '<file>'.` A failed append refuses with "Nothing was changed." although part of the lines may be
+  in the archive; the todo file keeps them all.
 - **Edits keep facts the new line leaves out:** the creation date, `uuid` and `sub`.
 - **Commit messages** as rtmcli: `rtm: add <description>`, `rtm: complete <line>`,
-  `rtm: uncomplete <line>`, `rtm: edit <old line>`, `rtm: delete <line>`.
+  `rtm: uncomplete <line>`, `rtm: edit <old line>`, `rtm: delete <line>`, `rtm: archive
+  <description>` or `rtm: archive <n> items`.
 
 ---
 
 ## Important Notes
 
-- Tests work in scratch directories under the system temp directory. The git tests (sync, and two
-  tool tests) give each repository a local identity, `commit.gpgsign=false`, an empty
-  `core.hooksPath` and `rerere.enabled=false`; the sync tests use a bare remote and two clones on
-  local paths, no network. Pijul is covered by `rtmsync`; the both-VCS case needs only an empty
-  `.pijul` directory, as detection looks at markers.
+- Tests work in scratch directories under the system temp directory. The git tests (sync, and the
+  tool tests that need a repository) give each repository a local identity, `commit.gpgsign=false`,
+  an empty `core.hooksPath` and `rerere.enabled=false`; the sync tests use a bare remote and two
+  clones on local paths, no network. Pijul is covered by `rtmsync`; the both-VCS case needs only an
+  empty `.pijul` directory, as detection looks at markers.
 - The tool tests take the real `todotxt::WriteLock`, so their lock files land in the lock directory
   (`/tmp/rtm-<uid>` on Unix), not in the scratch directory; they are empty files
   named after a hash of the scratch file's path, or of its scratch repository's directory.
@@ -148,13 +165,14 @@ with real clients: Claude Code and Grok Build.
 - **Scenarios:** completing the item asked for with its listed number and line; a stale line not
   guessed; "done" meaning complete, not delete; a declined delete changing nothing; a failed push
   not repeating the add; one edit setting priority and due date with the creation date kept; the
-  second file by name; a recurring item's next occurrence not added again. `checks.mjs` checks the
+  second file by name; a recurring item's next occurrence not added again; finished items moved to
+  the archive with `archive_items`, all of them or only those finished before a date. `checks.mjs` checks the
   files afterwards and the tool calls, never the wording; any tool other than rtm's fails a
   scenario.
 - **A failure** means a model misused a tool: look at the tool's description or the instructions
   first, not at the Rust code (the Rust tests cover that). A misleading `complete_item`
   description ("add the next occurrence yourself") fails the recurring scenario.
-- **Cost:** a full run (8 scenarios × 3 per client) was $0.38 API-equivalent on Sonnet 5.5 and
+- **Cost:** a full run (then 8 scenarios × 3 per client) was $0.38 API-equivalent on Sonnet 5.5 and
   $0.77 on grok-4.7 (2026-11-08, the clients' own figures); nothing is billed on the
   subscriptions, but it counts against their usage limits.
 - **The Claude binary** comes with the Agent SDK (a prebuilt Linux or macOS executable); on NixOS

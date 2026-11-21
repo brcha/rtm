@@ -92,7 +92,7 @@ fn test_a_change_is_pulled_before_and_pushed_after() {
         ["Buy milk", "Call mom"]
     );
     std::fs::write(&file, "Buy milk\nCall mom\nPay rent").unwrap();
-    sync.commit_and_push("rtm: add Pay rent");
+    sync.commit_and_push(&[], "rtm: add Pay rent");
     assert!(sync.notes.is_empty(), "{:?}", sync.notes);
     assert_eq!(last_subject(&dir.join("remote")), "rtm: add Pay rent");
     std::fs::remove_dir_all(&dir).unwrap();
@@ -105,7 +105,7 @@ fn test_without_a_remote_a_change_is_only_committed() {
     let mut sync = RepoWrite::find(&source(file.clone())).unwrap();
     sync.pull().unwrap();
     std::fs::write(&file, "Buy milk\nPay rent").unwrap();
-    sync.commit_and_push("rtm: add Pay rent");
+    sync.commit_and_push(&[], "rtm: add Pay rent");
     assert!(sync.notes.is_empty(), "{:?}", sync.notes);
     assert_eq!(last_subject(&dir.join("repo")), "rtm: add Pay rent");
     std::fs::remove_dir_all(&dir).unwrap();
@@ -129,7 +129,7 @@ fn test_an_untracked_file_is_changed_without_sync() {
     let mut sync = RepoWrite::find(&source(file.clone())).unwrap();
     assert!(sync.notes[0].contains("not tracked"), "{:?}", sync.notes);
     std::fs::write(&file, "Write report\nSend report").unwrap();
-    sync.commit_and_push("rtm: add Send report");
+    sync.commit_and_push(&[], "rtm: add Send report");
     assert_eq!(last_subject(&dir.join("repo")), "start");
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -144,7 +144,7 @@ fn test_sync_off_leaves_the_repository_alone() {
     })
     .unwrap();
     std::fs::write(&file, "Buy milk\nPay rent").unwrap();
-    sync.commit_and_push("rtm: add Pay rent");
+    sync.commit_and_push(&[], "rtm: add Pay rent");
     assert!(sync.notes.is_empty());
     assert_eq!(last_subject(&dir.join("repo")), "start");
     std::fs::remove_dir_all(&dir).unwrap();

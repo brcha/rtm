@@ -6,7 +6,9 @@
 //! and a change names its item by that number and its line as listed: when the line at the number
 //! differs (the file changed), the one item with that line is used, else nothing changes.
 
-use chrono::Local;
+use std::path::Path;
+
+use chrono::{Local, NaiveDate};
 use todotxt::{DateFilter, TodoContext, TodoItem, TodoLibrary, TodoProject, WriteLock};
 
 use crate::Source;
@@ -106,16 +108,19 @@ pub(crate) fn list_projects_and_contexts(source: &Source) -> Result<String, Stri
 
 pub(crate) fn add_item(source: &Source, line: &str) -> Result<String, String> {
     let item = parse(line)?;
-    write(source, true, |lib| {
+    write(source, true, None, |lib| {
         let message = format!("rtm: add {}", item.description);
         lib.add_item(item);
         let i = lib.items.len() - 1;
-        Ok((message, format!("Added {}", numbered(i, &lib.items[i]))))
+        Ok((
+            Some(message),
+            format!("Added {}", numbered(i, &lib.items[i])),
+        ))
     })
 }
 
 pub(crate) fn complete_item(source: &Source, number: usize, text: &str) -> Result<String, String> {
-    write(source, false, |lib| {
+    write(source, false, None, |lib| {
         let i = find(lib, number, text)?;
         if lib.items[i].done {
             return Err(format!("Item {} is already completed.", i + 1));
@@ -127,7 +132,7 @@ pub(crate) fn complete_item(source: &Source, number: usize, text: &str) -> Resul
             let next = lib.items.len() - 1;
             result.push_str(&format!("\nNext: {}", numbered(next, &lib.items[next])));
         }
-        Ok((message, result))
+        Ok((Some(message), result))
     })
 }
 
@@ -136,14 +141,17 @@ pub(crate) fn uncomplete_item(
     number: usize,
     text: &str,
 ) -> Result<String, String> {
-    write(source, false, |lib| {
+    write(source, false, None, |lib| {
         let i = find(lib, number, text)?;
         if !lib.items[i].done {
             return Err(format!("Item {} is not completed.", i + 1));
         }
         let message = format!("rtm: uncomplete {}", lib.items[i]);
         lib.uncomplete_item(i);
-        Ok((message, format!("Reopened {}", numbered(i, &lib.items[i]))))
+        Ok((
+            Some(message),
+            format!("Reopened {}", numbered(i, &lib.items[i])),
+        ))
     })
 }
 
@@ -154,7 +162,7 @@ pub(crate) fn edit_item(
     new_line: &str,
 ) -> Result<String, String> {
     let mut new = parse(new_line)?;
-    write(source, false, |lib| {
+    write(source, false, None, |lib| {
         let i = find(lib, number, text)?;
         let old = &lib.items[i];
         // Facts the new line leaves out are kept rather than lost: the creation date, and the
@@ -164,12 +172,15 @@ pub(crate) fn edit_item(
         new.sub = new.sub.or(old.sub);
         let message = format!("rtm: edit {old}");
         lib.replace_item(i, new);
-        Ok((message, format!("Changed {}", numbered(i, &lib.items[i]))))
+        Ok((
+            Some(message),
+            format!("Changed {}", numbered(i, &lib.items[i])),
+        ))
     })
 }
 
 pub(crate) fn delete_item(source: &Source, number: usize, text: &str) -> Result<String, String> {
-    write(source, false, |lib| {
+    write(source, false, None, |lib| {
         let i = find(lib, number, text)?;
         let message = format!("rtm: delete {}", lib.items[i]);
         let removed = lib.remove_item(i).unwrap_or_default();
@@ -183,19 +194,52 @@ pub(crate) fn delete_item(source: &Source, number: usize, text: &str) -> Result<
                 lines.join("\n")
             )
         };
-        Ok((message, result))
+        Ok((Some(message), result))
+    })
+}
+
+/// Moves the done items completed before `cutoff` (all of them without one; an undated done item
+/// always) to the file's archive, committed together with the file.
+pub(crate) fn archive_items(source: &Source, cutoff: Option<NaiveDate>) -> Result<String, String> {
+    let archive = TodoLibrary::new(source.path.to_string_lossy().into_owned()).archive_path();
+    write(source, false, Some(&archive), |lib| {
+        // shortcut: a failed append (a full disk) may leave part of the lines in the archive,
+        // which "Nothing was changed." does not mention (the todo file keeps them all); word the
+        // refusal apart if it is ever seen.
+        let archived = lib
+            .archive(cutoff)
+            .map_err(|e| format!("Cannot write '{}': {e}.", archive.display()))?;
+        let message = match archived.as_slice() {
+            [] => {
+                let none = format!("No items to archive in '{}'.", source.path.display());
+                return Ok((None, none));
+            }
+            [one] => format!("rtm: archive {}", one.description),
+            many => format!("rtm: archive {} items", many.len()),
+        };
+        let lines: Vec<String> = archived.iter().map(TodoItem::to_string).collect();
+        let result = format!(
+            "Archived {} item(s) to '{}':\n{}",
+            archived.len(),
+            archive.display(),
+            lines.join("\n")
+        );
+        Ok((Some(message), result))
     })
 }
 
 /// One change: holds the write lock (on the file's repository, `rtmsync::lock_target`) from before
 /// the repository check (another rtm process between its save and its commit would look like an
 /// outside change) until after the push; pulls, loads, applies `change`, saves, commits and pushes.
-/// `change` returns the commit message and the result, or a refusal. With `may_create`, a missing
-/// file starts empty.
+/// `change` returns the commit message and the result, or a refusal; no message means it changed
+/// nothing, so nothing is saved or committed. With `may_create`, a missing file starts empty. An
+/// `archive` the change writes too is checked for outside changes first and committed with the
+/// file.
 fn write(
     source: &Source,
     may_create: bool,
-    change: impl FnOnce(&mut TodoLibrary) -> Result<(String, String), String>,
+    archive: Option<&Path>,
+    change: impl FnOnce(&mut TodoLibrary) -> Result<(Option<String>, String), String>,
 ) -> Result<String, String> {
     // Everything up to the save refuses the change and leaves the file as it was.
     let refused = |e: String| format!("{e} Nothing was changed.");
@@ -206,6 +250,9 @@ fn write(
     let _lock = WriteLock::acquire(&target)
         .map_err(|e| refused(format!("Cannot lock '{}': {e}.", target.display())))?;
     let mut repo = RepoWrite::find(source).map_err(refused)?;
+    if let Some(archive) = archive {
+        repo.check_archive(archive).map_err(refused)?;
+    }
     repo.pull().map_err(refused)?;
     let mut lib = if may_create && !source.path.exists() {
         TodoLibrary::new(source.path.to_string_lossy().into_owned())
@@ -213,9 +260,18 @@ fn write(
         load(source).map_err(refused)?
     };
     let (message, result) = change(&mut lib).map_err(refused)?;
+    let Some(message) = message else {
+        return Ok(std::iter::once(result)
+            .chain(repo.notes)
+            .collect::<Vec<_>>()
+            .join("\n"));
+    };
     lib.save()
         .map_err(|e| format!("Cannot write '{}': {e}", source.path.display()))?;
-    repo.commit_and_push(&message);
+    if let Some(archive) = archive {
+        repo.note_if_ignored(archive);
+    }
+    repo.commit_and_push(archive.as_slice(), &message);
     Ok(std::iter::once(result)
         .chain(repo.notes)
         .collect::<Vec<_>>()
@@ -300,3 +356,7 @@ mod listing_tests;
 #[cfg(test)]
 #[path = "tests/tools_changes_tests.rs"]
 mod changes_tests;
+
+#[cfg(test)]
+#[path = "tests/tools_archive_tests.rs"]
+mod archive_tests;
