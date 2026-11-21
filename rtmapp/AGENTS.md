@@ -70,7 +70,7 @@ rtmapp/
 | todotxt (path)      | Parsing, serialization, `TodoLibrary`              |
 | rtmsync (path)      | Commit, pull and push through Git or Pijul         |
 | rtmmcp (path)       | The MCP server of `rtmapp mcp`                     |
-| rfd 0.16            | Native file dialog (`xdg-portal` backend on Linux) |
+| rfd 0.18            | Native file dialog (`xdg-portal` backend on Linux) |
 | serde, toml 1       | Config file                                        |
 | dirs 7              | OS config directory                                |
 | chrono              | Dates (same as the core library)                   |
@@ -83,9 +83,6 @@ rtmapp/
 | rtmupdate (path)    | The update check; optional, feature `update-check` |
 | log 0.4             | Logs a failed update check (through env_logger)    |
 | egui_kittest 0.37   | Dev-dependency: the UI tests (see Conventions)     |
-
-`Cargo.lock` also has pollster 0.4: `rfd` up to 0.17.2 needs it on Linux for `xdg-portal`. rfd's main
-branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 
 ---
 
@@ -637,9 +634,10 @@ for its shortcuts and the Add/Remove Programs entry.
 ## File dialog
 
 `rfd` uses the `xdg-portal` backend on Linux, so a running `xdg-desktop-portal` with a FileChooser
-backend (for example `-gtk` or `-kde`) is needed at runtime. If the portal fails, `rfd` tries `zenity`
+backend (for example `-gtk` or `-kde`) is needed at runtime. rfd reaches the portal through
+`libdbus-1.so.3`, which it loads with `dlopen`. If libdbus or the portal fails, `rfd` tries `zenity`
 and then returns `None`, which is also what a cancelled dialog returns, so the UI cannot tell the two
-apart. The fallback is the `gtk3` feature (`rfd = { version = "0.16", default-features = false, features =
+apart. The fallback is the `gtk3` feature (`rfd = { version = "0.18", default-features = false, features =
 ["gtk3"] }`), which needs GTK 3 at runtime.
 
 `rfd` logs both failures at `error` level, and `env_logger` prints them to stderr: run the app from a
@@ -688,9 +686,9 @@ cargo test -p rtmapp
 nix build .#rtmapp      # or: nix-build -A rtmapp
 ```
 
-The binary links no native libraries beyond glibc; it loads Wayland, xkbcommon, X11, GL, Vulkan and
-fontconfig with `dlopen`. The dev shell puts them on `LD_LIBRARY_PATH`, and the Nix package on the
-binary's rpath (`eguiDeps` in `default.nix`, see [`doc/nix-packaging.md`](../doc/nix-packaging.md)).
+The binary links no native libraries beyond glibc; it loads Wayland, xkbcommon, X11, GL, Vulkan,
+fontconfig and libdbus with `dlopen`. The dev shell puts them on `LD_LIBRARY_PATH`, and the Nix
+package on the binary's rpath (`eguiDeps` in `default.nix`, see [`doc/nix-packaging.md`](../doc/nix-packaging.md)).
 
 What it needs at run time (RTM-38); the deb's `depends` and `suggests` and the RPM's `requires` and
 `suggests` (by soname, RTM-9) in `Cargo.toml` follow this. The Wayland entries were found by starting
@@ -707,7 +705,8 @@ full run under XWayland loaded, not reduced further:
 - **Optional (Suggests):** the X11 set, used only without `WAYLAND_DISPLAY`: `libX11.so.6`,
   `libX11-xcb.so.1`, `libXcursor.so.1`, `libXi.so.6`, `libxkbcommon-x11.so.0`. GNOME is Wayland-only
   from Ubuntu 25.10 and Debian forky; X11 matters mainly for older or non-GNOME X sessions.
-- **File dialog:** `rfd` talks to the XDG desktop portal over D-Bus (no library), so the deb depends on
+- **File dialog:** `rfd` talks to the XDG desktop portal over D-Bus through `libdbus-1.so.3` (required
+  by the deb and the RPM; without it rfd falls back to `zenity`), so the deb also depends on
   `xdg-desktop-portal` and a backend that implements `org.freedesktop.impl.portal.FileChooser`: gtk,
   gnome or kde on jammy. `xdg-desktop-portal-wlr` (and Hyprland's portal) has none, so wlroots desktops
   need gtk beside it. The dialog was not opened in those reduced runs.
