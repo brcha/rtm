@@ -13,11 +13,34 @@ fn completing_a_recurring_item_saves_it_and_the_next_occurrence() {
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert!(lines[0].starts_with("x ") && lines[0].contains("due:2026-11-01"));
     assert!(!lines[1].starts_with("x ") && lines[1].contains("due:2026-11-08"));
+    // The list matches the file.
+    let on_disk = super::load_library(&dir.join("todo.txt")).unwrap();
     assert_eq!(
-        app.file().unwrap().library.as_ref().unwrap().item_count(),
-        2
+        app.file().unwrap().library.as_ref().unwrap().items,
+        on_disk.items
     );
+    // The next write keeps both lines as they were written.
+    app.new_item = "Other".to_owned();
+    app.add_item();
+    assert_eq!(errors(&app), Vec::<&str>::new());
+    assert_eq!(file_lines(&dir)[..2], lines[..]);
     assert!(!dir.join("config.toml").exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn completing_an_item_with_a_pri_tag_gives_it_the_priority() {
+    let dir = temp_dir("complete pri tag");
+    let mut app = app_with(&dir, "Task pri:B\n");
+
+    app.toggle(0);
+
+    assert_eq!(errors(&app), Vec::<&str>::new());
+    let library = app.file().unwrap().library.as_ref().unwrap();
+    let on_disk = super::load_library(&dir.join("todo.txt")).unwrap();
+    assert_eq!(library.items, on_disk.items);
+    assert_eq!(library.items[0].priority.priority, Some(1));
+    assert_eq!(library.items[0].description, "Task");
     let _ = std::fs::remove_dir_all(dir);
 }
 
