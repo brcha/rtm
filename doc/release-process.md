@@ -12,8 +12,11 @@
     - its sub-issues are the release steps: cutting the branch and setting the next version (a
       minor release only), the changelog and the release run, and the website post with the
       announcement; each step's PR carries that sub-issue's key;
-    - when the release is done, create the next release's epic, so the epics finished in the
-      meantime can be linked to it as they land.
+    - when the release is done (published and announced), mark its Jira version (the fix version
+      `X.Y.Z` of the issues it ships) released, dated the day the release was published, once
+      none of its issues is open;
+    - then create the next release's epic, so the epics finished in the meantime can be linked
+      to it as they land.
   - **Minor release `YY.M.0`:**
     1. Cut `releases/vYY.M` from `main` (already at `YY.M.0`) and push it. The ruleset allows
        creating it without checks (`do_not_enforce_on_create`): `releases/v26.1` was pushed with
