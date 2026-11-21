@@ -28,6 +28,8 @@ fn apply_leaves_other_keys_alone() {
     let form = SettingsForm {
         sync: false,
         interval: 0,
+        auto_archive: false,
+        archive_days: 30,
         check_for_updates: true,
         beta: false,
     };
@@ -40,6 +42,22 @@ fn apply_leaves_other_keys_alone() {
             ..before
         }
     );
+}
+
+#[test]
+fn form_round_trips_the_archive_settings() {
+    let config = AppConfig {
+        auto_archive: true,
+        archive_older_than_days: 7,
+        ..AppConfig::default()
+    };
+    let form = SettingsForm::new(&config);
+    assert!(form.auto_archive);
+    assert_eq!(form.archive_days, 7);
+    let mut written = AppConfig::default();
+    form.apply(&mut written);
+    assert!(written.auto_archive);
+    assert_eq!(written.archive_older_than_days, 7);
 }
 
 #[test]

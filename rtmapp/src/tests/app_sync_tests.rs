@@ -1270,3 +1270,144 @@ fn exit_writes_once_a_job_waiting_for_the_same_lock_is_done() {
     assert_eq!(subjects(&dir.join("a"), 1), "rtm: add Bravo");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Archiving a synced file: the todo file and its archive in one commit.
+
+const WITH_DONE: &str = "Buy milk\nx 2026-01-02 Pay rent\n";
+
+/// The files the last commit of `repo` changed.
+fn last_files(repo: &Path) -> String {
+    git(repo, &["show", "--name-only", "--format=", "HEAD"])
+}
+
+fn archive(app: &mut App) {
+    let path = app.active.clone().unwrap();
+    app.archive(&path, Instant::now());
+}
+
+#[test]
+fn archive_commits_the_file_and_its_archive_together() {
+    let dir = remote_and_clones("archive commit", WITH_DONE);
+    let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+
+    archive(&mut app);
+    wait(&mut app);
+    let a = dir.join("a");
+    assert_eq!(subjects(&a, 1), "rtm: archive Pay rent");
+    assert_eq!(last_files(&a), "done.txt\ntodo.txt");
+    assert_eq!(descriptions(&app), ["Buy milk"]);
+
+    sync(&mut app);
+    wait(&mut app);
+    assert_eq!(subjects(&dir.join("remote"), 1), "rtm: archive Pay rent");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_archive_asked_for_during_a_job_is_written_after_it() {
+    let dir = remote_and_clones("archive during job", WITH_DONE);
+    let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
+
+    sync(&mut app);
+    archive(&mut app);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a/todo.txt")).unwrap(),
+        WITH_DONE
+    );
+    wait(&mut app);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a/todo.txt")).unwrap(),
+        "Buy milk\n"
+    );
+    assert_eq!(subjects(&dir.join("a"), 1), "rtm: archive Pay rent");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_edited_archive_is_asked_about_before_archiving() {
+    let dir = remote_and_clones("archive edited", WITH_DONE);
+    let a = dir.join("a");
+    std::fs::write(a.join("done.txt"), "x 2025-12-01 Old\n").unwrap();
+    git(&a, &["add", "done.txt"]);
+    git(&a, &["commit", "--quiet", "-m", "archive"]);
+    std::fs::write(a.join("done.txt"), "x 2025-12-01 Old\nBy hand\n").unwrap();
+    let mut app = synced_app(&dir, &a.join("todo.txt"));
+
+    archive(&mut app);
+    wait(&mut app);
+    assert!(app.file().unwrap().archive_asking);
+    app.answer_archive(false);
+    wait(&mut app);
+    assert!(!app.file().unwrap().archive_asking);
+    assert_eq!(
+        std::fs::read_to_string(a.join("todo.txt")).unwrap(),
+        WITH_DONE
+    );
+    assert_eq!(subjects(&a, 1), "archive");
+
+    archive(&mut app);
+    wait(&mut app);
+    app.answer_archive(true);
+    wait(&mut app);
+    assert_eq!(
+        subjects(&a, 2),
+        "rtm: archive Pay rent\nrtm: commit outside changes"
+    );
+    // The pull on open stashes the hand edit and puts it back, which Git for Windows checks
+    // out with CRLF line endings.
+    assert_eq!(
+        std::fs::read_to_string(a.join("done.txt"))
+            .unwrap()
+            .replace("\r\n", "\n"),
+        "x 2025-12-01 Old\nBy hand\nx 2026-01-02 Pay rent\n"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_ignored_archive_is_written_and_left_out_of_the_commit() {
+    let dir = remote_and_clones("archive ignored", WITH_DONE);
+    let a = dir.join("a");
+    std::fs::write(a.join(".gitignore"), "done.txt\n").unwrap();
+    git(&a, &["add", ".gitignore"]);
+    git(&a, &["commit", "--quiet", "-m", "ignore"]);
+    let mut app = synced_app(&dir, &a.join("todo.txt"));
+
+    archive(&mut app);
+    wait(&mut app);
+    assert_eq!(subjects(&a, 1), "rtm: archive Pay rent");
+    assert_eq!(last_files(&a), "todo.txt");
+    assert_eq!(
+        std::fs::read_to_string(a.join("done.txt")).unwrap(),
+        "x 2026-01-02 Pay rent\n"
+    );
+    // The first archive created it; the archive settings' check finds it ignored.
+    let path = app.active.clone().unwrap();
+    app.open_archive_settings(&path);
+    wait(&mut app);
+    assert_eq!(app.archive_ignored_by(&path), Some("Git"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_archive_waits_while_the_todo_file_is_asked_about() {
+    let dir = remote_and_clones("archive while asking", WITH_DONE);
+    let a = dir.join("a");
+    std::fs::write(a.join("todo.txt"), format!("{WITH_DONE}By hand\n")).unwrap();
+    let mut app = synced_app(&dir, &a.join("todo.txt"));
+    assert!(app.file().unwrap().asking.is_some());
+
+    let cutoff = Local::now().date_naive();
+    app.file_mut().unwrap().queue_archive(cutoff);
+    app.flush();
+    assert!(!a.join("done.txt").exists());
+
+    app.answer(true);
+    wait(&mut app);
+    assert_eq!(
+        subjects(&a, 2),
+        "rtm: archive Pay rent\nrtm: commit outside changes"
+    );
+    assert_eq!(last_files(&a), "done.txt\ntodo.txt");
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -270,19 +270,29 @@ browser or mail program.
 
 ## Archiving done items
 
-`rtmcli archive` moves the done items out of the todo.txt into `done.txt` next to it (a file with
-another name archives to `<name>.done.<ext>`, for example `notes.done.txt`), and lists what it moved.
-To keep recently completed items, give an age in days with `--older-than` or `RTM_ARCHIVE_DAYS`;
-items completed more recently stay, and a done item without a completion date always moves:
+Archiving moves the done items out of the todo.txt into `done.txt` next to it (a file with another
+name archives to `<name>.done.<ext>`, for example `notes.done.txt`). To keep recently completed
+items, give an age in days: items completed more recently stay, and a done item without a
+completion date always moves.
+
+`rtmcli archive` archives and lists what it moved. Give the age with `--older-than` or
+`RTM_ARCHIVE_DAYS`:
 
 ```
 $ rtmcli archive --older-than 30
 ```
 
-When the todo.txt syncs, the todo.txt and its archive are committed together. A `done.txt` edited by
-hand stops the command, as the todo.txt does; run it with `--commit-changes` to commit the edits
-first. If the repository ignores the archive, rtmcli says so: the archived items then stay on this
-computer only.
+In the desktop app, choose **Archive Done Items** in the menu at the left of its title bar to
+archive the file you are looking at, or turn on "Archive done items automatically" in **Settings**
+to archive every open file when the app opens it and once a day after that. Its age is 30 days
+unless you change it in **Settings** (0 moves everything completed before today). To give one file
+its own settings, right-click its tab and choose **Archive Settings…**.
+
+When the todo.txt syncs, the todo.txt and its archive are committed together, and the first archive
+adds the `done.txt` to the repository. A `done.txt` edited by hand stops rtmcli, as the todo.txt
+does; run it with `--commit-changes` to commit the edits first. The desktop app asks instead: commit
+them and archive, or archive later. If the repository ignores the archive, the archived items stay
+on this computer only: rtmcli says so, and so do the file's Archive Settings in the desktop app.
 
 ## Syncing through Git or Pijul
 
@@ -297,9 +307,9 @@ title bar), or set it to 0 to sync only on open, on close and on demand; it is s
 - Commit the todo.txt to the repository once (`git add todo.txt` and commit, or `pijul add` and
   `pijul record`), or let rtm do it: rtmcli with `--commit-changes`, the desktop app when it asks
   on open. rtm never adds an untracked file on its own, except the archive of a synced todo.txt,
-  which `rtmcli archive` adds with the first archive. rtmcli reminds you of an untracked todo.txt
-  on every run, and the desktop app asks every time it opens it; ignore the file in the repository
-  (`.gitignore`, or `.ignore` for Pijul) to silence them; rtm then never syncs it.
+  which `rtmcli archive` and the desktop app add with the first archive. rtmcli reminds you of an
+  untracked todo.txt on every run, and the desktop app asks every time it opens it; ignore the file
+  in the repository (`.gitignore`, or `.ignore` for Pijul) to silence them; rtm then never syncs it.
 - If the todo.txt has changes rtm did not commit (edited by hand, or with `--no-sync`), rtmcli
   stops before syncing: commit or revert them, or run it with `--commit-changes` to commit them
   first. The desktop app asks when it opens the file: commit them, or leave the file closed to

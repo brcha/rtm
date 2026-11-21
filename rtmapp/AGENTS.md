@@ -21,7 +21,8 @@ check on open included (RTM-126), the open files as tabs (RTM-127) and moving an
 open file (RTM-128), for several open files (RTM-66); the title bar's menu and the Settings dialog
 (RTM-134); the projects and contexts in the sidebar (RTM-120) and filtering by them (RTM-121),
 also from a tag clicked in an item row (RTM-150); links in item text (RTM-193); New File and Load
-File buttons on the page while no file is open (RTM-179).
+File buttons on the page while no file is open (RTM-179); archiving done items, from the menu and
+daily.
 
 ---
 
@@ -39,11 +40,13 @@ rtmapp/
 │   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
     ├── main.rs             ← `rtmapp mcp`, else window options and eframe::run_native
+    ├── archive.rs          ← A file's archive settings: the form (`ArchiveForm`) and the modal
     ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, the
     │                         title bar's menu and shortcuts, the tab strip, New File and Load
     │                         File, closing and switching files, filters, the sidebar's
     │                         projects and contexts,
-    │                         quick-add, complete/uncomplete, saving an edit, deleting
+    │                         quick-add, complete/uncomplete, saving an edit, deleting,
+    │                         archiving
     ├── calendar.rs         ← Date field with the calendar popup (`date_field`), week start
     ├── config.rs           ← AppConfig and rtm/config.toml
     ├── edit.rs             ← Edit dialog: the form (`EditForm`, validation in `apply`) and the modal
@@ -107,11 +110,13 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   Keys added for the update check (RTM-138): `check_for_updates` (default true) and
   `update_channel` (`"stable"` or `"beta"`, default `"stable"`; anything else counts as stable,
   `AppConfig::beta`). Keys added for the sidebar (RTM-120): `projects_collapsed` and
-  `contexts_collapsed` (default false).
+  `contexts_collapsed` (default false). Keys added for archiving: `auto_archive` (default
+  false) and `archive_older_than_days` (default 30).
   - **The file list (RTM-124, epic RTM-66):** `[[files]]` tables, the saved session, written last
     (after the plain keys). Each has `path`, an optional `name` (the tab label, set by hand) and an
     optional `vcs` (`"git"` or `"pijul"`, any case, the answer when the file's directory has both;
-    anything else means ask). `file_name` stays and names the active file, so an older rtmapp still
+    anything else means ask), and optional `auto_archive` and `archive_older_than_days`, the
+    file's own archive settings (see Archiving). `file_name` stays and names the active file, so an older rtmapp still
     opens it. Opening a file adds its entry (`add_file`), closing its tab removes it
     (`remove_file`), and clicking a tab makes it `file_name` (`set_active`).
   - **Migration**, in `AppConfig::load`, in memory only (written with the next save): entries
@@ -234,7 +239,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     is over its tab or it has focus. At the end a painted `+` (`theme::add_button`, "Open a file")
     opens New File… and Load File…, the menu's entries.
   - **Renaming (RTM-151):** a right click on a tab opens its context menu (`response.context_menu`
-    in `tab`; new entries go there), for now only "Rename tab". It turns the label into a text field
+    in `tab`; new entries go there): "Rename tab" and "Archive Settings…" (see Archiving). Rename tab
+    turns the label into a text field
     (`App::renaming`: the path and the text typed) holding the name, all selected, with the file
     name as its hint. Enter or a click elsewhere keeps it, Escape cancels; Escape also ends the
     field's focus, so `tab` checks it before treating the lost focus as Enter. The strip reports
@@ -266,8 +272,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   - Settings' change of `sync` reconnects every open file (`connect_all`).
 - **Menu and shortcuts (RTM-134):** a painted ☰ button (`theme::menu_button`, accessible name
   "Menu"; Inter has no such glyph) at the left of the title bar opens an `egui::Popup::menu` with
-  New File…, Load File…, Settings… and Quit, each showing its shortcut: Ctrl+N, Ctrl+O, Ctrl+, and
-  Ctrl+Q (Cmd on macOS, `Modifiers::COMMAND`). The shortcuts are inactive while a modal is open
+  New File…, Load File…, Archive Done Items (no shortcut; enabled while a loaded file is shown,
+  see Archiving), Settings… and Quit, the others showing their shortcuts: Ctrl+N, Ctrl+O, Ctrl+,
+  and Ctrl+Q (Cmd on macOS, `Modifiers::COMMAND`). The shortcuts are inactive while a modal is open
   (`App::modal_open`). New File and Load File are disabled while a file dialog is open.
   Quit sends `ViewportCommand::Close`, so `on_exit` runs as when the window is closed. On macOS,
   winit's own app menu also has Quit (Cmd+Q) through `terminate:`; RTM-140 checks that it reaches
@@ -299,7 +306,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     controls; the config keys keep their values. `cargo test -p rtmapp --no-default-features`
     runs that build's tests.
 - **Settings dialog** (`settings.rs`, RTM-134): the update check's controls (see Update check
-  above) and the app-wide sync settings, `sync` and `sync_interval_minutes` (a `DragValue` from 0
+  above), the archive settings (`auto_archive` and its age, a `DragValue` from 0 to 3650 days kept
+  the same way; see Archiving) and the app-wide sync settings, `sync` and `sync_interval_minutes` (a `DragValue` from 0
   to 1440 that keeps a larger value from `config.toml` until it is edited). Save writes the config at once. A new interval takes effect at
   once (`tick` reads it); a change of `sync` sets `reconnect`, and `reconnect_when_idle`, called in
   `logic`, runs `connect` once no job is outstanding, so a running job's result is not lost and the
@@ -374,7 +382,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     rtmcli: its state cannot be told reliably.
   - **One worker thread per repository (RTM-126)** (`sync::Worker`, held with its sync line and
     timer in `App::repos` as a `RepoSync`) runs every git or pijul call of that repository, for all
-    its open files: `Commit { file, message }` (local) and `Sync(files)` (pull, then push, then a
+    its open files: `Commit { files, message }` (local, one commit through `Vcs::commit_files`,
+    the todo file first), `ArchiveState` (see Archiving) and `Sync(files)` (pull, then push, then a
     conflict check of each listed file, since Pijul writes markers into files) jobs, a result per
     job (`Done`), and `ctx.request_repaint()` after each, so results arrive without input. At most
     one `Sync` waits in the queue. A repository is keyed by its directory (`rtmsync::root`) and
@@ -473,6 +482,42 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     On macOS, `scripts/check-macos-quit.sh` checks that quitting through `terminate:` (Cmd+Q, the
     quit Apple event) reaches `on_exit` and pushes (RTM-140; see "macOS" in
     [`doc/release-process.md`](../doc/release-process.md)).
+- **Archiving** moves done items to the file's archive
+  (`TodoLibrary::archive_path`: `done.txt` next to `todo.txt`, `<stem>.done.<ext>` otherwise; see
+  `todotxt/AGENTS.md`), the items completed before today minus the file's age
+  (`App::archive`; a done item without a completion date always moves), from the menu's Archive
+  Done Items for the shown file, and, when the file's rule says so, for every loaded file once its
+  check on open is done and then every 24 h (`archive_due`, in `logic`; `archived_at` per file,
+  set by either). The rule is `AppConfig::archive_rule`: each of the file's `[[files]]` keys
+  `auto_archive` and `archive_older_than_days` where set, else the app-wide one. Saving Settings
+  or a file's archive settings clears `archived_at` of each file whose rule changed
+  (`rearchive`), so the new rule runs at once. Nothing happens when no item would move
+  (`archivable`, tested against the library).
+  - **A file's archive settings** (`archive.rs`, from the tab's context menu): "Use the app-wide
+    setting (on|off, N days)", or the file's own checkbox and age (the Settings dialog's fields,
+    `settings::archive_fields`); Save stores both keys in the file's entry, or clears both
+    (`AppConfig::set_archive`). It shows the archive's path, and, when the archive's last check
+    found it ignored (`archive_ignored`), that the archived items stay on this computer. Opening
+    it on a synced file queues an `ArchiveState` job, so that note is current; a missing archive
+    gives no note. Escape and the backdrop cancel.
+  - **`Change::Archive`** changes nothing in the list when applied: `OpenFile::flush` archives
+    (`TodoLibrary::archive`, which appends to the archive at once) under the write lock with the
+    worker idle, right before the save, so a pull never meets half an archive. An archive asked
+    for while the repository has a job outstanding therefore shows once the job ends. The commit
+    lists the todo file and the archive (`rtm: archive <description>` or `rtm: archive <n> items`,
+    a line of `rtm: N changes` with others); an ignored archive is written and left out by
+    `commit_files`. An archive that moved nothing adds nothing to the commit, and a write error
+    goes to the file line while the other changes are saved. While the todo file's
+    outside-changes question is open, nothing is committed, so the archive stays pending until
+    the answer.
+  - **A synced file's archive is checked first**: an `ArchiveState` job reads its `Vcs::state`
+    (none for a missing archive, as in rtmcli) and `archive_wait` holds the cutoff until it
+    returns. Changes rtm did not commit set `archive_asking`, and `archive_question` asks ("Commit
+    them" commits them as `rtm: commit outside changes`, then archives; "Not now" leaves both files
+    until the next archive). It is kept apart from `asking`: it holds back no commits of the todo
+    file and is shown only on its own tab, so the daily run never switches tabs.
+  - A `done.txt` open in another tab is read again by the outside-change check like any file
+    another program wrote.
 - Tests are unit tests in `src/tests/`, one file per source file and topic (see Tests in the root
   `AGENTS.md`); rtmapp is a binary crate, so it has no integration tests, and its UI tests are
   unit tests too (see UI tests below). They use temp files and never open a window. `App` tests

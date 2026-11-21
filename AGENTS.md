@@ -61,8 +61,10 @@ them.
   file and its repository (below).
 - **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file. `rtmapp`
   also has `sync` (default true), `sync_interval_minutes` (default 10), `check_for_updates`
-  (default true), `update_channel` (`"stable"`/`"beta"`, default `"stable"`) and `[[files]]`, the
-  saved list of todo.txt files with a per-file `vcs` (`"git"`/`"pijul"`), see `rtmapp/AGENTS.md`.
+  (default true), `update_channel` (`"stable"`/`"beta"`, default `"stable"`), `auto_archive`
+  (default false), `archive_older_than_days` (default 30) and `[[files]]`, the saved list of
+  todo.txt files with a per-file `vcs` (`"git"`/`"pijul"`) and archive settings, see
+  `rtmapp/AGENTS.md`.
 - **Date format:** `%Y-%m-%d` everywhere (chrono `NaiveDate`).
 - **Priority encoding:** stored as `u8` (0 = A, 1 = B, …).
 - All `save()` calls happen immediately after mutations, and, for a synced file, each change is

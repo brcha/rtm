@@ -1,5 +1,5 @@
-//! The Settings dialog, opened from the header's menu: the app-wide sync settings and the update
-//! check. The Git-or-Pijul choice is per file and stays the question asked on open.
+//! The Settings dialog, opened from the header's menu: the app-wide sync and archive settings and
+//! the update check. The Git-or-Pijul choice is per file and stays the question asked on open.
 
 use eframe::egui::{self, Align, Color32, Layout, Modal, RichText, Ui};
 
@@ -10,10 +10,15 @@ use crate::theme::{self, Palette};
 /// the field is edited.
 const MAX_INTERVAL: u64 = 24 * 60;
 
+/// The longest archive age the dialog offers, ten years; a longer one is kept the same way.
+const MAX_ARCHIVE_DAYS: u64 = 3650;
+
 /// The dialog's fields, copied from the config when it opens and written back on Save.
 pub struct SettingsForm {
     pub sync: bool,
     pub interval: u64,
+    pub auto_archive: bool,
+    pub archive_days: u64,
     pub check_for_updates: bool,
     /// The beta channel; off is stable.
     pub beta: bool,
@@ -29,6 +34,8 @@ impl SettingsForm {
         SettingsForm {
             sync: config.sync,
             interval: config.sync_interval_minutes,
+            auto_archive: config.auto_archive,
+            archive_days: config.archive_older_than_days,
             check_for_updates: config.check_for_updates,
             beta: config.beta(),
         }
@@ -38,6 +45,8 @@ impl SettingsForm {
     pub fn apply(&self, config: &mut AppConfig) {
         config.sync = self.sync;
         config.sync_interval_minutes = self.interval;
+        config.auto_archive = self.auto_archive;
+        config.archive_older_than_days = self.archive_days;
         config.check_for_updates = self.check_for_updates;
         config.update_channel = if self.beta { "beta" } else { "stable" }.to_owned();
     }
@@ -95,6 +104,7 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) -> Option<Outcome>
             hint(ui, p, "0: only on open, on close and with Sync now.");
         });
     });
+    archive_ui(ui, p, form);
     // Builds without the update check (the Nix package) have nothing to set.
     if cfg!(feature = "update-check") {
         updates_ui(ui, p, form);
@@ -110,6 +120,41 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) -> Option<Outcome>
         }
     });
     outcome
+}
+
+fn archive_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        archive_fields(ui, &mut form.auto_archive, &mut form.archive_days);
+        hint(
+            ui,
+            p,
+            "Moves done items to done.txt (or <name>.done.txt) next to the file, on open and once \
+             a day. 0: everything completed before today.",
+        );
+    });
+}
+
+/// The automatic-archiving checkbox and the age, here and in a file's archive settings.
+pub fn archive_fields(ui: &mut Ui, auto_archive: &mut bool, days: &mut u64) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        ui.checkbox(
+            auto_archive,
+            RichText::new("Archive done items automatically").size(12.6),
+        );
+        // The age stays editable with the checkbox off: the menu's Archive Done Items uses it.
+        ui.horizontal(|ui| {
+            let label = ui.label(RichText::new("Older than").size(12.6));
+            ui.add(
+                egui::DragValue::new(days)
+                    .range(0..=MAX_ARCHIVE_DAYS)
+                    .clamp_existing_to_range(false)
+                    .suffix(" days"),
+            )
+            .labelled_by(label.id);
+        });
+    });
 }
 
 fn updates_ui(ui: &mut Ui, p: &Palette, form: &mut SettingsForm) {
