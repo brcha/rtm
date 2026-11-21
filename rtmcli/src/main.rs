@@ -25,7 +25,8 @@ struct Cli {
     #[arg(long, global = true, env = "RTM_VCS", value_enum)]
     vcs: Option<VcsName>,
 
-    /// Commit changes to the file made outside rtm, or add an untracked file, before syncing
+    /// Commit changes to the file (or, for archive, its archive) made outside rtm, or add an
+    /// untracked file, before syncing
     #[arg(long, global = true)]
     commit_changes: bool,
 
@@ -75,6 +76,14 @@ enum Commands {
         /// Do not ask for confirmation
         #[arg(short, long)]
         yes: bool,
+    },
+    /// Move done items to the file's archive (done.txt next to todo.txt, <name>.done.<ext> for
+    /// other files)
+    Archive {
+        /// Only items completed more than DAYS days ago; a done item without a completion date
+        /// always moves
+        #[arg(long, value_name = "DAYS", env = "RTM_ARCHIVE_DAYS")]
+        older_than: Option<u32>,
     },
     /// Pull and push the repository holding the file
     Sync,
@@ -295,11 +304,42 @@ impl Repo {
     }
 
     fn commit_and_sync(&self, message: &str) {
-        if let Err(e) = self.vcs.commit(&self.file, message) {
+        self.commit_files_and_sync(&[&self.file], message);
+    }
+
+    fn commit_files_and_sync(&self, files: &[&Path], message: &str) {
+        if let Err(e) = self.vcs.commit_files(files, message) {
             eprintln!("Not committed: {e}");
             return;
         }
         self.sync();
+    }
+
+    /// Exits on changes to `archive` that rtm did not commit, or with `commit_changes` commits
+    /// them first, as `find` does for the file, so the archive commit carries only rtm's changes.
+    /// A missing archive is not checked: its state cannot be told reliably.
+    fn check_archive(&self, archive: &Path, commit_changes: bool) {
+        if !archive.exists() {
+            return;
+        }
+        match self.vcs.state(archive) {
+            Ok(State::Modified) if !commit_changes => {
+                eprintln!(
+                    "'{}' has changes not committed by rtm (made by hand, or with --no-sync); \
+                     commit or revert them, or run with --commit-changes",
+                    archive.display()
+                );
+                std::process::exit(1);
+            }
+            Ok(State::Modified) => {
+                if let Err(e) = self.vcs.commit(archive, "rtm: commit outside changes") {
+                    eprintln!("Not committed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => eprintln!("Cannot check '{}': {e}", archive.display()),
+        }
     }
 }
 
@@ -440,7 +480,11 @@ fn main() {
     // cannot pull (sync off, or no repository) only needs it to see a whole file.
     let writes = matches!(
         cli.command,
-        Commands::Add { .. } | Commands::Complete { .. } | Commands::Delete { .. } | Commands::Sync
+        Commands::Add { .. }
+            | Commands::Complete { .. }
+            | Commands::Delete { .. }
+            | Commands::Archive { .. }
+            | Commands::Sync
     );
     let may_pull = !cli.no_sync && rtmsync::root(Path::new(&file_name)).is_some();
     let mut held = lock(&file_name, writes || may_pull);
@@ -751,6 +795,59 @@ fn main() {
             let repo = if asked { rechecked.as_ref() } else { repo };
             if let Some(repo) = repo {
                 repo.commit_and_sync(&format!("rtm: delete {target}"));
+            }
+        }
+        Commands::Archive { older_than } => {
+            let archive = lib.archive_path();
+            if let Some(repo) = repo {
+                repo.check_archive(&archive, cli.commit_changes);
+                repo.sync();
+            }
+            if let Err(e) = lib.load() {
+                eprintln!("Error loading file '{}': {}", file_name, e);
+                std::process::exit(1);
+            }
+            let today = Local::now().date_naive();
+            let cutoff = older_than.map(|days| {
+                today
+                    .checked_sub_days(chrono::Days::new(days.into()))
+                    .unwrap_or(chrono::NaiveDate::MIN)
+            });
+            let archived = lib.archive(cutoff).unwrap_or_else(|e| {
+                eprintln!("Error writing archive '{}': {}", archive.display(), e);
+                std::process::exit(1);
+            });
+            if archived.is_empty() {
+                println!("No items to archive in '{}'", file_name);
+                return;
+            }
+            if let Err(e) = lib.save() {
+                eprintln!("Error saving file: {}", e);
+                std::process::exit(1);
+            }
+            println!(
+                "Archived {} item(s) from '{}' to '{}':",
+                archived.len(),
+                file_name,
+                archive.display()
+            );
+            for item in &archived {
+                println!("  {}", item);
+            }
+            if let Some(repo) = repo {
+                // Checked now that the archive exists: the first archive creates it.
+                if repo.vcs.state(&archive).is_ok_and(|s| s == State::Ignored) {
+                    eprintln!(
+                        "'{}' is ignored by {:?}; the archived items are not synced",
+                        archive.display(),
+                        repo.vcs
+                    );
+                }
+                let message = match archived.as_slice() {
+                    [one] => format!("rtm: archive {one}"),
+                    many => format!("rtm: archive {} items", many.len()),
+                };
+                repo.commit_files_and_sync(&[Path::new(&file_name), &archive], &message);
             }
         }
         Commands::Sync => match repo {
