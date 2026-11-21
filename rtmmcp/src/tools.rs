@@ -251,8 +251,12 @@ fn parse(line: &str) -> Result<TodoItem, String> {
     if line.is_empty() || line.contains('\n') {
         return Err("Give exactly one todo.txt line.".to_owned());
     }
-    line.parse()
-        .map_err(|e| format!("'{line}' is not a valid todo.txt line: {e}."))
+    let item: TodoItem = line
+        .parse()
+        .map_err(|e| format!("'{line}' is not a valid todo.txt line: {e}."))?;
+    item.check_dates()
+        .map_err(|e| format!("'{line}' cannot be saved: {e}."))?;
+    Ok(item)
 }
 
 /// The tags `names` (with or without the leading `sigil`).
