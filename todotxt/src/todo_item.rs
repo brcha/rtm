@@ -117,11 +117,17 @@ impl FromStr for TodoItem {
             .split_whitespace()
             .map(|word| (word.as_ptr() as usize - s.as_ptr() as usize, word))
             .collect();
-        let parts: Vec<&str> = words.iter().map(|&(_, word)| word).collect();
+        // The head starts the line; `x` and `(X)` count only when a space follows them.
+        let head_word = |index: usize, spaced: bool| {
+            let &(start, word) = words.get(index)?;
+            let rest = &s[start + word.len()..];
+            ((index > 0 || start == 0) && (!spaced || rest.is_empty() || rest.starts_with(' ')))
+                .then_some(word)
+        };
         let mut index = 0;
 
         let mut done = false;
-        if parts.get(index) == Some(&"x") {
+        if head_word(index, true) == Some("x") {
             done = true;
             index += 1;
         }
@@ -129,7 +135,7 @@ impl FromStr for TodoItem {
         // A `(X)` whose letter is not A-Z (`(b)`, `(1)`) is not a priority: the word starts
         // the description.
         let mut priority = TodoPriority { priority: None };
-        if let Some(prio_str) = parts.get(index)
+        if let Some(prio_str) = head_word(index, true)
             && prio_str.starts_with('(')
             && prio_str.ends_with(')')
             && prio_str.len() == 3
@@ -145,19 +151,19 @@ impl FromStr for TodoItem {
         let mut creation_date = None;
 
         if done {
-            if let Some(date_str) = parts.get(index)
+            if let Some(date_str) = head_word(index, false)
                 && let Some(date) = strict_date(date_str)
             {
                 completion_date = Some(date);
                 index += 1;
             }
-            if let Some(date_str) = parts.get(index)
+            if let Some(date_str) = head_word(index, false)
                 && let Some(date) = strict_date(date_str)
             {
                 creation_date = Some(date);
                 index += 1;
             }
-        } else if let Some(date_str) = parts.get(index)
+        } else if let Some(date_str) = head_word(index, false)
             && let Some(date) = strict_date(date_str)
         {
             creation_date = Some(date);
@@ -391,7 +397,11 @@ impl TodoItem {
         if head_changed {
             let head = self.head().join(" ");
             match (layout.head_end, head.is_empty()) {
-                (0, false) => edits.replace(0, 0, format!("{head} ")),
+                // Leading whitespace goes: after it, the head would read as text.
+                (0, false) => {
+                    let lead = text.len() - text.trim_start().len();
+                    edits.replace(0, lead, format!("{head} "))
+                }
                 (end, _) => edits.replace(0, end, head),
             }
         }
