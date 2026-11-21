@@ -1255,7 +1255,8 @@ fn a_tab_s_archive_settings_turn_archiving_on_for_its_file_and_back() {
     harness.get_by_label("Save").click();
     harness.run();
 
-    let path = dir.join("todo.txt").canonicalize().unwrap();
+    // The config holds the plain Windows form, not `canonicalize`'s verbatim one.
+    let path = resolve(&dir.join("todo.txt")).unwrap();
     let config = AppConfig::load(&dir.join("config.toml"));
     assert_eq!(config.archive_rule(&path), (true, 30));
     // On now, so the file is archived at once.

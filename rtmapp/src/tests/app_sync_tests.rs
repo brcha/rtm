@@ -1353,8 +1353,12 @@ fn an_edited_archive_is_asked_about_before_archiving() {
         subjects(&a, 2),
         "rtm: archive Pay rent\nrtm: commit outside changes"
     );
+    // The pull on open stashes the hand edit and puts it back, which Git for Windows checks
+    // out with CRLF line endings.
     assert_eq!(
-        std::fs::read_to_string(a.join("done.txt")).unwrap(),
+        std::fs::read_to_string(a.join("done.txt"))
+            .unwrap()
+            .replace("\r\n", "\n"),
         "x 2025-12-01 Old\nBy hand\nx 2026-01-02 Pay rent\n"
     );
     let _ = std::fs::remove_dir_all(dir);
