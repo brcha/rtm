@@ -57,7 +57,7 @@ rtmmcp/
   and its instructions say another rtm server runs for this client. No parent ID or lock
   directory, or a wrapper process between client and server (a different parent), turns the check
   off: the tools stay. The parent ID is `std::os::unix::process::parent_id` on Unix and a
-  Toolhelp32 snapshot (`windows-sys` 0.52, rtmapp's version) on Windows. The claim is released
+  Toolhelp32 snapshot (`windows-sys` 0.61, rtmapp's version) on Windows. The claim is released
   before the runtime is dropped, which waits for blocking work such as a pull.
 - **Tools:** `list_files`, `list_items` (status open/done/all, due all/today/week/overdue/future as
   `todotxt::DateFilter`, the same as rtmcli's filters, projects and contexts with or without their

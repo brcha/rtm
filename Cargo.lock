@@ -3404,7 +3404,7 @@ dependencies = [
  "sys-locale",
  "todotxt",
  "toml",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
  "winresource",
 ]
 
@@ -3435,7 +3435,7 @@ dependencies = [
  "todotxt",
  "tokio",
  "uuid",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -79,7 +79,7 @@ rtmapp/
 | sys-locale 0.3      | The OS locale, for the calendar's week start       |
 | icu_calendar 2.4    | CLDR first day of the week for a locale            |
 | icu_locale_core 2.4 | Parses the locale for `icu_calendar`               |
-| windows-sys 0.52    | Windows only: the taskbar ID (winit's version)     |
+| windows-sys 0.61    | Windows only: the taskbar ID (eframe's version)    |
 | rtmupdate (path)    | The update check; optional, feature `update-check` |
 | log 0.4             | Logs a failed update check (through env_logger)    |
 | egui_kittest 0.37   | Dev-dependency: the UI tests (see Conventions)     |
@@ -342,7 +342,7 @@ rtmapp/
   not read yet (RTM-44).
 - **Windows:** release builds use the `windows` subsystem (`#![cfg_attr(...)]` in `main.rs`), so no
   console window opens behind the GUI. The window opens centred at 900 × 650.
-  Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version winit
+  Before it opens, `main.rs` sets the AppUserModelID `com.brcha.rtm` (`windows-sys`, the version eframe
   uses), the one on the MSI shortcuts, so the taskbar groups the window with them and with old pins.
 - **`rtmapp mcp` (RTM-116)** serves the files of the config (`mcp.rs`) to an MCP client over stdin
   and stdout (`rtmmcp::serve`, see `rtmmcp/AGENTS.md`), whether or not the app is running.

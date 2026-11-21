@@ -34,7 +34,7 @@ update-check = ["dep:rtmupdate"]
 
 # The taskbar ID (AppUserModelID); 0.52 is the version winit already pulls in.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_UI_Shell"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell"] }
 
 [dev-dependencies]
 # UI tests: drives App headless through the AccessKit tree; no snapshot (wgpu) features.
@@ -42,7 +42,7 @@ egui_kittest = { version = "0.37", features = ["eframe"] }
 
 # CoTaskMemFree, for the test that reads the ID back.
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Com"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Com"] }
 
 [build-dependencies]
 # Embeds the exe icon on Windows targets (see build.rs).
