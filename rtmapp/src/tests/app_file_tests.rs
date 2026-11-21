@@ -60,7 +60,10 @@ fn a_new_file_is_created_empty_opened_and_kept_in_the_config() {
     app.add_item();
     assert_eq!(errors(&app), Vec::<&str>::new());
     // What the next start reads.
-    let name = AppConfig::load(&dir.join("config.toml")).file_name.unwrap();
+    let name = AppConfig::load(&dir.join("config.toml"))
+        .unwrap()
+        .file_name
+        .unwrap();
     let canonical = resolve(&dir.join("sub/todo.txt")).unwrap();
     assert_eq!(Path::new(&name), canonical);
     let library = load_library(Path::new(&name)).unwrap();
@@ -83,7 +86,10 @@ fn a_picked_file_is_opened_when_the_dialog_returns() {
         app.file().unwrap().library.as_ref().unwrap().items[0].description,
         "Other item"
     );
-    let name = AppConfig::load(&dir.join("config.toml")).file_name.unwrap();
+    let name = AppConfig::load(&dir.join("config.toml"))
+        .unwrap()
+        .file_name
+        .unwrap();
     assert_eq!(Path::new(&name), resolve(&dir.join("other.txt")).unwrap());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -103,7 +109,7 @@ fn opening_another_file_adds_a_tab_and_an_entry() {
 
     assert_eq!(app.files.len(), 2);
     assert_eq!(app.library().unwrap().items[0].description, "Other item");
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     let other = resolve(&dir.join("other.txt")).unwrap();
     assert_eq!(config.file_name.as_deref(), other.to_str());
     let [kept, added] = config.files.as_slice() else {

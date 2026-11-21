@@ -232,7 +232,7 @@ fn saving_a_file_s_archive_settings_archives_it_again_only_when_they_changed() {
     app.save_archive_settings();
     assert!(app.files[0].archived_at.is_none());
     assert_eq!(app.config.archive_rule(&path), (false, 3));
-    let saved = AppConfig::load(&dir.join("config.toml"));
+    let saved = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(saved.archive_rule(&path), (false, 3));
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -57,6 +57,9 @@ pub struct App {
     /// The app line, above the file's: the config, a file that could not be created or opened,
     /// the quick-add input. Shown until the next successful change or config save.
     error: Option<String>,
+    /// Why the config file could not be read at startup. While set, the app line shows it and the
+    /// config is never saved, so the user's file stays as it is until they fix it.
+    config_error: Option<String>,
     /// The quick-add input.
     new_item: String,
     editing: Option<EditForm>,
@@ -173,7 +176,16 @@ impl App {
         update_url: String,
     ) -> Self {
         theme::install(&cc.egui_ctx);
-        let mut config = AppConfig::load(&config_path);
+        let (mut config, config_error) = match AppConfig::load(&config_path) {
+            Ok(config) => (config, None),
+            Err(e) => (
+                AppConfig::default(),
+                Some(format!(
+                    "Could not read the config, so changes to the settings and tabs are not saved \
+                     until it is fixed and the app restarted: {e}"
+                )),
+            ),
+        };
         let (files, active) = open_session(&mut config);
         let updates = UpdateCheck::new(update_url, config.check_for_updates, Instant::now());
         let mut app = App {
@@ -182,6 +194,7 @@ impl App {
             files,
             active,
             error: None,
+            config_error,
             new_item: String::new(),
             editing: None,
             settings: None,
@@ -1348,6 +1361,9 @@ impl App {
 
     /// Writes the config; replaces the app line with the result.
     fn save_config(&mut self) {
+        if self.config_error.is_some() {
+            return;
+        }
         self.error = self
             .config
             .save(&self.config_path)
@@ -1875,7 +1891,8 @@ impl App {
     /// open. Returns what was clicked there.
     fn content(&mut self, ui: &mut Ui, p: &Palette, files_enabled: bool) -> Option<Clicked> {
         let file_error = self.file().and_then(|file| file.error.as_ref());
-        for error in [self.error.as_ref(), file_error].into_iter().flatten() {
+        let errors = [self.config_error.as_ref(), self.error.as_ref(), file_error];
+        for error in errors.into_iter().flatten() {
             ui.label(RichText::new(error).color(p.due));
             ui.add_space(8.0);
         }

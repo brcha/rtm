@@ -15,7 +15,7 @@ fn saving_settings_writes_the_config_and_closes_the_dialog() {
     });
     app.save_settings();
     assert!(app.settings.is_none());
-    let saved = AppConfig::load(&dir.join("config.toml"));
+    let saved = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert!(!saved.sync);
     assert_eq!(saved.sync_interval_minutes, 30);
     // `sync` changed, so sync restarts once the worker is idle.

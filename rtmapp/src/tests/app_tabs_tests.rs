@@ -83,7 +83,7 @@ fn loading_an_open_file_switches_to_its_tab() {
 
     assert_eq!(paths(&app), [todo.as_path(), work.as_path()]);
     assert_eq!(app.file().unwrap().path, todo);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.file_name.as_deref(), todo.to_str());
     assert_eq!(config.files.len(), 2);
     let _ = std::fs::remove_dir_all(dir);
@@ -105,7 +105,7 @@ fn loading_a_file_missing_at_startup_loads_it_into_its_tab() {
     assert_eq!(shown.path, late);
     assert_eq!(shown.error, None);
     assert_eq!(app.library().unwrap().items[0].description, "Late item");
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     let entries: Vec<_> = config
         .files
         .iter()
@@ -140,7 +140,7 @@ fn closing_the_active_tab_shows_the_one_to_its_right() {
 
     assert_eq!(paths(&app), [one.as_path(), three.as_path()]);
     assert_eq!(app.file().unwrap().path, three);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.file_name.as_deref(), three.to_str());
     assert_eq!(config.files.len(), 2);
     let _ = std::fs::remove_dir_all(dir);
@@ -170,7 +170,7 @@ fn closing_a_tab_left_of_the_active_one_keeps_it_shown() {
 
     assert_eq!(paths(&app), [two.as_path()]);
     assert_eq!(app.file().unwrap().path, two);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.file_name.as_deref(), two.to_str());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -187,7 +187,7 @@ fn closing_the_last_tab_leaves_no_file_and_an_empty_session() {
 
     assert!(app.file().is_none());
     assert!(file_lines(&dir).last().unwrap().ends_with("Written first"));
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.file_name, None);
     assert_eq!(config.files, []);
     app.new_item = "Nowhere".to_owned();
@@ -206,7 +206,7 @@ fn closing_a_file_missing_at_startup_removes_its_entry() {
     app.close(&missing);
 
     assert_eq!(paths(&app), [todo.as_path()]);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.files.len(), 1);
     assert_eq!(config.file_name.as_deref(), todo.to_str());
     let _ = std::fs::remove_dir_all(dir);
@@ -230,7 +230,7 @@ fn switching_tabs_shows_the_file_and_saves_it_as_active() {
             .contains("Send invoice")
     );
     assert_eq!(file_lines(&dir), ["Alpha"]);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.file_name.as_deref(), work.to_str());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -263,7 +263,7 @@ fn renaming_a_tab_labels_it_and_saves_the_name_in_its_entry() {
 
     assert_eq!(app.renaming, None);
     assert_eq!(app.files[0].name, "Personal");
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(
         config.entry(&todo).unwrap().name.as_deref(),
         Some("Personal")
@@ -284,7 +284,7 @@ fn an_empty_name_gives_the_tab_its_file_name_back() {
     app.rename_tab(&todo, "   ");
 
     assert_eq!(app.files[0].name, "todo.txt");
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.entry(&todo).unwrap().name, None);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -299,7 +299,7 @@ fn a_tab_whose_file_is_missing_can_be_renamed() {
     app.rename_tab(&missing, "Old");
 
     assert_eq!(app.files[1].name, "Old");
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.entry(&missing).unwrap().name.as_deref(), Some("Old"));
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -340,7 +340,7 @@ fn a_symlinked_entry_shows_why_in_its_tab_and_opening_its_target_loads_it_there(
     assert_eq!(paths(&app), [real.as_path(), todo.as_path()]);
     assert_eq!(app.file().unwrap().error, None);
     assert_eq!(app.library().unwrap().items[0].description, "Real item");
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     let entries: Vec<_> = config
         .files
         .iter()

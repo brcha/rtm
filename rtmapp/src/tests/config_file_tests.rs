@@ -38,7 +38,7 @@ fn round_trip() {
         }],
     };
     config.save(&path).unwrap();
-    assert_eq!(AppConfig::load(&path), config);
+    assert_eq!(AppConfig::load(&path).unwrap(), config);
     cleanup(&path);
 }
 
@@ -95,12 +95,34 @@ fn unknown_keys_are_ignored() {
 }
 
 #[test]
-fn missing_or_invalid_file_gives_defaults() {
+fn a_missing_file_gives_defaults() {
+    let path = temp_path("missing");
+    assert_eq!(AppConfig::load(&path).unwrap(), AppConfig::default());
+}
+
+#[test]
+fn a_file_that_does_not_parse_is_an_error_naming_it() {
     let path = temp_path("invalid");
-    assert_eq!(AppConfig::load(&path), AppConfig::default());
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, "this is = = not toml").unwrap();
-    assert_eq!(AppConfig::load(&path), AppConfig::default());
+    for text in [
+        "[[files]]\npath = \"/home/user/todo.txt\"\nthis is = = not toml\n",
+        "sync_interval_minutes = -5\n",
+    ] {
+        std::fs::write(&path, text).unwrap();
+        let error = AppConfig::load(&path).unwrap_err();
+        assert!(error.starts_with(&path.display().to_string()), "{error}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+    cleanup(&path);
+}
+
+#[test]
+fn a_config_that_cannot_be_read_is_an_error() {
+    let path = temp_path("unreadable");
+    // Reading a directory fails on every system, without changing permissions.
+    std::fs::create_dir_all(&path).unwrap();
+    let error = AppConfig::load(&path).unwrap_err();
+    assert!(error.starts_with(&path.display().to_string()), "{error}");
     cleanup(&path);
 }
 
@@ -109,7 +131,7 @@ fn load_text(name: &str, text: &str) -> AppConfig {
     let path = temp_path(name);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, text).unwrap();
-    let config = AppConfig::load(&path);
+    let config = AppConfig::load(&path).unwrap();
     cleanup(&path);
     config
 }
@@ -219,11 +241,11 @@ fn an_unknown_vcs_is_no_choice_and_is_kept() {
         "file_name = \"/tmp/a.txt\"\n\n[[files]]\npath = \"/tmp/a.txt\"\nvcs = \"svn\"\n",
     )
     .unwrap();
-    let config = AppConfig::load(&path);
+    let config = AppConfig::load(&path).unwrap();
     assert_eq!(crate::sync::chosen(&config, Path::new("/tmp/a.txt")), None);
     config.save(&path).unwrap();
     assert_eq!(
-        AppConfig::load(&path).files,
+        AppConfig::load(&path).unwrap().files,
         [entry("/tmp/a.txt", Some("svn"))]
     );
     cleanup(&path);
@@ -246,7 +268,7 @@ fn a_saved_config_has_file_name_and_the_file_list_but_no_top_level_vcs() {
     let path = temp_path("saved text");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "file_name = \"/tmp/a.txt\"\nvcs = \"git\"\n").unwrap();
-    AppConfig::load(&path).save(&path).unwrap();
+    AppConfig::load(&path).unwrap().save(&path).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     let table: toml::Table = text.parse().unwrap();
     assert_eq!(table["file_name"].as_str(), Some("/tmp/a.txt"));
