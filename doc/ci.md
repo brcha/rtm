@@ -73,21 +73,21 @@
     whose `pr-title.yml` lacks the step (a release branch it has not reached) gets no line; an
     open PR gets it on its next event once its merge commit includes the step.
   - The reverse link, from the issue to the PR, comes from Jira Automation, so no Jira
-    credentials go into the repository's secrets. Three flows in the RTM space (Space settings →
-    Automation) send a remote link to `/rest/api/3/issue/{{issue.key}}/remotelink`: "Add pull
-    requests to the issue's links" on "Pull request created", so the PR shows in the issue's
-    web links, which the issue view lists under Attachments, and not only in the Development
-    panel; "Mark merged pull requests resolved in the issue's links" and "Mark declined pull
-    requests resolved in the issue's links" on those events, with
-    `"status": { "resolved": true }`, which strikes the link through. The link's `globalId` is
-    the PR's URL, so a repeated request updates the link instead of adding one. A PR opened
-    before the flows existed has no link, and when a PR's title later names another issue, the
-    link stays on the first one until removed by hand.
-  - The flows authenticate with a Basic `Authorization` header built from the Atlassian email
-    and an API token named "rtm automation: PR links", entered as a hidden header in each flow's
-    "Send web request" action. The token expires on 2027-11-21; tokens last at most a year.
-    Before then, create a new token and paste the new header value into the hidden header of all
-    three flows. A failed request shows in the flow's audit log and in an email to its owner.
+    credentials go into the repository's secrets. The flow "Add pull requests to the issue's
+    links" in the RTM space (Space settings → Automation) runs on "Pull request created" and
+    sends a remote link to `/rest/api/3/issue/{{issue.key}}/remotelink`, so the PR shows in the
+    issue's web links, which the issue view lists under Attachments, and not only in the
+    Development panel. The link's `globalId` is the PR's URL, so a repeated request updates the
+    link instead of adding one. A PR opened before the flow existed has no link, and when a PR's
+    title later names another issue, the link stays on the first one until removed by hand.
+    Marking the link resolved when the PR is merged or declined changes nothing in the issue
+    view, so no flow does it; the Development panel shows the PR's state.
+  - The flow authenticates with a Basic `Authorization` header built from the Atlassian email
+    and an API token named "rtm automation: PR links", entered as a hidden header in its "Send
+    web request" action. The token expires on 2027-11-21; tokens last at most a year. Before
+    then, create a new token and paste the new header value into that hidden header. A failed
+    request shows in the flow's audit log and in an email to its owner. Copying the flow does
+    not copy the hidden header's value.
 - **Website (RTM-89):** `site.yml` builds the site and checks its links with
   `scripts/site/check.sh`: Zola's check and build, the shape of `releases.json` (`jq`), then
   lychee over the built pages and `releases.json` offline, with the absolute `base_url` mapped to
