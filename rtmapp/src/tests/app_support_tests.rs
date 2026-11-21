@@ -93,3 +93,12 @@ pub(super) fn symlink(target: &Path, link: &Path) -> String {
         target.display()
     )
 }
+
+/// Makes `path` read-only, so saving it fails, and returns the permissions to restore.
+pub(super) fn read_only(path: &Path) -> std::fs::Permissions {
+    let original = std::fs::metadata(path).unwrap().permissions();
+    let mut permissions = original.clone();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(path, permissions).unwrap();
+    original
+}
