@@ -1,10 +1,10 @@
-use chrono::{Duration, Local};
+use chrono::Local;
 use clap::{Parser, Subcommand, ValueEnum};
 use rtmsync::{State, Vcs};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use todotxt::TodoItem;
 use todotxt::TodoLibrary;
+use todotxt::{DateFilter, TodoItem};
 
 #[derive(Parser)]
 #[command(name = "rtmcli")]
@@ -39,7 +39,7 @@ enum Commands {
         #[arg(short, long)]
         completed: bool,
 
-        /// Filter by due date
+        /// Filter by due or threshold date
         #[arg(value_enum)]
         filter: Option<Filter>,
     },
@@ -258,13 +258,30 @@ fn find_again(lib: &TodoLibrary, target: &TodoItem, taken: &[usize]) -> usize {
     std::process::exit(1);
 }
 
-#[derive(ValueEnum, Clone, PartialEq)]
+#[derive(ValueEnum, Clone, Copy, PartialEq)]
 enum Filter {
+    /// Due or threshold date today
     Today,
+    /// Due or threshold date within the next 7 days
     Week,
+    /// Every item
     All,
+    /// Due before today
     Overdue,
+    /// Has a due or threshold date, and every one it has is after today
     Future,
+}
+
+impl From<Filter> for DateFilter {
+    fn from(filter: Filter) -> Self {
+        match filter {
+            Filter::Today => DateFilter::Today,
+            Filter::Week => DateFilter::Week,
+            Filter::All => DateFilter::All,
+            Filter::Overdue => DateFilter::Overdue,
+            Filter::Future => DateFilter::Future,
+        }
+    }
 }
 
 fn parse_filter(s: &str) -> Option<Filter> {
@@ -299,25 +316,11 @@ fn main() {
             }
 
             let today = Local::now().date_naive();
-            let date_filter = match filter {
-                Some(Filter::Today) => Some((today, today)),
-                Some(Filter::Week) => Some((today, today + Duration::days(6))),
-                Some(Filter::All) => None,
-                Some(Filter::Overdue) => Some((chrono::NaiveDate::MIN, today - Duration::days(1))),
-                Some(Filter::Future) => Some((today + Duration::days(1), chrono::NaiveDate::MAX)),
-                None => None,
-            };
-
+            let filter = filter.map_or(DateFilter::All, DateFilter::from);
             let filtered_items: Vec<_> = lib
                 .list_items()
                 .iter()
-                .filter(|item| {
-                    item.done == completed
-                        && match date_filter {
-                            None => true,
-                            Some((start, end)) => item.due.is_some_and(|d| d >= start && d <= end),
-                        }
-                })
+                .filter(|item| item.done == completed && filter.matches(item, today))
                 .collect();
 
             println!("Items in '{}':", file_name);
@@ -364,24 +367,12 @@ fn main() {
             let mut indices_to_complete = Vec::new();
 
             let arg1_ref = &arg1;
-            if let Some(filter_name) = parse_filter(arg1_ref) {
-                let date_filter = match filter_name {
-                    Filter::Today => Some((today, today)),
-                    Filter::Week => Some((today, today + Duration::days(6))),
-                    Filter::All => None,
-                    Filter::Overdue => Some((chrono::NaiveDate::MIN, today - Duration::days(1))),
-                    Filter::Future => Some((today + Duration::days(1), chrono::NaiveDate::MAX)),
-                };
-
+            if let Some(filter) = parse_filter(arg1_ref) {
+                let filter = DateFilter::from(filter);
                 let filtered_indices: Vec<usize> = items
                     .iter()
                     .enumerate()
-                    .filter(|(_, item)| {
-                        !item.done
-                            && date_filter.is_none_or(|(start, end)| {
-                                item.due.is_some_and(|d| d >= start && d <= end)
-                            })
-                    })
+                    .filter(|(_, item)| !item.done && filter.matches(item, today))
                     .map(|(i, _)| i)
                     .collect();
 
