@@ -236,3 +236,50 @@ fn saving_a_file_s_archive_settings_archives_it_again_only_when_they_changed() {
     assert_eq!(saved.archive_rule(&path), (false, 3));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// An app on `Old (done) / Alpha / Beta / Gamma` with automatic archiving on, the edit dialog open
+/// on Beta, and the day's archive run since.
+fn archived_while_editing_beta(name: &str) -> (PathBuf, App, String) {
+    let dir = temp_dir(name);
+    let old = format!("x {} Old", days_ago(60));
+    let mut app = app_with(&dir, &format!("{old}\nAlpha\nBeta\nGamma\n"));
+    app.config.auto_archive = true;
+    open_editor(&mut app, 2).description = "Beta edited".to_owned();
+    app.archive_due(Instant::now());
+    assert_eq!(file_lines(&dir), [old.as_str(), "Alpha", "Beta", "Gamma"]);
+    (dir, app, old)
+}
+
+#[test]
+fn saving_an_edit_after_the_automatic_archive_edits_the_dialog_s_item() {
+    let (dir, mut app, old) = archived_while_editing_beta("archive edit save");
+
+    app.save_edit();
+
+    assert_eq!(file_lines(&dir), ["Alpha", "Beta edited", "Gamma"]);
+    assert_eq!(done_lines(&dir), [old]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn deleting_after_the_automatic_archive_deletes_the_dialog_s_item() {
+    let (dir, mut app, old) = archived_while_editing_beta("archive edit delete");
+
+    app.ask_delete();
+    app.delete_item();
+
+    assert_eq!(file_lines(&dir), ["Alpha", "Gamma"]);
+    assert_eq!(done_lines(&dir), [old]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn cancelling_the_edit_writes_the_archive_held_meanwhile() {
+    let (dir, mut app, old) = archived_while_editing_beta("archive edit cancel");
+
+    app.cancel_edit();
+
+    assert_eq!(file_lines(&dir), ["Alpha", "Beta", "Gamma"]);
+    assert_eq!(done_lines(&dir), [old]);
+    let _ = std::fs::remove_dir_all(dir);
+}

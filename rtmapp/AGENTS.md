@@ -508,7 +508,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     `commit_files`. An archive that moved nothing adds nothing to the commit, and a write error
     goes to the file line while the other changes are saved. While the todo file's
     outside-changes question is open, nothing is committed, so the archive stays pending until
-    the answer.
+    the answer. It also stays pending while the edit dialog is open on an item of the file, since
+    the dialog keeps its item by position (`form.index`); it is written with the dialog's Save,
+    Delete or Move, or when Cancel closes it (`cancel_edit`).
   - **A synced file's archive is checked first**: an `ArchiveState` job reads its `Vcs::state`
     (none for a missing archive, as in rtmcli) and `archive_wait` holds the cutoff until it
     returns. Changes rtm did not commit set `archive_asking`, and `archive_question` asks ("Commit
