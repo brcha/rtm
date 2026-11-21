@@ -76,3 +76,19 @@ pub(super) fn open_editor(app: &mut App, index: usize) -> &mut EditForm {
     app.open_editor(index);
     app.editing.as_mut().unwrap()
 }
+
+/// Makes `link` a symbolic link to `target` and returns the message refusing it.
+#[cfg(unix)]
+pub(super) fn symlink(target: &Path, link: &Path) -> String {
+    std::os::unix::fs::symlink(target, link).unwrap();
+    // canonicalize: the temp directory is reached through a symlink on macOS.
+    let target = target
+        .canonicalize()
+        .unwrap_or_else(|_| link.parent().unwrap().join(target));
+    format!(
+        "'{}' is a symbolic link to '{}'; open '{}' instead",
+        link.display(),
+        target.display(),
+        target.display()
+    )
+}
