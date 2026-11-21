@@ -80,7 +80,7 @@ type InvalidCase = (fn(&mut EditForm), &'static str);
 /// Each invalid field is refused with its own message and leaves the item untouched.
 #[test]
 fn invalid_input_is_refused() {
-    let cases: [InvalidCase; 9] = [
+    let cases: [InvalidCase; 10] = [
         (|f| f.description = "  ".into(), "Description is required"),
         (
             |f| f.due = "2026-13-01".into(),
@@ -102,6 +102,10 @@ fn invalid_input_is_refused() {
             |f| f.contexts = "@at home".into(),
             "Contexts: names cannot contain spaces",
         ),
+        (
+            |f| f.threshold = "2026-11-05".into(),
+            "Dates: threshold date 2026-11-05 is after due date 2026-11-01",
+        ),
     ];
     for (change, message) in cases {
         let mut target = item(FULL);
@@ -111,6 +115,15 @@ fn invalid_input_is_refused() {
         assert!(error.starts_with(message), "{error}");
         assert_eq!(target, item(FULL), "{message}");
     }
+}
+
+#[test]
+fn a_threshold_on_the_due_date_is_accepted() {
+    let mut target = item(FULL);
+    let mut f = form(FULL);
+    f.threshold = "2026-11-01".into();
+    f.apply(&mut target).unwrap();
+    assert_eq!(target.threshold, target.due);
 }
 
 #[test]

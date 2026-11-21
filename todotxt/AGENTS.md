@@ -121,6 +121,13 @@ todotxt/tests/
   The head (`x`, `(A)`, the dates) is read only at the start of the line, and `x` and `(A)`
   only when a space follows (RTM-212): a line that starts with whitespace, or `x` or `(A)`
   followed by a tab, is an open task with that text in its description.
+- **`check_dates()`** refuses an item whose threshold date (`t:`) is after its due date
+  (`TodoItemDateError::ThresholdAfterDue`, "threshold date X is after due date Y"); the same day,
+  one of the two dates or neither passes. Every frontend calls it on what the user enters (added
+  and edited items) and refuses with that message. Nothing in the library calls it: `load`,
+  `add_item`, `replace_item`, `complete_item` and `Display` accept such an item, so a line already
+  in a file loads and saves unchanged. The next occurrence of a recurring item never breaks the
+  rule: both dates move by the same interval, or keep their distance.
 - **`Display` never emits a creation date without a completion date on a done line.** A
   completed item's creation date is written only immediately after its completion date; if
   there is no completion date, no date is written at all, even if a creation date is present.
