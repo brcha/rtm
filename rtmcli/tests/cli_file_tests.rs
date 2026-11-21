@@ -114,3 +114,63 @@ fn listing_a_missing_file_is_an_error_that_names_it() {
     assert!(!file.exists());
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// The message refusing `link`, a symbolic link to `target`.
+#[cfg(unix)]
+fn refusal(link: &Path, target: &Path) -> String {
+    // canonicalize: the temp directory is reached through a symlink on macOS.
+    let target = target.canonicalize().unwrap();
+    format!(
+        "Error: '{}' is a symbolic link to '{}'; open '{}' instead",
+        link.display(),
+        target.display(),
+        target.display()
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn adding_to_a_symlinked_file_is_refused_and_writes_nothing() {
+    let dir = scratch("symlink-add");
+    let target = dir.join("real.txt");
+    fs::write(&target, "Buy milk\n").unwrap();
+    let link = dir.join("todo.txt");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let add = rtmcli(&dir)
+        .arg("-f")
+        .arg(&link)
+        .args(["add", "Call mom"])
+        .output()
+        .unwrap();
+    assert_eq!(add.status.code(), Some(1), "{add:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&add.stderr).trim(),
+        refusal(&link, &target)
+    );
+    assert_eq!(file_lines(&target), ["Buy milk"]);
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn listing_a_symlinked_todotxt_is_refused() {
+    let dir = scratch("symlink-list");
+    let target = dir.join("real.txt");
+    fs::write(&target, "Buy milk\n").unwrap();
+    let link = dir.join("todo.txt");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let list = rtmcli(&dir)
+        .env("TODOTXT", &link)
+        .arg("list")
+        .output()
+        .unwrap();
+    assert_eq!(list.status.code(), Some(1), "{list:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&list.stderr).trim(),
+        refusal(&link, &target)
+    );
+    assert!(list.stdout.is_empty());
+    fs::remove_dir_all(&dir).unwrap();
+}
