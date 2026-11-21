@@ -3,6 +3,58 @@
 Each release's section opens with a summary of the release, followed by the changes generated with
 git-cliff from the squash-merged pull requests of this release line.
 
+## [26.2.1] - 2026-11-21
+
+rtm 26.2.1 follows the todo.txt format more closely and fixes several problems in the desktop app.
+
+- **Lines kept as written.** Lines rtm cannot interpret, the line's layout and spacing, and the
+  file's final newline are kept when the file is saved. Only `YYYY-MM-DD` words are read as dates,
+  `pri:` is the priority only on completed lines, and a line that starts with a space is never
+  read as complete or prioritized.
+- **Recurrence.** Monthly and yearly recurrence uses calendar months and years, business-day
+  recurrence skips weekends, a recurring item without a due date recurs, `rec:1w` keeps its count,
+  and the threshold date (`t:`) moves with the item.
+- **Threshold dates.** Items whose threshold date has passed are shown even when their due date is
+  in the future, the date filters of `rtmcli` and the MCP tools read the threshold date, and an
+  item whose threshold date is after its due date is refused.
+- **Desktop app.** On exit, a change whose commit is queued together with the last sync is now
+  committed. On Windows, the app started from the installer's last screen syncs, and file paths
+  show without the `\\?\` prefix.
+
+### Changes
+
+#### Features
+
+- todotxt: refuse an item whose threshold date is after its due date -- RTM-214 (#182)
+
+#### Bug fixes
+
+- todotxt: calendar months and years in recurrence -- RTM-207 (#135)
+- todotxt: move the threshold date with a recurring item -- RTM-177 (#139)
+- todotxt: keep lines rtm cannot interpret -- RTM-203 (#142)
+- todotxt: keep the line's layout when writing it back -- RTM-204 (#145)
+- todotxt: read only YYYY-MM-DD words as dates -- RTM-205 (#148)
+- todotxt: write a recurrence with its count -- RTM-206 (#151)
+- todotxt: skip weekends in business-day recurrence -- RTM-208 (#154)
+- rtmapp: show and save Windows paths without the \\?\ prefix -- RTM-217 (#161)
+- rtmapp: start the app through Explorer after installing -- RTM-216 (#159)
+- todotxt: recur items without a due date -- RTM-209 (#168)
+- todotxt: keep the final newline when saving -- RTM-210 (#171)
+- todotxt: read pri: as the priority only on done lines -- RTM-211 (#174)
+- todotxt: read the head only at the start of the line -- RTM-212 (#177)
+- rtmapp: wait for a commit queued with the last sync on exit -- RTM-220 (#180)
+- rtmapp: decide future items by their threshold date -- RTM-222 (#188)
+- todotxt: date filters read the threshold date -- RTM-230 (#197)
+
+#### CI
+
+- github: fall back to a mirror outside ubuntu.com for apt -- RTM-213 (#134)
+- github: link each pull request description to its Jira issue -- RTM-219 (#164)
+
+#### Tests
+
+- todotxt: specification test suite -- RTM-196 (#128)
+
 ## [26.2.0] - 2026-11-08
 
 rtm 26.2.0 opens several todo.txt files at once in the desktop app, lets AI assistants work with
