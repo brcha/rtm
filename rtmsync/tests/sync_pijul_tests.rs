@@ -179,9 +179,27 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     Vcs::Pijul.commit(&todo, "second").unwrap();
     assert!(pijul(&sub, &["log"]).contains("second"));
 
+    // The todo file and its archive in one change.
+    let done = sub.join("done.txt");
+    std::fs::write(&todo, "Call mom\n").unwrap();
+    std::fs::write(&done, "x Buy milk\n").unwrap();
+    Vcs::Pijul.commit_files(&[&todo, &done], "archive").unwrap();
+    assert!(pijul(&sub, &["log"]).contains("archive"));
+    assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Clean);
+    assert_eq!(Vcs::Pijul.state(&done).unwrap(), State::Clean);
+    // An ignored file is left out; the todo file is still recorded.
+    std::fs::write(&todo, "Buy milk\nCall mom\n").unwrap();
+    Vcs::Pijul
+        .commit_files(&[&todo, &ignored], "with ignored")
+        .unwrap();
+    assert!(pijul(&sub, &["log"]).contains("with ignored"));
+    assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Clean);
+    assert_eq!(Vcs::Pijul.state(&ignored).unwrap(), State::Ignored);
+
     let pending = pijul(&sub, &["diff", "--short"]);
     assert!(pending.contains("other.txt"), "{pending}");
     assert!(!pending.contains("todo.txt"), "{pending}");
+    assert!(!pending.contains("done.txt"), "{pending}");
 
     // Sync between two clones of `repo`, their remote. Each todo.txt sits at the same depth as
     // `repo/sub/todo.txt`, so the relative agent socket path still resolves.

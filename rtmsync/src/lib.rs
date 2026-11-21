@@ -69,7 +69,7 @@ impl Vcs {
             Vcs::Git => {
                 let args = ["--literal-pathspecs", "ls-files", "--error-unmatch"];
                 let name = file.file_name().unwrap_or_default();
-                succeeded(run("git", dir, &args, name))
+                succeeded(run("git", dir, &args, &[name]))
             }
             Vcs::Pijul => {
                 let Some(path) = pijul_path(&file) else {
@@ -107,7 +107,7 @@ impl Vcs {
             // It takes path names, not pathspecs, and refuses `--literal-pathspecs`.
             (Vcs::Git, false) => {
                 let args = ["check-ignore", "-q"];
-                match run("git", dir, &args, name) {
+                match run("git", dir, &args, &[name]) {
                     Ok(()) => Ok(State::Ignored),
                     Err(Error::Failed { status, .. }) if status.code() == Some(1) => {
                         Ok(State::Untracked)
@@ -197,31 +197,54 @@ impl Vcs {
     }
 
     /// Commits the current content of `file`, and nothing else in its repository, with `message`.
-    /// An untracked file is added first; an unchanged file commits nothing.
+    /// An untracked file is added first; an unchanged or ignored file commits nothing.
     pub fn commit(self, file: &Path, message: &str) -> Result<(), Error> {
-        let file = resolve(file);
-        let dir = file.parent().unwrap_or(Path::new("."));
-        let name = file.file_name().unwrap_or_default();
+        self.commit_files(&[file], message)
+    }
+
+    /// Commits the current content of `files`, and nothing else in their repository, in one
+    /// commit (Git) or change (Pijul) with `message`. Untracked files are added first, files the
+    /// repository ignores are left out, and when none changed nothing is committed. Every file
+    /// must exist and be in the first one's repository: a missing untracked file fails at `add`
+    /// with Git and is taken for ignored by Pijul.
+    pub fn commit_files(self, files: &[&Path], message: &str) -> Result<(), Error> {
+        let Some(first) = files.first() else {
+            return Ok(());
+        };
+        let first = resolve(first);
+        let dir = first.parent().unwrap_or(Path::new("."));
+        let mut paths = Vec::new();
+        for file in files {
+            if self.state(file)? == State::Ignored {
+                continue;
+            }
+            let file = resolve(file);
+            let path = file.strip_prefix(dir).map(Path::to_path_buf);
+            paths.push(path.unwrap_or(file).into_os_string());
+        }
+        if paths.is_empty() {
+            return Ok(());
+        }
         let message = format!("--message={message}");
         match self {
             Vcs::Git => {
-                run("git", dir, &["--literal-pathspecs", "add"], name)?;
+                run("git", dir, &["--literal-pathspecs", "add"], &paths)?;
                 let staged = ["--literal-pathspecs", "diff", "--cached", "--quiet"];
-                if run("git", dir, &staged, name).is_ok() {
+                if run("git", dir, &staged, &paths).is_ok() {
                     return Ok(());
                 }
-                // A commit with a pathspec takes only that path, not what else is staged.
+                // A commit with pathspecs takes only those paths, not what else is staged.
                 run(
                     "git",
                     dir,
                     &["--literal-pathspecs", "commit", &message],
-                    name,
+                    &paths,
                 )
             }
             Vcs::Pijul => {
-                run("pijul", dir, &["add"], name)?;
-                // Records nothing, successfully, when the file is unchanged.
-                run("pijul", dir, &["record", "--all", &message], name)
+                run("pijul", dir, &["add"], &paths)?;
+                // Records nothing, successfully, when the files are unchanged.
+                run("pijul", dir, &["record", "--all", &message], &paths)
             }
         }
     }
@@ -311,9 +334,14 @@ fn resolve(file: &Path) -> PathBuf {
     }
 }
 
-fn run(program: &'static str, dir: &Path, args: &[&str], file: &OsStr) -> Result<(), Error> {
+fn run<F: AsRef<OsStr>>(
+    program: &'static str,
+    dir: &Path,
+    args: &[&str],
+    files: &[F],
+) -> Result<(), Error> {
     let mut command = command(program, dir);
-    command.args(args).arg("--").arg(file);
+    command.args(args).arg("--").args(files);
     output(program, &mut command).map(drop)
 }
 

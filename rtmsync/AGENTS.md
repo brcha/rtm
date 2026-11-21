@@ -19,8 +19,9 @@ per-change sync (RTM-20), the GUI's check on open (RTM-70).
 ```
 rtmsync/
 ├── src/
-│   ├── lib.rs                ← Vcs enum, detect(), root(), lock_target(), Vcs::{commit, sync,
-│   │                           state, is_tracked, is_conflicted, has_remote}, State, Error
+│   ├── lib.rs                ← Vcs enum, detect(), root(), lock_target(), Vcs::{commit,
+│   │                           commit_files, sync, state, is_tracked, is_conflicted,
+│   │                           has_remote}, State, Error
 │   └── tests/                ← Unit tests: markers (lib_detect), timed calls (lib_process),
 │                               the lock target (lib_lock)
 └── tests/
@@ -50,10 +51,17 @@ rtmsync/
   that does not exist yet is made absolute instead, so the walk still covers its parents.
 - **VCSs are driven through their executables** (`git`, `pijul`), decided in RTM-16 and RTM-17: no
   Git or Pijul library is linked. A user with a repository has its executable.
-- **`Vcs::commit(file, message)` commits only that file.** Git: `add`, a staged-changes check, then
-  a commit with the file as pathspec, so what else the user staged stays staged. Pijul: `add`, then
-  `record --all` with the file as prefix. An untracked file is added; an unchanged file commits
-  nothing. The caller chooses the message (rtmcli: `rtm: add <description>` and the like).
+- **`Vcs::commit_files(files, message)` commits only those files, in one commit.** Git: `add`, a
+  staged-changes check, then a commit with the files as pathspecs, so what else the user staged
+  stays staged. Pijul: `add`, then one `record --all` with the files as prefixes. Untracked files
+  are added; when none changed, nothing is committed. A file whose `state` is `Ignored` is left
+  out and the rest committed, as an ignored todo.txt is never synced: `git add` exits 1 on an
+  ignored path, and `pijul add` reports success without tracking it. It runs in the first file's
+  directory; each file goes relative to it, or as its absolute path when outside it, so every
+  file must be in the first one's repository, and must exist (a missing untracked file fails at
+  `add`, and Pijul calls one ignored). An archive commits the todo file and its archive
+  (`todotxt`'s `archive_path()`) this way. `Vcs::commit(file, message)` is the one-file case. The
+  caller chooses the message (rtmcli: `rtm: add <description>` and the like).
 - Executables run in the file's directory with the file name after `--` (`--literal-pathspecs` for
   git, except `check-ignore`, which takes path names and refuses it), stdin null (prompts on stdin fail), and `CREATE_NO_WINDOW` on Windows. Only network calls
   are timed (below), so `commit` can still wait on a terminal prompt such as pinentry. Errors:

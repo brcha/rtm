@@ -102,6 +102,52 @@ fn an_unchanged_file_commits_nothing() {
 }
 
 #[test]
+fn two_files_are_committed_together() {
+    let dir = repo("two files");
+    let (todo, done) = (dir.join("sub/todo.txt"), dir.join("sub/done.txt"));
+    Vcs::Git.commit(&todo, "first").unwrap();
+    std::fs::write(dir.join("other.txt"), "staged\n").unwrap();
+    git(&dir, &["add", "other.txt"]);
+    std::fs::write(&todo, "Open\n").unwrap();
+    std::fs::write(&done, "x Done\n").unwrap();
+    Vcs::Git
+        .commit_files(&[&todo, &done], "rtm: archive")
+        .unwrap();
+    assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "rtm: archive");
+    assert_eq!(
+        git(&dir, &["show", "--name-only", "--format=", "HEAD"]),
+        "sub/done.txt\nsub/todo.txt"
+    );
+    assert_eq!(git(&dir, &["diff", "--cached", "--name-only"]), "other.txt");
+}
+
+#[test]
+fn an_ignored_file_is_left_out() {
+    let dir = repo("ignored archive");
+    let (todo, done) = (dir.join("sub/todo.txt"), dir.join("sub/done.txt"));
+    std::fs::write(dir.join(".gitignore"), "done.txt\n").unwrap();
+    std::fs::write(&done, "x Done\n").unwrap();
+    Vcs::Git
+        .commit_files(&[&todo, &done], "rtm: archive")
+        .unwrap();
+    assert_eq!(
+        git(&dir, &["show", "--name-only", "--format=", "HEAD"]),
+        "sub/todo.txt"
+    );
+    assert_eq!(Vcs::Git.state(&done).unwrap(), State::Ignored);
+}
+
+#[test]
+fn unchanged_files_commit_nothing() {
+    let dir = repo("unchanged files");
+    let (todo, done) = (dir.join("sub/todo.txt"), dir.join("sub/done.txt"));
+    std::fs::write(&done, "x Done\n").unwrap();
+    Vcs::Git.commit_files(&[&todo, &done], "first").unwrap();
+    Vcs::Git.commit_files(&[&todo, &done], "second").unwrap();
+    assert_eq!(git(&dir, &["rev-list", "--count", "HEAD"]), "1");
+}
+
+#[test]
 fn sync_pushes_a_local_commit() {
     let dir = remote_and_clones("push");
     std::fs::write(dir.join("a/sub/todo.txt"), "one\ntwo\n").unwrap();
