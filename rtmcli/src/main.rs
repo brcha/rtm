@@ -427,6 +427,12 @@ fn main() {
     let file_name = cli
         .file
         .unwrap_or_else(|| std::env::var("TODOTXT").unwrap_or_else(|_| "todo.txt".to_string()));
+    // Before the lock and the repository, which a symlink would lead to the target's; `add` would
+    // also write through it.
+    if let Err(e) = todotxt::refuse_symlink(Path::new(&file_name)) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
 
     let mut lib = TodoLibrary::new(file_name.clone());
     // Before the repository check, which may commit and reads the file's state: another rtm

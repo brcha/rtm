@@ -70,6 +70,9 @@ them.
   of its sync jobs runs until the job ends, then writes them in one commit (see `rtmapp/AGENTS.md`).
   rtmcli (and the MCP server) pull before each change and push right after it; rtmapp's worker
   pushes on its schedule (RTM-20).
+- **Symlinked todo files are refused** by every frontend (`todotxt::refuse_symlink`), with a
+  message naming the link's target to open instead, so files kept next to the todo file always
+  sit next to the real one. Links among its parent directories are allowed.
 - **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`, or from
   `releases/vYY.M` for a PR against a release branch (see [Release Process](doc/release-process.md)).
   A cherry-pick of a merged change to a release branch goes on `cherry/RTM-NN/<slug>`, branched

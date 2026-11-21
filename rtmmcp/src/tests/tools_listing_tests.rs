@@ -110,3 +110,14 @@ fn test_a_file_is_picked_by_name_or_path_and_others_are_refused() {
     remove(home);
     remove(work);
 }
+
+#[cfg(unix)]
+#[test]
+fn test_a_symlinked_file_is_refused() {
+    let (source, refusal) = symlinked_source_with(FILE);
+    assert_eq!(
+        list_items(&source, &Filter::default()).unwrap_err(),
+        refusal
+    );
+    remove(source);
+}

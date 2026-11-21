@@ -207,3 +207,41 @@ fn a_new_file_in_a_missing_folder_is_an_error() {
     assert!(!dir.join("config.toml").exists());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_picked_in_the_open_dialog_is_refused() {
+    let dir = temp_dir("dialog symlink");
+    std::fs::write(dir.join("real.txt"), "Real item\n").unwrap();
+    let refusal = symlink(&dir.join("real.txt"), &dir.join("link.txt"));
+    let mut app = app_with(&dir, "First\n");
+
+    dialog_returned(&mut app, Some(dir.join("link.txt")), App::open_file);
+    app.dialog_result();
+
+    assert_eq!(errors(&app), [refusal.as_str()]);
+    assert_eq!(app.files.len(), 1);
+    assert_eq!(app.library().unwrap().items[0].description, "First");
+    assert!(!dir.join("config.toml").exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_named_in_the_save_dialog_is_refused_and_its_target_kept() {
+    let dir = temp_dir("dialog new symlink");
+    std::fs::write(dir.join("real.txt"), "Real item\n").unwrap();
+    let refusal = symlink(&dir.join("real.txt"), &dir.join("link.txt"));
+    let mut app = bare_app(&dir, None);
+
+    dialog_returned(&mut app, Some(dir.join("link.txt")), App::create_file);
+    app.dialog_result();
+
+    assert_eq!(app.error.as_deref(), Some(refusal.as_str()));
+    assert!(app.files.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(dir.join("real.txt")).unwrap(),
+        "Real item\n"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

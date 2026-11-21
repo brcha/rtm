@@ -42,6 +42,15 @@ todotxt/tests/
   `save()` writes back. No async. The file's final newline is kept as read (RTM-210): a file
   that ends with one keeps it, one without stays without, and a new or empty file gets one.
   CRLF line endings are saved as LF.
+- **Symlinked todo files are refused.** `refuse_symlink(path)` fails with an `InvalidInput`
+  `io::Error` carrying a `SymlinkError` (`link`, `target`; `downcast_ref` it from the error) when
+  the file itself is a symbolic link, dangling or not: "'<link>' is a symbolic link to
+  '<target>'; open '<target>' instead", the target being the file at the end of the link chain
+  (`canonicalize`), or for a dangling link the path it names. Files kept next to the todo file
+  (the archive) would otherwise land next to the link. Links among the parent directories pass:
+  they change the path's spelling, not the directory. A missing path passes too. `load()` calls
+  it first; each frontend also calls it before it locks, syncs or creates the file, since those
+  happen before the load.
 - `add_item(item)` stamps `creation_date = today` when the item has none; an explicit date is
   left alone. `load()` never does this — a file with dateless lines stays dateless. This is
   the single point new items enter the library, which is what guarantees a completed item can

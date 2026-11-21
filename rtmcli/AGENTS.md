@@ -46,7 +46,9 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 
 - **Edition:** Rust 2024
 - File path resolved from: `-f <file>` flag → `$TODOTXT` env var → `todo.txt` (cwd fallback).
-  `-f` is global: it may come before or after the subcommand.
+  `-f` is global: it may come before or after the subcommand. A file that is a symbolic link is
+  refused right after the path is known, before the lock and the repository check
+  (`todotxt::refuse_symlink`): `Error: <message>`, exit 1, nothing pulled or written.
 - Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
 - `list` takes any number of filter terms, in any order (RTM-123): at most one date filter, plus
   `+project` and `@context` terms. An item must match all of them (`TodoItem::matches`, see
