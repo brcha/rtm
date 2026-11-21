@@ -844,7 +844,7 @@ fn main() {
                     );
                 }
                 let message = match archived.as_slice() {
-                    [one] => format!("rtm: archive {one}"),
+                    [one] => format!("rtm: archive {}", one.description),
                     many => format!("rtm: archive {} items", many.len()),
                 };
                 repo.commit_files_and_sync(&[Path::new(&file_name), &archive], &message);

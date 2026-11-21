@@ -127,14 +127,15 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   `delete` then commit (`rtm: add <description>`, `rtm: complete <item>` or `rtm: complete <n>
   items`, `rtm: delete <item>`) and sync again (`Repo::commit_and_sync`). Without a remote they only
   commit, silently.
-- `archive` commits the file and its archive in one commit (`rtm: archive <item>` or `rtm: archive
-  <n> items`, `Repo::commit_files_and_sync`, which uses `Vcs::commit_files`); an untracked archive
-  is added. Before the pull it checks the archive as `Repo::find` checks the file
-  (`Repo::check_archive`): changes rtm did not commit exit 1 unless `--commit-changes`, which commits
-  them first as `rtm: commit outside changes`; a missing archive is not checked. After writing, an
-  archive the repository ignores is left out of the commit with a note on stderr (`'<archive>' is
-  ignored by <Vcs>; the archived items are not synced`); it is checked then, not before, so the first
-  archive, which creates the file, is reported too.
+- `archive` commits the file and its archive in one commit (`rtm: archive <description>`, the item's
+  `description`, its text without dates, projects, contexts and tags, or `rtm: archive <n> items`;
+  `Repo::commit_files_and_sync`, which uses `Vcs::commit_files`); an untracked archive is added.
+  Before the pull it checks the archive as `Repo::find` checks the file (`Repo::check_archive`):
+  changes rtm did not commit exit 1 unless `--commit-changes`, which commits them first as `rtm:
+  commit outside changes`; a missing archive is not checked. After writing, an archive the
+  repository ignores is left out of the commit with a note on stderr (`'<archive>' is ignored by
+  <Vcs>; the archived items are not synced`); it is checked then, not before, so the first archive,
+  which creates the file, is reported too.
 - `complete` and `delete` resolve their items against the file **before** the pull, then find the
   same items (equal lines) after it; if one is gone or changed, nothing is written and rtmcli exits
   1, printing the item's new text when its UUID still exists.
