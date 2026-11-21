@@ -184,6 +184,6 @@ fn list_rejects_unknown_filters() {
     }
     let (code, stderr) = failure(&rtmcli(&file, &["list", "today", "+work", "week"]));
     assert_eq!(code, Some(2), "{stderr}");
-    assert!(stderr.contains("only one due date filter"), "{stderr}");
+    assert!(stderr.contains("only one date filter"), "{stderr}");
     cleanup(&file);
 }

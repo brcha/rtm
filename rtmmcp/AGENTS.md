@@ -59,8 +59,8 @@ rtmmcp/
   Toolhelp32 snapshot (`windows-sys` 0.52, rtmapp's version) on Windows. The claim is released
   before the runtime is dropped, which waits for blocking work such as a pull.
 - **Tools:** `list_files`, `list_items` (status open/done/all, due all/today/week/overdue/future as
-  rtmcli's filters, projects and contexts with or without their sigil, text ignoring case; an
-  explicit `null` counts as left out), `list_projects_and_contexts` (`TodoLibrary::projects` and
+  `todotxt::DateFilter`, the same as rtmcli's filters, projects and contexts with or without their
+  sigil, text ignoring case; an explicit `null` counts as left out), `list_projects_and_contexts` (`TodoLibrary::projects` and
   `contexts`, RTM-119), `add_item`, `complete_item`, `uncomplete_item`, `edit_item`, `delete_item`.
   Results are text: one `<number> <line>` per item. A failure is a result with `isError` (the
   assistant reads it), not a protocol error.
