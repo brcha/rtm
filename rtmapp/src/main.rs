@@ -1,5 +1,5 @@
-// No console window behind the GUI in Windows release builds (as the Tauri app had); log output
-// on stderr is then not visible there.
+// No console window behind the GUI in Windows release builds; log output on stderr is then not
+// visible there.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
@@ -20,8 +20,8 @@ use eframe::egui;
 const ICON_PNG: &[u8] = include_bytes!("../assets/icons/128x128@2x.png");
 
 /// The Windows taskbar groups a window with a shortcut or pin only when both have the same ID. Must
-/// match `System.AppUserModel.ID` on the shortcuts in `wix/main.wxs`; the Tauri app's (up to 0.1.3)
-/// Start Menu shortcut had it too, so pins made with it keep working.
+/// match `System.AppUserModel.ID` on the shortcuts in `wix/main.wxs`; version 0.1.3's Start
+/// Menu shortcut had it too, so pins made with it keep working.
 #[cfg(windows)]
 const APP_USER_MODEL_ID: &str = "com.brcha.rtm";
 

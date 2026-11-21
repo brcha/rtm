@@ -18,7 +18,6 @@ fn assert_round_trip(line: &str) {
     assert_eq!(round_trip(line), line);
 }
 
-/// A todo.txt with exactly `content`, in an empty scratch directory for test `name`.
 fn todo_file(name: &str, content: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("todotxt-spec-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);

@@ -1,6 +1,3 @@
-//! Projects and contexts: the `projects` and `contexts` commands and filtering `list` by them, run
-//! on a scratch todo.txt.
-
 use chrono::{Duration, Local};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,7 +12,6 @@ Fix the fence +home @phone @PHONE
 x 2026-11-01 2026-10-30 Plant the bulbs +garden @yard
 ";
 
-/// A todo.txt holding `content`, in an empty scratch directory for test `name`.
 fn todo_file(name: &str, content: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmcli-tags-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
@@ -106,7 +102,6 @@ fn missing_file_is_an_error() {
     cleanup(&file);
 }
 
-/// The date `days` from today.
 fn day(days: i64) -> String {
     (Local::now().date_naive() + Duration::days(days))
         .format("%Y-%m-%d")

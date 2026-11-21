@@ -1,7 +1,6 @@
 //! The config file in the OS config directory (`rtm/config.toml`).
 //!
-//! The schema is the one the former Tauri app wrote (replaced in RTM-39), so field names and
-//! defaults must stay as they are: existing users' settings live in this file.
+//! Field names and defaults must stay as they are: existing users' settings live in this file.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -14,22 +13,22 @@ pub struct AppConfig {
     pub show_future_items: bool,
     pub hide_no_date: bool,
     pub reverse_sort: bool,
-    /// Commit, pull and push the file through its repository (RTM-64). On unless set to false.
+    /// Commit, pull and push the file through its repository. On unless set to false.
     pub sync: bool,
-    /// The Git-or-Pijul choice as versions before RTM-124 wrote it, for `file_name`. `load` moves
+    /// The Git-or-Pijul choice as older versions wrote it, for `file_name`. `load` moves
     /// it into that file's entry, so it is never written again.
     pub vcs: Option<String>,
-    /// Minutes between background syncs (RTM-20); 0 syncs only on open, on exit and on demand.
+    /// Minutes between background syncs; 0 syncs only on open, on exit and on demand.
     pub sync_interval_minutes: u64,
-    /// Check for a newer release at start and daily (RTM-138). On unless set to false.
+    /// Check for a newer release at start and daily. On unless set to false.
     pub check_for_updates: bool,
     /// `"stable"` or `"beta"`: the releases the update check offers. Anything else counts as
     /// stable.
     pub update_channel: String,
-    /// The sidebar's Projects and Contexts sections are collapsed (RTM-120).
+    /// The sidebar's Projects and Contexts sections are collapsed.
     pub projects_collapsed: bool,
     pub contexts_collapsed: bool,
-    /// The saved session (RTM-124): the todo.txt files the app keeps; `file_name` names the active
+    /// The saved session: the todo.txt files the app keeps; `file_name` names the active
     /// one and stays for older versions, which ignore this list. Last, so the plain keys are
     /// written before the tables.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -41,7 +40,7 @@ pub struct AppConfig {
 #[serde(default)]
 pub struct FileEntry {
     pub path: String,
-    /// The label of the file's tab (RTM-127), set by hand; without it the tab shows the file name.
+    /// The label of the file's tab, set by hand; without it the tab shows the file name.
     pub name: Option<String>,
     /// `"git"` or `"pijul"`: the user's choice when the file's directory belongs to both.
     pub vcs: Option<String>,

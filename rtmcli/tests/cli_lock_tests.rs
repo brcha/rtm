@@ -1,4 +1,4 @@
-//! rtmcli and the write lock it shares with rtmapp and the MCP server (RTM-158): held while a
+//! rtmcli and the write lock it shares with rtmapp and the MCP server: held while a
 //! command reads, pulls and changes the file, released while `delete` asks. The lock directory does
 //! not depend on the environment, so the test and the rtmcli it starts share it.
 
@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 
 use todotxt::WriteLock;
 
-/// An empty scratch directory for test `name`.
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmcli-lock-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
@@ -47,7 +46,6 @@ fn hold(file: &Path) -> WriteLock {
     WriteLock::acquire(&rtmsync::lock_target(file)).unwrap()
 }
 
-/// Whether `child` is still running after `wait`.
 fn still_running(child: &mut Child, wait: Duration) -> bool {
     std::thread::sleep(wait);
     child.try_wait().unwrap().is_none()
@@ -204,7 +202,6 @@ fn delete_changes_nothing_when_its_item_changed_during_the_question() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
-/// Runs git in `dir`, panicking on failure.
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(dir)

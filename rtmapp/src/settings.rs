@@ -1,6 +1,5 @@
-//! The Settings dialog (RTM-134), opened from the header's menu: the app-wide sync settings and the
-//! update check (RTM-138). The Git-or-Pijul choice is per file (RTM-124) and stays the question
-//! asked on open.
+//! The Settings dialog, opened from the header's menu: the app-wide sync settings and the update
+//! check. The Git-or-Pijul choice is per file and stays the question asked on open.
 
 use eframe::egui::{self, Align, Color32, Layout, Modal, RichText, Ui};
 

@@ -1,9 +1,9 @@
-//! Sync of the open todo.txt through its Git or Pijul repository (RTM-64), with the same rules as
-//! rtmcli: outside changes and an untracked file are asked about first (RTM-70), an ignored file
+//! Sync of the open todo.txt through its Git or Pijul repository, with the same rules as
+//! rtmcli: outside changes and an untracked file are asked about first, an ignored file
 //! never syncs, a conflicted repository is not opened, a repository without a remote is committed
 //! to without pulling or pushing. Every git or pijul call, the check on open included, runs on its
-//! repository's worker thread, one per repository and VCS (RTM-126), so calls in one repository never overlap
-//! each other; the app writes a file only while its repository's worker is idle (RTM-20), so they
+//! repository's worker thread, one per repository and VCS, so calls in one repository never overlap
+//! each other; the app writes a file only while its repository's worker is idle, so they
 //! never overlap a save either.
 
 use std::path::{Path, PathBuf};
@@ -15,7 +15,6 @@ use rtmsync::{State, Vcs};
 
 use crate::config::AppConfig;
 
-/// The repository a todo.txt syncs through.
 pub struct Repo {
     vcs: Vcs,
     /// The repository's directory (`rtmsync::root`).
@@ -55,7 +54,7 @@ pub enum Found {
     Unavailable(String),
 }
 
-/// What to ask about a file before it syncs (RTM-57, RTM-70).
+/// What to ask about a file before it syncs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Question {
     Modified,
@@ -98,7 +97,7 @@ pub fn place(file: &Path, config: &AppConfig) -> Place {
     }
 }
 
-/// The check on open of `file` in the repository at `root` (RTM-57, RTM-70): its state, the
+/// The check on open of `file` in the repository at `root`: its state, the
 /// repository's conflicts and whether it has a remote.
 pub fn check(vcs: Vcs, root: PathBuf, file: &Path) -> Found {
     let state = if file.exists() {
@@ -154,7 +153,6 @@ enum Job {
     Sync(Vec<PathBuf>),
 }
 
-/// The result of one job.
 pub enum Done {
     /// The check on open of `file`.
     Checked {
@@ -211,7 +209,7 @@ impl Worker {
                 let done = match job {
                     Job::Check { root, file } => {
                         // Another rtm process between its save and its commit would look like
-                        // an outside change; its lock is held until it has committed (RTM-142).
+                        // an outside change; its lock is held until it has committed.
                         let _lock = todotxt::WriteLock::acquire(&rtmsync::lock_target(&file));
                         Done::Checked {
                             found: check(vcs, root, &file),
@@ -255,14 +253,12 @@ impl Worker {
         }
     }
 
-    /// Queues the check on open of `file` in the repository at `root`.
     pub fn check(&mut self, root: PathBuf, file: PathBuf) {
         if self.jobs.send(Job::Check { root, file }).is_ok() {
             self.pending += 1;
         }
     }
 
-    /// Records what a check on open found about the repository's remote.
     pub fn found_remote(&mut self, remote: bool) {
         self.remote |= remote;
     }
@@ -347,7 +343,6 @@ impl Repo {
         self.remote
     }
 
-    /// What identifies the repository's worker.
     pub fn key(&self) -> RepoKey {
         RepoKey {
             root: self.root.clone(),
@@ -355,7 +350,7 @@ impl Repo {
         }
     }
 
-    /// rtmcli's message for committing what `question` asked about (RTM-63).
+    /// rtmcli's message for committing what `question` asked about.
     pub fn commit_message(&self, question: Question) -> String {
         match question {
             Question::Modified => "rtm: commit outside changes".to_owned(),

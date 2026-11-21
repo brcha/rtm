@@ -1,11 +1,5 @@
-//! The edit dialog: the form behind it (`EditForm`) and the modal (`show`), laid out like the
-//! former Tauri app's `#edit-dialog` (`rtmapp/src/index.html` at 5076649). Saving follows its
-//! `update_item`, with deliberate differences: the priority can be any letter A to Z, invalid dates
-//! or recurrence are refused instead of being silently dropped, tag names with whitespace are
-//! refused instead of being written as typed, and a typed `+` or `@` in front of a tag name is
-//! dropped. The date fields have a calendar popup (`calendar`). A trash button at the left of the
-//! button row deletes the item and its sub-items after an inline confirmation; beside it, Move to
-//! moves them to another open file, after an inline confirmation too.
+//! The edit dialog. Invalid dates or recurrence and tag names with whitespace are refused, and a
+//! typed `+` or `@` in front of a tag name is dropped. Delete and Move to each ask inline first.
 
 use std::path::PathBuf;
 
@@ -58,16 +52,13 @@ pub enum Outcome {
     Cancel,
     /// The trash button: ask before deleting.
     AskDelete,
-    /// Delete confirmed.
     Delete,
     /// A file picked under Move to: ask before moving there.
     AskMove(MoveTarget),
-    /// Move confirmed.
     Move,
 }
 
 impl EditForm {
-    /// Fills the form from `item`, as the Tauri app's `openEditDialog` did.
     pub fn new(index: usize, item: &TodoItem) -> Self {
         let date = |d: Option<NaiveDate>| d.map(|d| d.format(DATE_FORMAT).to_string());
         EditForm {
@@ -168,7 +159,7 @@ fn names(text: &str, sigil: char, field: &str) -> Result<Vec<String>, String> {
         .collect()
 }
 
-/// The priority choices: none, then A to Z, with the Tauri app's labels on A to C.
+/// The priority choices: none, then A to Z, with labels on A to C.
 fn priority_label(priority: Option<u8>) -> String {
     match priority {
         None => "None".to_owned(),
@@ -184,7 +175,6 @@ fn priority_label(priority: Option<u8>) -> String {
     }
 }
 
-/// The delete confirmation, naming the sub-items that go with the item.
 fn move_question(question: &ConfirmMove) -> String {
     let name = &question.target.name;
     match question.sub_items {
@@ -203,11 +193,10 @@ fn delete_question(sub_items: usize) -> String {
 }
 
 /// The modal. Returns `Save` on the Save button or Enter in a field, `Cancel` on the Cancel
-/// button, Escape or a click outside the dialog (the Tauri app closed only on its buttons),
+/// button, Escape or a click outside the dialog,
 /// `AskDelete` on the trash button and `Delete` once the deletion is confirmed, `AskMove` on a file
 /// picked under Move to and `Move` once the move is confirmed.
 pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
-    // CSS: 500 px wide with 24 px padding, 8 px corners and a soft shadow; dark adds a border.
     let frame = theme::dialog_frame(p);
     let mut outcome = None;
     let modal = Modal::new(egui::Id::unique("edit-dialog"))
@@ -229,7 +218,6 @@ pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Out
 
 fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     let mut submit = false;
-    // CSS: 16 px between the groups, and between the two columns of a `.form-row`.
     ui.spacing_mut().item_spacing = egui::vec2(16.0, 16.0);
     ui.label(
         RichText::new("Edit Item")
@@ -356,8 +344,7 @@ fn move_to(ui: &mut Ui, targets: &[MoveTarget]) -> Option<MoveTarget> {
 }
 
 /// A label with its control 6 px below; `add` gets the label's id, to name the control by it.
-/// Labels are regular: the CSS weight 500 renders regular under `font-synthesis: none` (see "Look"
-/// in `rtmapp/AGENTS.md`).
+/// Labels are regular (see "Look" in `rtmapp/AGENTS.md`).
 fn group<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui, egui::Id) -> R) -> R {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
@@ -370,7 +357,7 @@ fn group<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui, egui::Id) -> R) 
 /// A labelled text field. Returns whether Enter was pressed in it (the form submits on Enter).
 fn field(ui: &mut Ui, p: &Palette, label: &str, text: &mut String, hint: &str) -> bool {
     group(ui, label, |ui, label| {
-        // 9 px rather than the CSS 8 px, so the fields are as tall as the priority select.
+        // 9 px, so the fields are as tall as the priority select.
         let response = theme::text_input(ui, p, text, hint, 9, p.focus).labelled_by(label);
         response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
     })

@@ -8,7 +8,6 @@ use rmcp::model::{CallToolRequestParams, ContentBlock};
 use rtmmcp::{Source, Sources};
 use serde_json::{Value, json};
 
-/// A todo.txt in a fresh scratch directory under the system temp directory.
 fn scratch_file() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmmcp-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&dir).unwrap();

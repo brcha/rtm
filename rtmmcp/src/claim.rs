@@ -32,7 +32,6 @@ impl Claim {
     }
 }
 
-/// Claims the client with process ID `parent` through a lock file in `dir`.
 fn claim_in(dir: &Path, parent: u32) -> Claim {
     // shortcut: one empty file per client process is left in the lock directory; remove them if
     // they ever pile up (the runtime directory is cleared at logout).
@@ -70,7 +69,6 @@ fn claim_in(dir: &Path, parent: u32) -> Claim {
     }
 }
 
-/// How long a held claim is tried again, and how often.
 const RESTART_WAIT: Duration = Duration::from_secs(2);
 const RETRY: Duration = Duration::from_millis(100);
 

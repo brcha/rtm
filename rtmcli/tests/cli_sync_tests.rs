@@ -4,7 +4,6 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-/// Runs git in `dir` and returns its trimmed stdout, panicking on failure.
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(dir)
@@ -28,7 +27,6 @@ fn rtmcli(file: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
-/// An empty scratch directory for test `name`.
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmcli sync test {} {name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

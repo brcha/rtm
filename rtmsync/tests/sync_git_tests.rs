@@ -1,11 +1,8 @@
-//! `Vcs::commit`, `Vcs::state` and `Vcs::sync` with Git.
-
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use rtmsync::{Error, State, Vcs};
 
-/// Runs git in `dir` and returns its trimmed stdout, panicking on failure.
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(dir)
@@ -16,7 +13,6 @@ fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
-/// An empty scratch directory for test `name`.
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtmsync git test {} {name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

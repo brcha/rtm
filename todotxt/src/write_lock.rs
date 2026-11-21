@@ -59,7 +59,6 @@ fn open(dir: &Path, path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
-/// The lock file for `path` in `dir`.
 fn lock_path(dir: &Path, todo_file: &Path) -> io::Result<PathBuf> {
     let canonical = match todo_file.canonicalize() {
         Ok(path) => path,

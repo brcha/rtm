@@ -48,11 +48,8 @@ impl TodoLibrary {
     }
 
     pub fn add_item(&mut self, mut item: TodoItem) {
-        // The todo.txt spec allows an item with no creation date, but then a completed item
-        // can never carry one either (Display refuses to emit a lone creation date; see
-        // TodoItem's Display impl). Guaranteeing a creation date here, at the single point
-        // items enter the library, is what makes that possible without inventing dates
-        // during parsing or completion. An item that already specifies one is left alone.
+        // A done item can carry a creation date only with a completion date, and the date
+        // cannot be invented later, so items get one here, where they enter the library.
         if item.creation_date.is_none() {
             item.creation_date = Some(Local::now().date_naive());
         }
@@ -103,15 +100,11 @@ impl TodoLibrary {
         if index >= self.items.len() {
             return None;
         }
-        // Per the todo.txt spec the completion date is mandatory on a done line, so set it
-        // here rather than at Display time. Never fabricate a creation date to go with it —
-        // that is TodoLibrary::add_item's job, at item creation. Idempotent: completing an
-        // already-done item does not clobber its existing completion date.
+        // Completing a done item keeps its completion date.
         if !self.items[index].done {
             self.items[index].completion_date = Some(Local::now().date_naive());
         }
         self.items[index].done = true;
-        // Check for recurrence and create new item
         let has_recurrence = self.items[index].recurrence.is_some();
         if let Some(ref recurrence) = self.items[index].recurrence {
             let today = Local::now().date_naive();
@@ -165,10 +158,7 @@ impl TodoLibrary {
         }
         self.items[index].done = false;
         self.items[index].completion_date = None;
-        // Priority and creation_date are left untouched: the priority re-serializes as
-        // (X) instead of pri:X automatically, since TodoItem::Display keys that choice off
-        // `done`; the creation date, if any, is a fact about the item that un-completing it
-        // does not change.
+        // The priority stays; `Display` writes it as `(X)` again on an open line.
         Some(())
     }
 

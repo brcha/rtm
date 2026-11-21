@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
     paths-ignore:
       - '**/*.md'
-      # Website files (RTM-79) are not inputs of this build.
+      # Website files are not inputs of this build.
       - 'site/**'
       - 'scripts/site/**'
       - '.github/workflows/site.yml'
@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 jobs:
-  # Whether the pull request changes anything the Nix packages are built from (RTM-82). Runs on
+  # Whether the pull request changes anything the Nix packages are built from. Runs on
   # every event and never under an `if:`: the build jobs need it, and on other events it always
   # reports code.
   changes:
@@ -69,7 +69,7 @@ jobs:
     - name: Build the flake
       run: nix build -L .#rtmcli .#rtmapp
 
-  # The check the main ruleset requires (RTM-76): passes when the builds passed, or were skipped
+  # The check the main ruleset requires: passes when the builds passed, or were skipped
   # because the pull request changes none of their inputs; fails when any of them failed or was
   # cancelled.
   nix:

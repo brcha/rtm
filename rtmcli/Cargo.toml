@@ -6,8 +6,6 @@ description = "Rusty Todo.txt Manager — CLI"
 license = "MIT"
 repository = "https://github.com/brcha/rtm"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 todotxt = { path = "../todotxt" }
 rtmsync = { path = "../rtmsync" }
@@ -23,9 +21,8 @@ default = ["update-check"]
 # through the flake.
 update-check = ["dep:rtmupdate"]
 
-# cargo-deb metadata -- RTM-8. name is pinned explicitly rather than left to derive from
-# [package].name, matching the load-bearing-invariant precedent set for rtmapp's Windows
-# packaging identity in doc/release-process.md.
+# name is pinned rather than derived from [package].name, so a crate rename cannot rename the
+# installed package.
 [package.metadata.deb]
 name = "rtmcli"
 maintainer = "Filip Brcic <filip.brcic@brcha.com>"

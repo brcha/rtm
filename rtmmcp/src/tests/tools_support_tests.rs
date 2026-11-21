@@ -16,7 +16,6 @@ pub(super) fn source_with(lines: &str) -> Source {
     }
 }
 
-/// The file's lines now.
 pub(super) fn lines(source: &Source) -> Vec<String> {
     std::fs::read_to_string(&source.path)
         .unwrap()

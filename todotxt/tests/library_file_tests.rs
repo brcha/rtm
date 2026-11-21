@@ -1,5 +1,3 @@
-//! Loads, edits and saves todo.txt files through the public interface of `TodoLibrary`.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use todotxt::{TodoItem, TodoLibrary};
@@ -7,7 +5,6 @@ use todotxt::{TodoItem, TodoLibrary};
 const PARENT: &str = "12345678-1234-1234-1234-123456789abc";
 const CHILD: &str = "87654321-4321-4321-4321-abc123456789";
 
-/// A todo.txt holding `lines`, in an empty scratch directory for test `name`.
 fn todo_file(name: &str, lines: &[&str]) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("todotxt-test-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);

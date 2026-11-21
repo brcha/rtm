@@ -11,14 +11,12 @@ use rtmsync::{State, Vcs};
 
 use crate::Source;
 
-/// How one write of a file goes through its repository.
 pub(crate) struct RepoWrite {
     repo: Option<Repo>,
     /// What the client is told besides the result: why the file is not synced, a failed pull.
     pub(crate) notes: Vec<String>,
 }
 
-/// The repository a file syncs through.
 struct Repo {
     vcs: Vcs,
     file: PathBuf,
@@ -150,7 +148,6 @@ impl RepoWrite {
     }
 }
 
-/// The message for a repository the user has to resolve by hand.
 fn conflicted(file: &Path) -> String {
     format!(
         "The repository holding '{}' has conflicts or a stopped rebase or merge. Nothing more \

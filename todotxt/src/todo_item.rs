@@ -62,7 +62,6 @@ pub struct Layout {
     /// A done line with its priority as `(A)` between the `x` and the dates, as some clients
     /// write it: it is written back in the specification's form, with the priority as `pri:A`.
     priority_in_head: bool,
-    /// The words after the head, in order.
     tokens: Vec<Token>,
     /// The fields as read, with no layout of their own.
     read: Box<TodoItem>,
@@ -170,7 +169,6 @@ impl FromStr for TodoItem {
             index += 1;
         }
 
-        // The rest is description with embedded elements
         let head_end = match index {
             0 => 0,
             n => words[n - 1].0 + words[n - 1].1.len(),
@@ -308,11 +306,8 @@ impl TodoItem {
         }
 
         if self.done {
-            // The creation date is only ever emitted alongside a completion date, in that
-            // order. Per the todo.txt spec a done line's completion date comes first and
-            // its (optional) creation date must follow it; a lone date on a done line would
-            // otherwise be re-read as the completion date on the next parse, silently
-            // discarding the creation date it actually was.
+            // A lone date on a done line would be read back as the completion date, so the
+            // creation date is written only after one.
             if let Some(cd) = self.completion_date {
                 parts.push(cd.format("%Y-%m-%d").to_string());
                 if let Some(cd) = self.creation_date {
@@ -336,17 +331,13 @@ impl TodoItem {
     /// The line built from the fields alone, for an item built in code: the head, the
     /// description, then the tags in a fixed order.
     fn rebuilt(&self) -> String {
-        // Built as tokens and joined with a single space, rather than interleaving
-        // conditional leading/trailing spaces, so an absent field (e.g. an empty
-        // description on a done item) can never produce a doubled-up space.
+        // Joined with single spaces, so an absent field never doubles a space.
         let mut parts = self.head();
 
         if !self.description.is_empty() {
             parts.push(self.description.clone());
         }
 
-        // A completed item's priority is written as the pri: tag rather than the
-        // leading (X) form, which is reserved for open items.
         parts.extend(self.pri_tag());
         parts.extend(self.projects.iter().map(ToString::to_string));
         parts.extend(self.contexts.iter().map(ToString::to_string));

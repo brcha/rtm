@@ -10,7 +10,6 @@ use std::net::TcpListener;
 #[cfg(feature = "update-check")]
 use std::thread::{self, JoinHandle};
 
-/// An empty scratch directory for test `name`.
 fn scratch(name: &str) -> PathBuf {
     let dir =
         std::env::temp_dir().join(format!("rtmcli update test {} {name}", std::process::id()));

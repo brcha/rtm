@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-/// A fresh scratch directory under the system temp directory.
 fn scratch() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtm-lock-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&dir).unwrap();

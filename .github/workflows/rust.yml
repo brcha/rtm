@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
     paths-ignore:
       - '**/*.md'
-      # Website files (RTM-79) are not inputs of this build.
+      # Website files are not inputs of this build.
       - 'site/**'
       - 'scripts/site/**'
       - '.github/workflows/site.yml'
@@ -18,7 +18,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Whether the pull request changes anything the build and tests read (RTM-82). Runs on every
+  # Whether the pull request changes anything the build and tests read. Runs on every
   # event and never under an `if:`: the build jobs need it, and on other events it always reports
   # code.
   changes:
@@ -59,7 +59,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         # The pijul that rtmsync's tests drive. Windows stays on 1.0.0-beta.11: from beta.15 on,
         # pijul signs changes only through the SSH agent, and its agent client (thrussh-keys 0.44)
-        # is a stub on Windows that always fails, so newer releases cannot record there (RTM-58).
+        # is a stub on Windows that always fails, so newer releases cannot record there.
         include:
           - os: ubuntu-latest
             pijul: 1.0.0-beta.24
@@ -83,8 +83,8 @@ jobs:
         key: pijul-${{ runner.os }}-${{ matrix.pijul }}
 
     # pijul needs OpenSSL and libsodium to build and to run, so these steps run on cache hits too.
-    # Same hardened apt pattern as release.yml (RTM-28): pin the mirror, bound retries and timeouts.
-    # kernel.org's mirror stands in when Ubuntu's DNS fails (RTM-213, see doc/ci.md).
+    # Same hardened apt pattern as release.yml: pin the mirror, bound retries and timeouts.
+    # kernel.org's mirror stands in when Ubuntu's DNS fails (see doc/ci.md).
     - name: Install pijul's libraries (Linux)
       if: runner.os == 'Linux'
       timeout-minutes: 10
@@ -138,7 +138,7 @@ jobs:
         RTM_REQUIRE_PIJUL: 1
       run: cargo test --verbose
 
-  # The check the main ruleset requires (RTM-76): passes when the builds passed, or were skipped
+  # The check the main ruleset requires: passes when the builds passed, or were skipped
   # because the pull request changes none of their inputs; fails when any of them failed or was
   # cancelled.
   rust:

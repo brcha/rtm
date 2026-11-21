@@ -1,12 +1,11 @@
-//! `Vcs::commit`, `Vcs::state` and `Vcs::sync` with Pijul. This binary holds a single test: it sets
-//! process-wide environment variables, which is only sound while no other test runs beside it.
+//! This binary holds a single test: it sets process-wide environment variables, which is only
+//! sound while no other test runs beside it.
 
 use std::path::Path;
 use std::process::Command;
 
 use rtmsync::{Error, State, Vcs};
 
-/// Runs pijul in `dir` and returns its stdout, panicking on failure.
 fn pijul(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("pijul")
         .current_dir(dir)

@@ -1,5 +1,3 @@
-//! The item list: one row per todo item, laid out like the web app's `renderItems`.
-
 use std::ops::Range;
 
 use chrono::{Datelike, NaiveDate};
@@ -15,10 +13,8 @@ use crate::theme::{self, Palette};
 
 const DATE_FORMAT: &str = "%Y-%m-%d";
 
-/// The file indices of the items to show, filtered and sorted like the Tauri app's `get_items`:
-/// items without a due date first, then by due date, then by priority (none last). One deliberate
-/// difference: dates run earliest first, and `reverse_sort` gives latest first (the Tauri app had
-/// it the other way round).
+/// Items without a due date first, then by due date (earliest first, latest with `reverse_sort`),
+/// then by priority (none last).
 pub fn visible(items: &[TodoItem], config: &AppConfig, today: NaiveDate) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..items.len())
         .filter(|&i| {
@@ -101,7 +97,6 @@ pub fn show(
                     .inner_margin(Margin::symmetric(12, 10))
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        // CSS: the row is as high as its 25 px text box plus the padding.
                         ui.set_min_height(25.0);
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = 10.0;
@@ -163,7 +158,6 @@ pub fn show(
                                 );
                             }
                             if text.hovered() {
-                                // CSS `.item-text:hover`: 3 % black behind the text.
                                 ui.painter().set(
                                     hover_bg,
                                     Shape::rect_filled(
@@ -211,7 +205,7 @@ pub fn show(
 fn checkbox(ui: &mut Ui, p: &Palette, item: &TodoItem, index: usize) -> bool {
     let done = item.done;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
-    // The CSS button is padded around its glyph: a larger hit area that leaves the layout alone.
+    // A larger hit area that leaves the layout alone.
     let response = ui.interact(
         rect.expand(3.0),
         ui.make_persistent_id(("toggle", index)),
@@ -224,7 +218,7 @@ fn checkbox(ui: &mut Ui, p: &Palette, item: &TodoItem, index: usize) -> bool {
     let response = response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(if done { "Uncomplete" } else { "Complete" });
-    // CSS: grey turns green on hover, and green turns grey.
+    // Grey turns green on hover, and green turns grey.
     let (normal, hovered) = if done {
         (theme::GREEN, p.done_text)
     } else {
@@ -248,7 +242,7 @@ fn checkbox(ui: &mut Ui, p: &Palette, item: &TodoItem, index: usize) -> bool {
 }
 
 /// The text of a row: priority, description and the `+project @context due: rec: t:` chips. A done
-/// item is struck through entirely, as the CSS `text-decoration` on the whole text box does. Tags in
+/// item is struck through entirely. Tags in
 /// the selection (`projects`, `contexts`) are bold; links in the description are underlined in the
 /// link colour. Also returns where the tags and links are.
 fn row_job(

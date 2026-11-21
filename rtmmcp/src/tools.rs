@@ -32,7 +32,6 @@ pub(crate) enum Due {
     Future,
 }
 
-/// The filters of `list_items`.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Filter {
     pub(crate) status: Status,
@@ -247,7 +246,6 @@ fn load(source: &Source) -> Result<TodoLibrary, String> {
     Ok(lib)
 }
 
-/// One todo.txt line, as a new or changed item.
 fn parse(line: &str) -> Result<TodoItem, String> {
     let line = line.trim();
     if line.is_empty() || line.contains('\n') {

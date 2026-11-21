@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds the website and checks its links: Zola's own check (templates, internal links in the
 # Markdown), then lychee over the built pages, which also sees the images, stylesheets and anchors
-# the templates refer to. It also checks releases.json, the release metadata the programs read
-# (RTM-135). By default no network is used; with --external, external links are checked instead.
+# the templates refer to. It also checks releases.json, the release metadata the programs read.
+# By default no network is used; with --external, external links are checked instead.
 # Needs zola, lychee and jq (the dev shell has them); CI runs this script, see
 # .github/workflows/site.yml and site/AGENTS.md.
 #

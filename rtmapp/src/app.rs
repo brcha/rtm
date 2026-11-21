@@ -21,17 +21,17 @@ use crate::update::{self, Notice, UpdateCheck};
 /// push, 60 s each at most, and a little more.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(125);
 
-/// How soon a write is tried again while another rtm process holds the write lock (RTM-142).
+/// How soon a write is tried again while another rtm process holds the write lock.
 const LOCK_RETRY: Duration = Duration::from_millis(200);
 
 /// How often the open files are checked for changes made by another program while the window
-/// shows (RTM-142).
+/// shows.
 const DISK_CHECK: Duration = Duration::from_secs(2);
 
 /// What to do with the path a file dialog returned: `App::open_file` or `App::create_file`.
 type OnPath = fn(&mut App, &Path);
 
-/// The menu's shortcuts (RTM-134); `COMMAND` is Cmd on macOS and Ctrl elsewhere.
+/// The menu's shortcuts; `COMMAND` is Cmd on macOS and Ctrl elsewhere.
 const NEW_FILE: egui::KeyboardShortcut =
     egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::N);
 const LOAD_FILE: egui::KeyboardShortcut =
@@ -44,7 +44,7 @@ const QUIT: egui::KeyboardShortcut =
 pub struct App {
     config: AppConfig,
     config_path: PathBuf,
-    /// The open files (RTM-66), one per entry of the saved session, in its order (RTM-127).
+    /// One per entry of the saved session, in its order.
     files: Vec<OpenFile>,
     /// The path of the file shown (`OpenFile::path`); none when no file is open.
     active: Option<PathBuf>,
@@ -53,9 +53,7 @@ pub struct App {
     error: Option<String>,
     /// The quick-add input.
     new_item: String,
-    /// The open edit dialog, if any.
     editing: Option<EditForm>,
-    /// The open Settings dialog, if any.
     settings: Option<SettingsForm>,
     /// The file whose tab's close button was clicked, while the app asks before closing it.
     confirm_close: Option<PathBuf>,
@@ -63,7 +61,7 @@ pub struct App {
     renaming: Option<(PathBuf, String)>,
     /// Settings changed `sync`: reconnect once no job is outstanding (`reconnect_when_idle`).
     reconnect: bool,
-    /// The repositories the open files sync through (RTM-64), one worker each (RTM-126).
+    /// One worker per repository the open files sync through.
     repos: Vec<RepoSync>,
     /// The workers of repositories whose last open file was closed, until their last commit and
     /// sync are done; exit waits for them too.
@@ -75,7 +73,6 @@ pub struct App {
     delivered: Vec<u64>,
     /// The open file dialog: its result, and what to do with a chosen path.
     dialog: Option<(mpsc::Receiver<Option<PathBuf>>, OnPath)>,
-    /// The update check and its notice (RTM-138).
     updates: UpdateCheck,
     /// When the open files are next checked for outside changes, and whether the window had the
     /// focus at the last frame (gaining it checks at once).
@@ -98,7 +95,7 @@ struct RepoSync {
     last_sync: Instant,
 }
 
-/// What belongs to one open todo.txt (RTM-125).
+/// What belongs to one open todo.txt.
 #[derive(Default)]
 struct OpenFile {
     /// Its entry's path: canonical once loaded, as the config gave it until then. It names the
@@ -118,7 +115,7 @@ struct OpenFile {
     /// until the next successful change or until a file is opened in its place.
     error: Option<String>,
     /// Changes applied to `library` but not yet written: the file is written only while the worker
-    /// is idle (RTM-20), and these are redone on the file a pull brings.
+    /// is idle, and these are redone on the file a pull brings.
     pending: Vec<Change>,
     /// The VCSs to choose from when the file's directory belongs to several.
     choose_vcs: Option<Vec<rtmsync::Vcs>>,
@@ -131,12 +128,12 @@ struct OpenFile {
     /// A pull changed the edit dialog's item, or what deleting it would remove; Save and Delete
     /// are refused.
     stale: bool,
-    /// The tags selected in the sidebar (RTM-121): the list shows only the items that carry all of
+    /// The tags selected in the sidebar: the list shows only the items that carry all of
     /// them. Kept for the run, not saved.
     projects: Vec<TodoProject>,
     contexts: Vec<TodoContext>,
     /// The file's modification time and size after the app's last load or write: anything else
-    /// means another program changed it (RTM-142).
+    /// means another program changed it.
     seen: Option<(SystemTime, u64)>,
     /// The last write found the write lock held by another rtm process; the changes wait.
     locked_out: bool,
@@ -186,7 +183,6 @@ impl App {
         app
     }
 
-    /// The file shown, unless no file is open.
     fn file(&self) -> Option<&OpenFile> {
         let active = self.active.as_deref()?;
         self.files.iter().find(|file| file.is(active))
@@ -196,12 +192,10 @@ impl App {
         find_file(&mut self.files, self.active.as_deref())
     }
 
-    /// The shown file's items, while it is loaded.
     fn library(&self) -> Option<&TodoLibrary> {
         self.file()?.library.as_ref()
     }
 
-    /// The repository `file` syncs through.
     fn repo_of(&self, file: &OpenFile) -> Option<&RepoSync> {
         let key = file.repo.as_ref()?;
         self.repos.iter().find(|repo| &repo.key == key)
@@ -217,7 +211,6 @@ impl App {
         self.prune();
     }
 
-    /// Starts sync for every open file, as at startup and after Settings changed `sync`.
     fn connect_all(&mut self) {
         for file in &mut self.files {
             file.connect(&mut self.repos, &self.config, &self.ctx);
@@ -273,7 +266,6 @@ impl App {
         });
     }
 
-    /// Queues a sync of the repository `key` for its open files.
     fn sync_repo(&mut self, key: &RepoKey, now: Instant) {
         if let Some(repo) = find_repo(&mut self.repos, Some(key)) {
             repo.sync(&self.files, now);
@@ -508,7 +500,6 @@ impl App {
         });
     }
 
-    /// Syncs every repository, as Sync now and exit do.
     fn sync_now(&mut self, now: Instant) {
         for repo in &mut self.repos {
             repo.sync(&self.files, now);
@@ -608,7 +599,7 @@ impl App {
         }
     }
 
-    /// Reads again every open file another program changed, so the list shows it (RTM-142); a
+    /// Reads again every open file another program changed, so the list shows it; a
     /// synced one is checked as on open first (`OpenFile::recheck`). A file whose repository has a
     /// job outstanding waits for it, as its result may reload the file, and so does one being
     /// checked.
@@ -1215,7 +1206,6 @@ impl App {
                 .is_some_and(|file| file.choose_vcs.is_some() || file.asking.is_some())
     }
 
-    /// The menu entry the header's menu or a shortcut chose.
     fn menu_action(&mut self, action: MenuAction, ctx: &egui::Context, frame: &eframe::Frame) {
         match action {
             MenuAction::NewFile => self.new_file(frame),
@@ -1244,11 +1234,10 @@ impl App {
         })
     }
 
-    /// The four view settings. A change is saved at once, as in the Tauri app.
+    /// The four view settings, saved as soon as one changes.
     fn filters(&mut self, ui: &mut Ui, p: &Palette) {
         let mut changed = false;
         ui.scope(|ui| {
-            // CSS: 16 px boxes, 8 px gaps, 0.9rem labels.
             ui.spacing_mut().item_spacing.y = 8.0;
             ui.spacing_mut().icon_width = 16.0;
             ui.spacing_mut().icon_spacing = 8.0;
@@ -1287,7 +1276,7 @@ impl App {
                 let name = self
                     .file()
                     .map_or("No file loaded".into(), |file| file.path.to_string_lossy());
-                // CSS: word-break: break-all, since a path has no spaces to wrap at.
+                // Breaks anywhere, since a path has no spaces to wrap at.
                 let mut job = LayoutJob::single_section(
                     name.into_owned(),
                     TextFormat::simple(egui::FontId::proportional(11.9), p.muted),
@@ -1309,9 +1298,9 @@ impl App {
         });
     }
 
-    /// The shown file's projects and contexts with their open-item counts (RTM-120), in sections
+    /// The shown file's projects and contexts with their open-item counts, in sections
     /// whose collapsed state is saved like the view settings. A click on a tag toggles it in the
-    /// shown file's selection, which filters the list (RTM-121); Clear filter empties it.
+    /// shown file's selection, which filters the list; Clear filter empties it.
     fn tags(&mut self, ui: &mut Ui, p: &Palette) {
         // The file, not `file_mut`, so the config stays borrowable beside it.
         let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
@@ -1393,7 +1382,6 @@ impl App {
         }
     }
 
-    /// Completes or uncompletes the item at file index `index`, as the Tauri app did.
     fn toggle(&mut self, index: usize) {
         let item = self.library().and_then(|l| l.items.get(index));
         if let Some(item) = item.cloned() {
@@ -1401,8 +1389,7 @@ impl App {
         }
     }
 
-    /// Parses the quick-add text and appends the item, as the Tauri app did. The input is cleared
-    /// only when the item was added; blank input does nothing.
+    /// The input is cleared only when the item was added; blank input does nothing.
     fn add_item(&mut self) {
         let text = self.new_item.trim();
         if text.is_empty() {
@@ -1421,7 +1408,6 @@ impl App {
         }
     }
 
-    /// CSS `.add-item`: the input fills the width, "Add" sits to its right, 16 px above the list.
     /// Greyed out while no loaded file is shown, since there is nothing to add to.
     fn add_row(&mut self, ui: &mut Ui, p: &Palette) {
         let mut submit = false;
@@ -1431,10 +1417,9 @@ impl App {
             if !loaded {
                 ui.disable();
             }
-            // Lines the button up with the input, as the CSS flex row does.
+            // Lines the button up with the input.
             ui.spacing_mut().interact_size.y = 38.0;
             submit |= theme::success_button(ui, "Add").clicked();
-            // The CSS has no dark focus colour for this input, so it stays blue in both themes.
             let input = theme::text_input(
                 ui,
                 p,
@@ -1455,8 +1440,7 @@ impl App {
         }
     }
 
-    /// Applies the edit dialog to its item, as the Tauri app's `update_item` did. An invalid field
-    /// keeps the dialog open with the reason; nothing changes.
+    /// An invalid field keeps the dialog open with the reason; nothing changes.
     fn save_edit(&mut self) {
         if self.refuse_stale() {
             return;
@@ -1527,7 +1511,6 @@ impl App {
         }
     }
 
-    /// Deletes the edited item and its sub-items, like the other mutations.
     fn delete_item(&mut self) {
         if self.refuse_stale() {
             return;
@@ -1646,7 +1629,6 @@ impl App {
             .stroke(Stroke::new(1.0, p.border))
             .corner_radius(6.0)
             .show(ui, |ui| {
-                // The list box fills the content area, as in the web app.
                 ui.set_min_size(ui.available_size());
                 let Some(file) = self.file() else {
                     return start_page(ui, p, files_enabled).map(Clicked::Menu);
@@ -1663,10 +1645,10 @@ impl App {
                 };
                 let today = chrono::Local::now().date_naive();
                 let mut visible = list::visible(&library.items, &self.config, today);
-                // The sidebar's selection (RTM-121), after the view settings.
+                // The sidebar's selection, after the view settings.
                 visible.retain(|&i| library.items[i].matches(&file.projects, &file.contexts));
                 if visible.is_empty() {
-                    // Also when every item is filtered out, as in the Tauri app.
+                    // Also when every item is filtered out.
                     empty_state(ui, p, "No items found.");
                     None
                 } else {
@@ -1698,13 +1680,11 @@ impl RepoSync {
     }
 }
 
-/// The open file at `path` among `files`.
 fn find_file<'a>(files: &'a mut [OpenFile], path: Option<&Path>) -> Option<&'a mut OpenFile> {
     let path = path?;
     files.iter_mut().find(|file| file.is(path))
 }
 
-/// The repository `key` among `repos`.
 fn find_repo<'a>(repos: &'a mut [RepoSync], key: Option<&RepoKey>) -> Option<&'a mut RepoSync> {
     let key = key?;
     repos.iter_mut().find(|repo| &repo.key == key)
@@ -1738,7 +1718,6 @@ impl OpenFile {
         }
     }
 
-    /// The label of a tab without a name of its own: the file name.
     fn default_name(path: &Path) -> String {
         path.file_name().map_or_else(
             || path.display().to_string(),
@@ -1755,7 +1734,7 @@ impl OpenFile {
     }
 
     /// Runs the check on open again on `repo`, the file's repository, after another program
-    /// changed a synced file (RTM-142): its result reloads the file, and asks first when the
+    /// changed a synced file: its result reloads the file, and asks first when the
     /// change was not committed (`App::checked`), as on open. Not while the outside-changes
     /// question is already open. True when the check was queued; the pending changes wait for it.
     fn recheck(&mut self, repo: Option<&mut RepoSync>) -> bool {
@@ -1913,7 +1892,6 @@ impl OpenFile {
             return true;
         };
         let changes = std::mem::take(&mut self.pending);
-        // The Tauri app read the file again after a completion; kept.
         let reread = changes.iter().any(Change::completes);
         let saved = library
             .save()
@@ -2141,7 +2119,6 @@ impl eframe::App for App {
 #[derive(Clone)]
 enum Change {
     Add(TodoItem),
-    /// Completes the item, or uncompletes it when it is done.
     Toggle(TodoItem),
     Edit {
         original: TodoItem,
@@ -2218,7 +2195,6 @@ impl Change {
         matches!(self, Change::Toggle(item) if !item.done)
     }
 
-    /// The id of a move's leaving half.
     fn move_out(&self) -> Option<u64> {
         match self {
             Change::MoveOut { id, .. } => Some(*id),
@@ -2328,8 +2304,7 @@ fn resolve(path: &Path) -> std::io::Result<PathBuf> {
     path.canonicalize().map(|path| config::plain_path(&path))
 }
 
-/// Loads a todo.txt file. The path is resolved first (`resolve`), as the Tauri app did; `path`
-/// is the `PathBuf` from the file dialog, with no string or URI conversion in between.
+/// `path` is the `PathBuf` from the file dialog, with no string or URI conversion in between.
 fn load_library(path: &Path) -> Result<TodoLibrary, String> {
     let canonical = resolve(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut library = TodoLibrary::new(canonical.to_string_lossy().into_owned());
@@ -2339,13 +2314,12 @@ fn load_library(path: &Path) -> Result<TodoLibrary, String> {
     Ok(library)
 }
 
-/// What was clicked in the update notice.
 enum NoticeAction {
     Download,
     Close,
 }
 
-/// The strip under the title bar that offers a newer release (RTM-138): Download opens its page,
+/// The strip under the title bar that offers a newer release: Download opens its page,
 /// the close button hides the strip for the rest of the run.
 fn update_notice(ui: &mut Ui, p: &Palette, notice: &Notice) -> Option<NoticeAction> {
     let mut clicked = None;
@@ -2377,7 +2351,7 @@ fn update_notice(ui: &mut Ui, p: &Palette, notice: &Notice) -> Option<NoticeActi
     clicked
 }
 
-/// One sidebar section (RTM-120): a header that collapses it and a row per tag (its text, open-item
+/// One sidebar section: a header that collapses it and a row per tag (its text, open-item
 /// count and whether it is selected), the tag a selectable button in `color` (muted when no open
 /// item carries it) and the count at the right. Returns whether the header was clicked, which
 /// flips `collapsed`, and the index of a clicked tag.
@@ -2434,13 +2408,12 @@ fn toggle_tag<T: Clone>(selection: &mut Vec<T>, tag: &T, name: fn(&T) -> &str) {
     }
 }
 
-/// What was clicked in the title bar.
 enum HeaderAction {
     Sync,
     Menu(MenuAction),
 }
 
-/// The entries of the title bar's menu (RTM-134), also reached by their shortcuts.
+/// The entries of the title bar's menu, also reached by their shortcuts.
 #[derive(Clone, Copy)]
 enum MenuAction {
     NewFile,
@@ -2464,7 +2437,6 @@ fn header(
         .inner_margin(Margin::symmetric(20, 12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            // CSS: h1 is 1.25rem with a 1.5 line height.
             ui.set_min_height(26.25);
             ui.horizontal(|ui| {
                 if let Some(action) = menu(ui, files_enabled) {
@@ -2517,7 +2489,6 @@ fn file_entries(ui: &mut Ui, enabled: bool, chosen: &mut Option<MenuAction>) {
     menu_entry(ui, enabled, MenuAction::LoadFile, chosen);
 }
 
-/// The menu entry of `action`, with its shortcut; sets `chosen` when clicked.
 fn menu_entry(ui: &mut Ui, enabled: bool, action: MenuAction, chosen: &mut Option<MenuAction>) {
     let (text, shortcut) = match action {
         MenuAction::NewFile => ("New File…", &NEW_FILE),

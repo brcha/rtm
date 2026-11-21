@@ -2,7 +2,6 @@ use super::*;
 use rmcp::ServiceExt;
 use std::sync::Arc;
 
-/// A client connected over an in-memory pipe to `server`.
 async fn connect(server: Server) -> rmcp::service::RunningService<rmcp::RoleClient, ()> {
     let (client_io, server_io) = tokio::io::duplex(64 * 1024);
     let (read, write) = tokio::io::split(server_io);
