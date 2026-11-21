@@ -813,7 +813,7 @@ jobs:
       # cannot run in this AlmaLinux 9 container (glibc 2.34). Version pinned and --locked, so a new
       # release cannot change the packages mid-run.
       - name: Install cargo-deb
-        run: cargo install cargo-deb --locked --version 3.7.0
+        run: cargo install cargo-deb --locked --version 3.8.0
 
       # Compiled for the same reasons as cargo-deb above. It writes the RPMs itself: no
       # rpmbuild or spec file to install.
