@@ -4,6 +4,10 @@ use crate::todo_project::TodoProject;
 use crate::todo_recurrence::TodoRecurrenceUnit;
 use chrono::{Datelike, Duration, Local, Months, NaiveDate, Weekday};
 use std::collections::{BTreeMap, HashSet};
+use std::ffi::OsString;
+use std::fs::OpenOptions;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -86,6 +90,70 @@ impl TodoLibrary {
         self.items = kept.into_iter().map(|(item, _)| item).collect();
         Some(removed.into_iter().map(|(item, _)| item).collect())
     }
+
+    /// The file `archive` moves done items to, next to the todo file: `done.txt` for
+    /// `todo.txt` (the todo.sh convention), `<stem>.done.<ext>` for any other file, so two todo
+    /// files in one directory never share one.
+    pub fn archive_path(&self) -> PathBuf {
+        let path = Path::new(&self.file_name);
+        if path.file_name().is_some_and(|name| name == "todo.txt") {
+            return path.with_file_name("done.txt");
+        }
+        let mut name = OsString::from(path.file_stem().unwrap_or_default());
+        name.push(".done");
+        if let Some(extension) = path.extension() {
+            name.push(".");
+            name.push(extension);
+        }
+        path.with_file_name(name)
+    }
+
+    /// Moves the done items to `archive_path()`, appending their lines in file order, and returns
+    /// them. With `completed_before`, only items completed before that date move; a done item
+    /// without a completion date counts as old. The archive is written before the items leave
+    /// the library, so an interruption before the caller's `save` duplicates them rather than
+    /// losing them; on an error the library is unchanged. The todo file itself is not saved.
+    pub fn archive(
+        &mut self,
+        completed_before: Option<NaiveDate>,
+    ) -> Result<Vec<TodoItem>, std::io::Error> {
+        let archived = |item: &TodoItem| {
+            item.done
+                && match (completed_before, item.completion_date) {
+                    (Some(cutoff), Some(completed)) => completed < cutoff,
+                    _ => true,
+                }
+        };
+        if !self.items.iter().any(archived) {
+            return Ok(Vec::new());
+        }
+        let mut text: String = self
+            .items
+            .iter()
+            .filter(|item| archived(item))
+            .map(|item| format!("{item}\n"))
+            .collect();
+        let mut file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(self.archive_path())?;
+        if file.metadata()?.len() > 0 {
+            let mut last = [0u8];
+            file.seek(SeekFrom::End(-1))?;
+            file.read_exact(&mut last)?;
+            if last[0] != b'\n' {
+                text.insert(0, '\n');
+            }
+        }
+        file.write_all(text.as_bytes())?;
+        let (moved, kept) = std::mem::take(&mut self.items)
+            .into_iter()
+            .partition(|item| archived(item));
+        self.items = kept;
+        Ok(moved)
+    }
+
     pub fn list_items(&self) -> &Vec<TodoItem> {
         &self.items
     }
@@ -257,3 +325,7 @@ mod items_tests;
 #[cfg(test)]
 #[path = "tests/todo_library_tags_tests.rs"]
 mod tags_tests;
+
+#[cfg(test)]
+#[path = "tests/todo_library_archive_tests.rs"]
+mod archive_tests;

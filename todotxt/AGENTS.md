@@ -67,6 +67,19 @@ todotxt/tests/
 - `remove_item(index)` removes the item and, recursively, every item whose `sub` is the uuid
   of a removed item (cyclic links terminate). Returns `Option<Vec<TodoItem>>`: None = out of
   bounds, otherwise the removed items in file order. Like every mutation it does not save.
+- **Archive.** `archive_path()` names the archive next to the todo file:
+  `done.txt` for a file named exactly `todo.txt` (the todo.sh, SimpleTask and topydo
+  convention), otherwise `<stem>.done.<ext>` (`work.txt` -> `work.done.txt`, `notes` ->
+  `notes.done`), so two todo files in one directory never share an archive.
+  `archive(completed_before)` moves the done items there and returns them in file order; with a
+  date, only items completed before it (exclusive), and a done item without a completion date
+  counts as old. Every done item moves, whatever its `sub:` links; until RTM-227 makes completing
+  a parent complete its sub-items, a done parent can leave an open sub-item behind. The archive is only appended to (`OpenOptions` append and create,
+  never read except its last byte, so a missing final newline is added first) with the lines
+  `save` would write; nothing to archive creates no file. The append comes first and the items
+  leave the library only after it succeeds, so an interruption before the caller's `save`
+  leaves them in both files, never in neither; on an error the library is unchanged. It does
+  not save the todo file: the caller saves it, and in a repository commits both files.
 - **Projects and contexts** (RTM-119), shared by every frontend so they behave the same. Tag
   names are compared case-insensitively (`+Work` is `+work`).
   - `TodoLibrary::projects()` / `contexts()` return `Vec<(TodoProject, usize)>` /
