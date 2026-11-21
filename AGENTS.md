@@ -44,9 +44,9 @@ rtm/                        ← Cargo workspace root
 library is the single source of truth for parsing, serialization, and business logic. Frontends depend
 on it via `path` dependency.
 
-`rtmapp` replaced a Tauri app of the same name in RTM-39 (epic RTM-32): same features, same look and
-the same config file. The Tauri sources are gone; references to them name commit `5076649`, the last
-one that had them.
+`rtmapp` replaced the app of the same name of versions up to 0.1.3, keeping its features, its look and
+its config file. References to the old app's sources name commit `5076649`, the last commit that had
+them.
 
 `rtmapp` stores its config in the OS config directory (`dirs::config_dir()`), under
 `rtm/config.toml`. `rtmcli` has no config file (file from `-f` or `$TODOTXT`).

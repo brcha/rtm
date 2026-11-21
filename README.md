@@ -191,7 +191,7 @@ Desktop app:
    deselected.
 4. Start "Rusty Todo.txt Manager" from the Start Menu.
 
-The installer replaces an installed older version, including the Tauri-based releases up to 0.1.3,
+The installer replaces an installed older version, including the 0.1.x releases,
 and keeps its install folder.
 
 CLI:

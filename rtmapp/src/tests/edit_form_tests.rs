@@ -20,7 +20,7 @@ fn saving_an_unchanged_form_keeps_the_item() {
 }
 
 #[test]
-fn fields_are_filled_like_the_tauri_app() {
+fn fields_are_filled_from_the_line() {
     let f = form("(B) Task +Work +Home @office due:2026-11-01 rec:1w t:2026-10-30");
     assert_eq!(f.description, "Task");
     assert_eq!(f.priority, Some(1));
