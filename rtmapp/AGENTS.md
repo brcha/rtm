@@ -71,8 +71,8 @@ rtmapp/
 | rtmsync (path)      | Commit, pull and push through Git or Pijul         |
 | rtmmcp (path)       | The MCP server of `rtmapp mcp`                     |
 | rfd 0.16            | Native file dialog (`xdg-portal` backend on Linux) |
-| serde, toml 0.8     | Config file                                        |
-| dirs 5              | OS config directory                                |
+| serde, toml 1       | Config file                                        |
+| dirs 7              | OS config directory                                |
 | chrono              | Dates (same as the core library)                   |
 | pollster 1          | Waits for `rfd`'s async file dialog on its thread  |
 | env_logger 0.11     | Logs to stderr (`rfd`'s file dialog errors)        |

@@ -13,8 +13,8 @@ rtmmcp = { path = "../rtmmcp" }
 eframe = "0.37"
 chrono = "0.4.31"
 serde = { version = "1", features = ["derive"] }
-dirs = "5"
-toml = "0.8"
+dirs = "7"
+toml = "1"
 rfd = "0.16"
 # Waits for rfd's async file dialog on its own thread (the one exception to "no async").
 pollster = "1"
