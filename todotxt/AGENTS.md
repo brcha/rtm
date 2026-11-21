@@ -70,7 +70,10 @@ todotxt/tests/
 - **Archive.** `archive_path()` names the archive next to the todo file:
   `done.txt` for a file named exactly `todo.txt` (the todo.sh, SimpleTask and topydo
   convention), otherwise `<stem>.done.<ext>` (`work.txt` -> `work.done.txt`, `notes` ->
-  `notes.done`), so two todo files in one directory never share an archive.
+  `notes.done`), so two todo files in one directory never share an archive. A todo file that is
+  a symlink is resolved first, so the archive sits next to its target, in the target's
+  repository, whatever path a frontend opened it by (until RTM-231 refuses symlinked todo files);
+  any other path is used as given.
   `archive(completed_before)` moves the done items there and returns them in file order; with a
   date, only items completed before it (exclusive), and a done item without a completion date
   counts as old. Every done item moves, whatever its `sub:` links; until RTM-227 makes completing
