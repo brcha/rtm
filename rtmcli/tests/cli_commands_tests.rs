@@ -286,8 +286,24 @@ fn rtmcli(file: &std::path::Path, args: &[&str]) -> Output {
         .env_remove("RTM_NO_SYNC")
         .env_remove("RTM_VCS")
         .env_remove("RTM_UPDATE_URL")
+        .env_remove("RTM_ARCHIVE_DAYS")
         .output()
         .unwrap()
+}
+
+#[test]
+fn test_cli_add_refuses_an_unreadable_file() {
+    let temp_file = std::env::temp_dir().join("test_cli_add_unreadable.txt");
+    let content = b"Buy milk\nCaf\xE9\nPay rent\n";
+    fs::write(&temp_file, content).unwrap();
+
+    let output = rtmcli(&temp_file, &["add", "New item"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Error loading file"), "{stderr}");
+    assert_eq!(fs::read(&temp_file).unwrap(), content);
+    fs::remove_file(&temp_file).unwrap();
 }
 
 #[test]
