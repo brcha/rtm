@@ -288,7 +288,7 @@ fn load(source: &Source) -> Result<TodoLibrary, String> {
 
 fn parse(line: &str) -> Result<TodoItem, String> {
     let line = line.trim();
-    if line.is_empty() || line.contains('\n') {
+    if line.is_empty() || TodoItem::check_one_line(line).is_err() {
         return Err("Give exactly one todo.txt line.".to_owned());
     }
     let item: TodoItem = line

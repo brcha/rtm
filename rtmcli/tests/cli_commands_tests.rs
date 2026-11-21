@@ -324,6 +324,25 @@ fn test_cli_add_refuses_a_threshold_after_the_due_date() {
 }
 
 #[test]
+fn test_cli_add_refuses_a_line_break() {
+    let temp_file = std::env::temp_dir().join("test_cli_add_line_break.txt");
+    for text in ["Buy bread\nx 2026-01-01 Pay rent", "Buy bread\rPay rent"] {
+        fs::write(&temp_file, "Buy milk\n").unwrap();
+
+        let output = rtmcli(&temp_file, &["add", text]);
+
+        assert_eq!(output.status.code(), Some(1), "{text:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            stderr.contains("Error: give exactly one todo.txt line"),
+            "{stderr}"
+        );
+        assert_eq!(fs::read_to_string(&temp_file).unwrap(), "Buy milk\n");
+    }
+    fs::remove_file(&temp_file).unwrap();
+}
+
+#[test]
 fn test_cli_keeps_an_existing_threshold_after_the_due_date() {
     let temp_file = std::env::temp_dir().join("test_cli_keep_threshold_after_due.txt");
     let line = "Pay rent due:2026-01-05 t:2026-01-10";

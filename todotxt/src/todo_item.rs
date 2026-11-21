@@ -117,6 +117,11 @@ pub enum TodoItemDateError {
     },
 }
 
+/// Entered text that would be written as more than one line.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("give exactly one todo.txt line, without line breaks")]
+pub struct TodoItemLineError;
+
 impl FromStr for TodoItem {
     type Err = TodoItemParseError;
 
@@ -727,6 +732,17 @@ impl TodoItem {
         }
     }
 
+    /// Refuses entered text holding `\n` or `\r`: the parser keeps it, so it would be saved as
+    /// several lines. `from_str` does not check, so a line already in a file loads and saves
+    /// unchanged.
+    pub fn check_one_line(text: &str) -> Result<(), TodoItemLineError> {
+        if text.contains(['\n', '\r']) {
+            Err(TodoItemLineError)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Not actionable yet: it has a threshold or due date, and every one it has is after `today`.
     pub fn is_future(&self, today: NaiveDate) -> bool {
         let dates = [self.threshold, self.due];
@@ -808,3 +824,7 @@ mod layout_tests;
 #[cfg(test)]
 #[path = "tests/todo_item_dates_tests.rs"]
 mod dates_tests;
+
+#[cfg(test)]
+#[path = "tests/todo_item_input_tests.rs"]
+mod input_tests;
