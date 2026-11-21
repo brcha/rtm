@@ -2181,6 +2181,7 @@ impl OpenFile {
         if changes.is_empty() {
             return true;
         }
+        // Read again: an open line's `pri:` tag is the done line's priority only once parsed again.
         let reread = changes.iter().any(Change::completes);
         let saved = library
             .save()
