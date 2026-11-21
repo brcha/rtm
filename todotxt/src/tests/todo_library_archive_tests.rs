@@ -36,22 +36,6 @@ fn archive_path_of_another_file_inserts_done_before_the_extension() {
     assert_eq!(lib.archive_path(), Path::new("Todo.done.txt"));
 }
 
-#[cfg(unix)]
-#[test]
-fn archive_path_of_a_symlinked_todo_file_is_next_to_its_target() {
-    let (dir, _) = scratch("");
-    let real = dir.join("real");
-    fs::create_dir(&real).unwrap();
-    fs::rename(dir.join("todo.txt"), real.join("todo.txt")).unwrap();
-    let link = dir.join("link.txt");
-    std::os::unix::fs::symlink(real.join("todo.txt"), &link).unwrap();
-    let lib = TodoLibrary::new(link.to_str().unwrap().to_string());
-    // Canonical, since macOS resolves the temp directory itself (/tmp to /private/tmp).
-    let expected = fs::canonicalize(&real).unwrap().join("done.txt");
-    assert_eq!(lib.archive_path(), expected);
-    fs::remove_dir_all(&dir).unwrap();
-}
-
 #[test]
 fn archive_moves_every_done_item_and_keeps_the_open_ones() {
     let (dir, mut lib) = scratch(

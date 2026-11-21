@@ -94,15 +94,9 @@ impl TodoLibrary {
 
     /// The file `archive` moves done items to, next to the todo file: `done.txt` for
     /// `todo.txt` (the todo.sh convention), `<stem>.done.<ext>` for any other file, so two todo
-    /// files in one directory never share one. A symlinked todo file's archive goes next to its
-    /// target, so it stays with the target.
+    /// files in one directory never share one.
     pub fn archive_path(&self) -> PathBuf {
-        let given = Path::new(&self.file_name);
-        let resolved = match std::fs::symlink_metadata(given) {
-            Ok(metadata) if metadata.is_symlink() => std::fs::canonicalize(given).ok(),
-            _ => None,
-        };
-        let path = resolved.as_deref().unwrap_or(given);
+        let path = Path::new(&self.file_name);
         if path.file_name().is_some_and(|name| name == "todo.txt") {
             return path.with_file_name("done.txt");
         }
