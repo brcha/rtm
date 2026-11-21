@@ -28,6 +28,11 @@ pub struct AppConfig {
     /// The sidebar's Projects and Contexts sections are collapsed.
     pub projects_collapsed: bool,
     pub contexts_collapsed: bool,
+    /// Archive done items on open and once a day. Off unless set to true.
+    pub auto_archive: bool,
+    /// Only done items completed more than this many days ago are archived, automatically or
+    /// from the menu; 0 archives everything completed before today.
+    pub archive_older_than_days: u64,
     /// The saved session: the todo.txt files the app keeps; `file_name` names the active
     /// one and stays for older versions, which ignore this list. Last, so the plain keys are
     /// written before the tables.
@@ -61,6 +66,8 @@ impl Default for AppConfig {
             update_channel: "stable".to_owned(),
             projects_collapsed: false,
             contexts_collapsed: false,
+            auto_archive: false,
+            archive_older_than_days: 30,
             files: Vec::new(),
         }
     }

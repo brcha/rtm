@@ -27,6 +27,8 @@ fn round_trip() {
         update_channel: "beta".into(),
         projects_collapsed: true,
         contexts_collapsed: true,
+        auto_archive: true,
+        archive_older_than_days: 7,
         files: vec![FileEntry {
             path: "/home/user/todo.txt".into(),
             name: Some("Home".into()),
@@ -75,6 +77,13 @@ fn sidebar_sections_are_open_without_their_keys() {
     let config: AppConfig = toml::from_str("reverse_sort = true").unwrap();
     assert!(!config.projects_collapsed);
     assert!(!config.contexts_collapsed);
+}
+
+#[test]
+fn archiving_is_off_with_30_days_without_its_keys() {
+    let config: AppConfig = toml::from_str("reverse_sort = true").unwrap();
+    assert!(!config.auto_archive);
+    assert_eq!(config.archive_older_than_days, 30);
 }
 
 #[test]

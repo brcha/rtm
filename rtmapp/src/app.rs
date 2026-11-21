@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, TryRecvError};
 use std::time::{Duration, Instant, SystemTime};
 
+use chrono::{Days, Local, NaiveDate};
 use eframe::egui::{
     self, Align, Color32, Frame, Layout, Margin, RichText, Stroke, Ui,
     text::{LayoutJob, TextFormat},
@@ -16,6 +17,7 @@ use crate::settings::{self, SettingsForm};
 use crate::sync::{self, Done, Found, Place, Question, Repo, RepoKey, Worker};
 use crate::theme::{self, Palette};
 use crate::update::{self, Notice, UpdateCheck};
+use rtmsync::State;
 
 /// How long exit waits for a job that changes not yet in the file depend on: a sync's pull and
 /// push, 60 s each at most, and a little more.
@@ -27,6 +29,9 @@ const LOCK_RETRY: Duration = Duration::from_millis(200);
 /// How often the open files are checked for changes made by another program while the window
 /// shows.
 const DISK_CHECK: Duration = Duration::from_secs(2);
+
+/// How often each open file is archived while automatic archiving is on.
+const ARCHIVE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// What to do with the path a file dialog returned: `App::open_file` or `App::create_file`.
 type OnPath = fn(&mut App, &Path);
@@ -137,6 +142,15 @@ struct OpenFile {
     seen: Option<(SystemTime, u64)>,
     /// The last write found the write lock held by another rtm process; the changes wait.
     locked_out: bool,
+    /// When it was last archived, automatically or from the menu; the next automatic archive is
+    /// due `ARCHIVE_INTERVAL` later.
+    archived_at: Option<Instant>,
+    /// The cutoff of an archive waiting for the archive's state, or for the answer about its
+    /// outside changes.
+    archive_wait: Option<NaiveDate>,
+    /// The archive has changes rtm did not commit: the question about them is open (shown when
+    /// the file's tab is).
+    archive_asking: bool,
 }
 
 impl App {
@@ -288,7 +302,7 @@ impl App {
                 joined.worker.found_remote(repo.remote());
                 if let Some(path) = path {
                     // The worker takes the lock itself.
-                    joined.worker.commit(path, message, None);
+                    joined.worker.commit(vec![path], message, None);
                 }
             }
             self.sync_repo(&repo.key(), Instant::now());
@@ -302,6 +316,117 @@ impl App {
             file.repo = None;
         }
         self.prune();
+    }
+
+    /// Archives the done items of the open file at `path` completed more than the configured
+    /// number of days ago. A synced file's archive is checked for outside changes on the
+    /// repository's worker first (`archive_state`); nothing happens when no item would move.
+    fn archive(&mut self, path: &Path, now: Instant) {
+        let days = self.config.archive_older_than_days;
+        let cutoff = Local::now()
+            .date_naive()
+            .checked_sub_days(Days::new(days))
+            .unwrap_or(NaiveDate::MIN);
+        let Some(file) = find_file(&mut self.files, Some(path)) else {
+            return;
+        };
+        file.archived_at = Some(now);
+        let Some(library) = &file.library else {
+            return;
+        };
+        if !library.items.iter().any(|item| archivable(item, cutoff)) {
+            return;
+        }
+        match find_repo(&mut self.repos, file.repo.as_ref()) {
+            Some(repo) => {
+                let todo = PathBuf::from(&library.file_name);
+                repo.worker.archive_state(todo, library.archive_path());
+                file.archive_wait = Some(cutoff);
+            }
+            None => file.queue_archive(cutoff),
+        }
+        self.flush();
+    }
+
+    /// The state of the archive of the open file at `path`: changes rtm did not commit are asked
+    /// about first (`archive_question`); otherwise the waiting archive is queued.
+    fn archive_state(&mut self, path: &Path, state: Option<State>) {
+        let Some(file) = self.files.iter_mut().find(|file| file.is(path)) else {
+            return;
+        };
+        let Some(cutoff) = file.archive_wait else {
+            return;
+        };
+        if state == Some(State::Modified) {
+            file.archive_asking = true;
+        } else {
+            file.archive_wait = None;
+            file.queue_archive(cutoff);
+        }
+    }
+
+    /// The answer to `archive_question`: yes commits the archive's outside changes, then
+    /// archives; no leaves both files as they are until the next archive.
+    fn answer_archive(&mut self, yes: bool) {
+        let Some(file) = find_file(&mut self.files, self.active.as_deref()) else {
+            return;
+        };
+        file.archive_asking = false;
+        let Some(cutoff) = file.archive_wait.take() else {
+            return;
+        };
+        let Some(library) = &file.library else {
+            return;
+        };
+        if !yes {
+            return;
+        }
+        if let Some(repo) = find_repo(&mut self.repos, file.repo.as_ref()) {
+            // The worker takes the lock itself; the archive is written after this commit, as
+            // `flush` waits for an idle worker.
+            let message = "rtm: commit outside changes".to_owned();
+            repo.worker
+                .commit(vec![library.archive_path()], message, None);
+        }
+        file.queue_archive(cutoff);
+        self.flush();
+    }
+
+    /// Archives each loaded file once a day while automatic archiving is on, the first time once
+    /// its check on open is done, and asks for a repaint when the next one is due.
+    fn archive_due(&mut self, now: Instant) {
+        if !self.config.auto_archive {
+            return;
+        }
+        let due = |file: &&OpenFile| {
+            file.library.is_some()
+                && !file.checking
+                && file.choose_vcs.is_none()
+                && file.asking.is_none()
+                && !file.archive_asking
+                && file.archive_wait.is_none()
+                && file
+                    .archived_at
+                    .is_none_or(|at| now.duration_since(at) >= ARCHIVE_INTERVAL)
+        };
+        let paths: Vec<_> = self
+            .files
+            .iter()
+            .filter(due)
+            .map(|f| f.path.clone())
+            .collect();
+        for path in paths {
+            self.archive(&path, now);
+        }
+        let next = self
+            .files
+            .iter()
+            .filter_map(|file| file.archived_at)
+            .map(|at| (at + ARCHIVE_INTERVAL).saturating_duration_since(now))
+            .min();
+        if let Some(wait) = next {
+            self.ctx.request_repaint_after(wait);
+        }
     }
 
     /// Whether any repository has a job outstanding: Settings' reconnect waits for it.
@@ -569,6 +694,7 @@ impl App {
         match done {
             Done::Checked { file, found } => self.checked(&file, found),
             Done::Committed => {}
+            Done::ArchiveState { file, state } => self.archive_state(&file, state),
             Done::Synced { changed } => {
                 repo.status = None;
                 self.reload(&changed);
@@ -579,7 +705,17 @@ impl App {
                 self.reload(&changed);
             }
             Done::NotCommitted { file, error } => {
-                if let Some(file) = self.files.iter_mut().find(|open| open.is(&file)) {
+                // An archive's outside changes are committed on their own, named by the archive.
+                let archives = |open: &OpenFile| {
+                    open.library
+                        .as_ref()
+                        .is_some_and(|library| library.archive_path() == file)
+                };
+                if let Some(file) = self
+                    .files
+                    .iter_mut()
+                    .find(|open| open.is(&file) || archives(open))
+                {
                     file.error = Some(format!("Not committed: {error}"));
                 }
             }
@@ -848,6 +984,40 @@ impl App {
         });
         if let Some(yes) = answer {
             self.answer(yes);
+        }
+    }
+
+    /// The question about the archive's outside changes, for the shown file only, so an
+    /// automatic archive never switches tabs.
+    fn archive_question(&mut self, ctx: &egui::Context, p: &Palette) {
+        // The todo file's own question comes first.
+        let Some(file) = self
+            .file()
+            .filter(|file| file.archive_asking && file.asking.is_none())
+        else {
+            return;
+        };
+        let Some(library) = &file.library else {
+            return;
+        };
+        let name = file_name_of(&library.archive_path());
+        let title = format!("Commit the changes to {name}?");
+        let text = format!(
+            "{name} has changes that rtm did not commit. Commit them before archiving, or archive \
+             later."
+        );
+        let mut answer = None;
+        // Escape and the backdrop do nothing: the archive waits for the answer.
+        theme::question(ctx, p, "archive-question", &title, &text, |ui| {
+            if theme::primary_button(ui, "Commit them").clicked() {
+                answer = Some(true);
+            }
+            if theme::secondary_button(ui, "Not now").clicked() {
+                answer = Some(false);
+            }
+        });
+        if let Some(yes) = answer {
+            self.answer_archive(yes);
         }
     }
 
@@ -1175,8 +1345,22 @@ impl App {
         };
         let sync = self.config.sync;
         let updates = (self.config.check_for_updates, self.config.beta());
+        let archive = (
+            self.config.auto_archive,
+            self.config.archive_older_than_days,
+        );
         form.apply(&mut self.config);
         self.save_config();
+        // A new rule archives at once.
+        if (
+            self.config.auto_archive,
+            self.config.archive_older_than_days,
+        ) != archive
+        {
+            for file in &mut self.files {
+                file.archived_at = None;
+            }
+        }
         if self.config.sync != sync {
             self.reconnect = true;
         }
@@ -1201,15 +1385,20 @@ impl App {
         self.editing.is_some()
             || self.settings.is_some()
             || self.confirm_close.is_some()
-            || self
-                .file()
-                .is_some_and(|file| file.choose_vcs.is_some() || file.asking.is_some())
+            || self.file().is_some_and(|file| {
+                file.choose_vcs.is_some() || file.asking.is_some() || file.archive_asking
+            })
     }
 
     fn menu_action(&mut self, action: MenuAction, ctx: &egui::Context, frame: &eframe::Frame) {
         match action {
             MenuAction::NewFile => self.new_file(frame),
             MenuAction::LoadFile => self.pick_file(frame),
+            MenuAction::Archive => {
+                if let Some(path) = self.active.clone() {
+                    self.archive(&path, Instant::now());
+                }
+            }
             MenuAction::Settings => self.settings = Some(SettingsForm::new(&self.config)),
             // Through the normal close, so `on_exit` writes, commits and syncs.
             MenuAction::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
@@ -1830,6 +2019,14 @@ impl OpenFile {
         ));
     }
 
+    /// Queues an archive of the items completed before `cutoff`, written with the next flush.
+    fn queue_archive(&mut self, cutoff: NaiveDate) {
+        self.pending.push(Change::Archive {
+            cutoff,
+            archived: Vec::new(),
+        });
+    }
+
     /// Whether an item moved out of this file waits for its target to be written (`delivered`).
     fn waits_for_move(&self, delivered: &[u64]) -> bool {
         self.pending
@@ -1894,7 +2091,38 @@ impl OpenFile {
         let Some(library) = &mut self.library else {
             return true;
         };
-        let changes = std::mem::take(&mut self.pending);
+        let mut changes = std::mem::take(&mut self.pending);
+        // Nothing is committed while the todo file's question is open, so the archive waits for
+        // the answer; written now, it would look like an outside change to the archive later.
+        if self.asking.is_some() {
+            let (archives, rest) = changes
+                .into_iter()
+                .partition(|change| matches!(change, Change::Archive { .. }));
+            self.pending = archives;
+            changes = rest;
+        }
+        // The archive is written here, under the lock and with the worker idle, since
+        // `TodoLibrary::archive` appends to it at once; the later cutoff covers an earlier one.
+        let cutoff = changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::Archive { cutoff, .. } => Some(*cutoff),
+                _ => None,
+            })
+            .max();
+        changes.retain(|change| !matches!(change, Change::Archive { .. }));
+        if let Some(cutoff) = cutoff {
+            match library.archive(Some(cutoff)) {
+                Ok(archived) if archived.is_empty() => {}
+                Ok(archived) => changes.push(Change::Archive { cutoff, archived }),
+                Err(e) => {
+                    self.error = Some(format!("{}: {e}", library.archive_path().display()));
+                }
+            }
+        }
+        if changes.is_empty() {
+            return true;
+        }
         let reread = changes.iter().any(Change::completes);
         let saved = library
             .save()
@@ -1913,8 +2141,14 @@ impl OpenFile {
         // The lock goes with the commit and is released once it is done; with no commit queued it
         // is released here.
         if let Some(repo) = repo.filter(|_| self.asking.is_none()) {
-            let path = PathBuf::from(&library.file_name);
-            repo.worker.commit(path, commit_message(&changes), lock);
+            let mut files = vec![PathBuf::from(&library.file_name)];
+            if changes
+                .iter()
+                .any(|change| matches!(change, Change::Archive { .. }))
+            {
+                files.push(library.archive_path());
+            }
+            repo.worker.commit(files, commit_message(&changes), lock);
         }
         true
     }
@@ -2000,6 +2234,7 @@ impl eframe::App for App {
         self.show_question();
         self.dialog_result();
         self.tick(Instant::now());
+        self.archive_due(Instant::now());
         self.updates.results();
         self.updates
             .tick(Instant::now(), self.config.beta(), &self.ctx);
@@ -2025,10 +2260,12 @@ impl eframe::App for App {
             (!remotes.is_empty()).then(|| !remotes.iter().all(|worker| worker.syncing()));
         // New File and Load File: disabled while a file dialog is open.
         let files_enabled = self.dialog.is_none();
+        let archive_enabled = self.library().is_some();
         let clicked = egui::Panel::top("header")
             .frame(Frame::NONE)
             .show(ui, |ui| {
-                header(ui, p, status.as_deref(), sync_button, files_enabled)
+                let enabled = (files_enabled, archive_enabled);
+                header(ui, p, status.as_deref(), sync_button, enabled)
             })
             .inner;
         let ctx = ui.ctx().clone();
@@ -2090,6 +2327,7 @@ impl eframe::App for App {
         }
         self.vcs_question(&ui.ctx().clone(), p);
         self.sync_question(&ui.ctx().clone(), p);
+        self.archive_question(&ui.ctx().clone(), p);
         self.close_question(&ui.ctx().clone(), p);
         if let Some(form) = &mut self.editing {
             match edit::show(ui.ctx(), p, form) {
@@ -2149,6 +2387,12 @@ enum Change {
         to: String,
         id: u64,
     },
+    /// Moves the done items completed before `cutoff` to the file's archive. Nothing changes in
+    /// the list until `OpenFile::flush` archives, which fills `archived` with the items moved.
+    Archive {
+        cutoff: NaiveDate,
+        archived: Vec<TodoItem>,
+    },
 }
 
 impl Change {
@@ -2178,6 +2422,7 @@ impl Change {
             // Not through `add_item`, which gives an item without one a creation date: a moved
             // item arrives as it was.
             Change::MoveIn { items, .. } => library.items.extend(items.iter().cloned()),
+            Change::Archive { .. } => {}
             Change::Delete { original, removing }
             | Change::MoveOut {
                 original, removing, ..
@@ -2220,6 +2465,10 @@ impl Change {
             Change::MoveOut { original, to, .. } => {
                 format!("rtm: move {} to {to}", original.description)
             }
+            Change::Archive { archived, .. } => match archived.as_slice() {
+                [item] => format!("rtm: archive {}", item.description),
+                items => format!("rtm: archive {} items", items.len()),
+            },
         }
     }
 }
@@ -2241,6 +2490,15 @@ fn commit_message(changes: &[Change]) -> String {
             format!("rtm: {} changes\n\n{}", changes.len(), lines.join("\n"))
         }
     }
+}
+
+/// Whether `TodoLibrary::archive(Some(cutoff))` moves `item`: a done item completed before
+/// `cutoff`, or without a completion date.
+fn archivable(item: &TodoItem, cutoff: NaiveDate) -> bool {
+    item.done
+        && item
+            .completion_date
+            .is_none_or(|completed| completed < cutoff)
 }
 
 /// Loads every file of the saved session, in its order, and finds the one `file_name` names (else
@@ -2421,18 +2679,20 @@ enum HeaderAction {
 enum MenuAction {
     NewFile,
     LoadFile,
+    Archive,
     Settings,
     Quit,
 }
 
 /// The title bar: the menu, the title, the sync status and, when `sync_button` is set, a Sync now
-/// button enabled as it says. `files_enabled` enables the menu's New File and Load File.
+/// button enabled as it says. `enabled` enables the menu's New File and Load File, and its Archive
+/// Done Items.
 fn header(
     ui: &mut Ui,
     p: &Palette,
     status: Option<&str>,
     sync_button: Option<bool>,
-    files_enabled: bool,
+    enabled: (bool, bool),
 ) -> Option<HeaderAction> {
     let mut clicked = None;
     Frame::new()
@@ -2442,7 +2702,7 @@ fn header(
             ui.set_width(ui.available_width());
             ui.set_min_height(26.25);
             ui.horizontal(|ui| {
-                if let Some(action) = menu(ui, files_enabled) {
+                if let Some(action) = menu(ui, enabled) {
                     clicked = Some(HeaderAction::Menu(action));
                 }
                 ui.label(
@@ -2472,12 +2732,15 @@ fn header(
     clicked
 }
 
-/// The menu button and its popup: New File, Load File, Settings and Quit, with their shortcuts.
-fn menu(ui: &mut Ui, files_enabled: bool) -> Option<MenuAction> {
+/// The menu button and its popup: New File, Load File, Archive Done Items, Settings and Quit, with
+/// their shortcuts.
+fn menu(ui: &mut Ui, (files_enabled, archive_enabled): (bool, bool)) -> Option<MenuAction> {
     let button = theme::menu_button(ui);
     let mut chosen = None;
     egui::Popup::menu(&button).show(|ui| {
         file_entries(ui, files_enabled, &mut chosen);
+        ui.separator();
+        menu_entry(ui, archive_enabled, MenuAction::Archive, &mut chosen);
         ui.separator();
         menu_entry(ui, true, MenuAction::Settings, &mut chosen);
         ui.separator();
@@ -2494,12 +2757,16 @@ fn file_entries(ui: &mut Ui, enabled: bool, chosen: &mut Option<MenuAction>) {
 
 fn menu_entry(ui: &mut Ui, enabled: bool, action: MenuAction, chosen: &mut Option<MenuAction>) {
     let (text, shortcut) = match action {
-        MenuAction::NewFile => ("New File…", &NEW_FILE),
-        MenuAction::LoadFile => ("Load File…", &LOAD_FILE),
-        MenuAction::Settings => ("Settings…", &SETTINGS),
-        MenuAction::Quit => ("Quit", &QUIT),
+        MenuAction::NewFile => ("New File…", Some(&NEW_FILE)),
+        MenuAction::LoadFile => ("Load File…", Some(&LOAD_FILE)),
+        MenuAction::Archive => ("Archive Done Items", None),
+        MenuAction::Settings => ("Settings…", Some(&SETTINGS)),
+        MenuAction::Quit => ("Quit", Some(&QUIT)),
     };
-    let button = egui::Button::new(text).shortcut_text(shortcut_text(ui.ctx(), shortcut));
+    let mut button = egui::Button::new(text);
+    if let Some(shortcut) = shortcut {
+        button = button.shortcut_text(shortcut_text(ui.ctx(), shortcut));
+    }
     if ui.add_enabled(enabled, button).clicked() {
         *chosen = Some(action);
     }
@@ -2780,3 +3047,7 @@ mod reload_tests;
 #[cfg(test)]
 #[path = "tests/app_lock_tests.rs"]
 mod lock_tests;
+
+#[cfg(test)]
+#[path = "tests/app_archive_tests.rs"]
+mod archive_tests;

@@ -8,6 +8,8 @@ fn saving_settings_writes_the_config_and_closes_the_dialog() {
     app.settings = Some(SettingsForm {
         sync: false,
         interval: 30,
+        auto_archive: false,
+        archive_days: 30,
         check_for_updates: true,
         beta: false,
     });

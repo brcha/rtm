@@ -400,7 +400,13 @@ fn the_menu_has_the_file_entries_settings_and_quit() {
     assert!(harness.query_by_label("Load File").is_none());
 
     open_menu(&mut harness);
-    for name in ["New File…", "Load File…", "Settings…", "Quit"] {
+    for name in [
+        "New File…",
+        "Load File…",
+        "Archive Done Items",
+        "Settings…",
+        "Quit",
+    ] {
         assert!(
             !self::entry(&harness, name).accesskit_node().is_disabled(),
             "{name}"
@@ -453,6 +459,64 @@ fn settings_saves_sync_and_the_interval() {
     let config = AppConfig::load(&dir.join("config.toml"));
     assert!(!config.sync);
     assert_eq!(config.sync_interval_minutes, 25);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn archive_done_items_archives_the_shown_file() {
+    let dir = temp_dir("ui-archive");
+    let mut harness = harness(&dir, "Alpha\nx 2026-01-02 Pay rent\n", |_| {});
+    open_menu(&mut harness);
+    entry(&harness, "Archive Done Items").click();
+    harness.run();
+    assert_eq!(file_lines(&dir), ["Alpha"]);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("done.txt")).unwrap(),
+        "x 2026-01-02 Pay rent\n"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn archive_done_items_is_disabled_without_a_loaded_file() {
+    let dir = temp_dir("ui-archive-none");
+    let mut harness = harness(&dir, "Alpha\n", |config| config.file_name = None);
+    harness.state_mut().files.clear();
+    harness.state_mut().active = None;
+    open_menu(&mut harness);
+    assert!(
+        entry(&harness, "Archive Done Items")
+            .accesskit_node()
+            .is_disabled()
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn settings_saves_the_archive_settings() {
+    let dir = temp_dir("ui-settings-archive");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    open_menu(&mut harness);
+    entry(&harness, "Settings…").click();
+    harness.run();
+
+    let days = harness.get_by_label("Older than");
+    days.focus();
+    harness.run();
+    harness.key_combination_modifiers(Modifiers::COMMAND, &[Key::A]);
+    harness.get_by_label("Older than").type_text("7");
+    harness.key_press(Key::Enter);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Archive done items automatically")
+        .click();
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+
+    let config = AppConfig::load(&dir.join("config.toml"));
+    assert!(config.auto_archive);
+    assert_eq!(config.archive_older_than_days, 7);
     let _ = std::fs::remove_dir_all(dir);
 }
 

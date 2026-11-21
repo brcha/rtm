@@ -142,13 +142,16 @@ pub fn check(vcs: Vcs, root: PathBuf, file: &Path) -> Found {
 enum Job {
     /// The check on open, run here so it never meets a pull of the same repository half-way.
     Check { root: PathBuf, file: PathBuf },
+    /// `files`: the todo file first, then any other file of the same change (its archive).
     /// `lock`: the write lock the app took for the write being committed; the worker takes it
     /// itself when there is none.
     Commit {
-        file: PathBuf,
+        files: Vec<PathBuf>,
         message: String,
         lock: Option<todotxt::WriteLock>,
     },
+    /// The state of the archive of the todo file `file`, before archiving to it.
+    ArchiveState { file: PathBuf, archive: PathBuf },
     /// Pull and push; the files are the repository's open ones, whose changes are reported.
     Sync(Vec<PathBuf>),
 }
@@ -160,6 +163,12 @@ pub enum Done {
         found: Found,
     },
     Committed,
+    /// The state of the archive of `file`; `None` when it is missing (its state cannot be told
+    /// reliably) or could not be read.
+    ArchiveState {
+        file: PathBuf,
+        state: Option<State>,
+    },
     /// Synced (nothing to do without a remote). `changed`: the files that differ from before the
     /// job.
     Synced {
@@ -217,21 +226,38 @@ impl Worker {
                         }
                     }
                     Job::Commit {
-                        file,
+                        files,
                         message,
                         lock,
                     } => {
+                        let file = files[0].clone();
                         // Held until the commit is done, then released.
                         let lock = lock.or_else(|| {
                             todotxt::WriteLock::acquire(&rtmsync::lock_target(&file)).ok()
                         });
-                        let committed = vcs.commit(&file, &message);
+                        let paths: Vec<&Path> = files.iter().map(PathBuf::as_path).collect();
+                        let committed = vcs.commit_files(&paths, &message);
                         drop(lock);
                         match committed {
                             Ok(()) => Done::Committed,
                             Err(e) => Done::NotCommitted {
                                 file,
                                 error: e.to_string(),
+                            },
+                        }
+                    }
+                    Job::ArchiveState { file, archive } => {
+                        let _lock = todotxt::WriteLock::acquire(&rtmsync::lock_target(&file));
+                        let state = archive.exists().then(|| vcs.state(&archive));
+                        Done::ArchiveState {
+                            file,
+                            state: match state {
+                                Some(Ok(state)) => Some(state),
+                                Some(Err(e)) => {
+                                    log::warn!("Cannot check {}: {e}", archive.display());
+                                    None
+                                }
+                                None => None,
                             },
                         }
                     }
@@ -259,18 +285,30 @@ impl Worker {
         }
     }
 
+    /// Queues a check of the state of `archive`, the archive of the todo file `file`.
+    pub fn archive_state(&mut self, file: PathBuf, archive: PathBuf) {
+        if self.jobs.send(Job::ArchiveState { file, archive }).is_ok() {
+            self.pending += 1;
+        }
+    }
+
     pub fn found_remote(&mut self, remote: bool) {
         self.remote |= remote;
     }
 
-    /// Queues a commit of the saved `file` with `message`. Local only: the next sync pushes it.
-    /// `lock` is the write lock taken for the write, released once the commit is done; without
-    /// one the worker takes it.
-    pub fn commit(&mut self, file: PathBuf, message: String, lock: Option<todotxt::WriteLock>) {
+    /// Queues one commit of the saved `files` (the todo file first) with `message`. Local only:
+    /// the next sync pushes it. `lock` is the write lock taken for the write, released once the
+    /// commit is done; without one the worker takes it.
+    pub fn commit(
+        &mut self,
+        files: Vec<PathBuf>,
+        message: String,
+        lock: Option<todotxt::WriteLock>,
+    ) {
         if self
             .jobs
             .send(Job::Commit {
-                file,
+                files,
                 message,
                 lock,
             })
