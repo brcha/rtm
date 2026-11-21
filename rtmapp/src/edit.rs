@@ -1,5 +1,6 @@
 //! The edit dialog. Invalid dates or recurrence and tag names with whitespace are refused, and a
-//! typed `+` or `@` in front of a tag name is dropped. Delete and Move to each ask inline first.
+//! typed `+` or `@` in front of a tag name is dropped. A description that the file would read back
+//! as a different item is refused. Delete and Move to each ask inline first.
 
 use std::path::PathBuf;
 
@@ -96,7 +97,8 @@ impl EditForm {
         let contexts = names(&self.contexts, '@', "Contexts")?;
 
         let mut new = item.clone();
-        new.description = description.to_owned();
+        // Single spaces, as the line reads back.
+        new.description = description.split_whitespace().collect::<Vec<_>>().join(" ");
         new.priority = TodoPriority {
             priority: self.priority,
         };
@@ -112,9 +114,40 @@ impl EditForm {
             .map(|name| TodoContext { name })
             .collect();
         new.check_dates().map_err(|e| format!("Dates: {e}"))?;
+        read_back(&new)?;
         *item = new;
         Ok(())
     }
+}
+
+/// Refuses an item whose line reads back as a different item: text typed in the description
+/// that the file reads as a tag, a completion mark, a priority or a date.
+fn read_back(new: &TodoItem) -> Result<(), String> {
+    let back = new.to_string().parse::<TodoItem>().ok();
+    if back.as_ref() == Some(new) {
+        return Ok(());
+    }
+    let field = back.and_then(|back| {
+        if back.projects != new.projects {
+            Some("projects in the Projects field")
+        } else if back.contexts != new.contexts {
+            Some("contexts in the Contexts field")
+        } else if back.due != new.due {
+            Some("the due date in the Due Date field")
+        } else if back.threshold != new.threshold {
+            Some("the threshold in the Threshold field")
+        } else if back.recurrence != new.recurrence {
+            Some("the recurrence in the Recurrence field")
+        } else {
+            None
+        }
+    });
+    Err(match field {
+        Some(field) => format!("Description: put {field}"),
+        None => "Description: reads back as a different item; remove the leading \"x\", \
+                 priority or date, or the key:value tag"
+            .to_owned(),
+    })
 }
 
 fn join<'a>(names: impl Iterator<Item = &'a str>) -> String {
@@ -127,9 +160,9 @@ fn date(text: &str, field: &str) -> Result<Option<NaiveDate>, String> {
     if text.is_empty() {
         return Ok(None);
     }
-    NaiveDate::parse_from_str(text, DATE_FORMAT)
+    todotxt::strict_date(text)
         .map(Some)
-        .map_err(|_| format!("{field}: expected YYYY-MM-DD"))
+        .ok_or_else(|| format!("{field}: expected YYYY-MM-DD"))
 }
 
 /// An empty field means no recurrence.

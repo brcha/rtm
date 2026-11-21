@@ -158,6 +158,7 @@ todotxt/tests/
   stay in the description as written, so `TodoLibrary::load`, which skips lines that fail to
   parse, never drops one and the next save keeps it. A date (creation, completion, `due:`,
   `t:`) is exactly `YYYY-MM-DD` (RTM-205, `strict_date`): `2011-3-2` or `11-03-02` is text.
+  `strict_date` is public, so rtmapp's date fields accept the same form.
   The head (`x`, `(A)`, the dates) is read only at the start of the line, and `x` and `(A)`
   only when a space follows (RTM-212): a line that starts with whitespace, or `x` or `(A)`
   followed by a tab, is an open task with that text in its description.

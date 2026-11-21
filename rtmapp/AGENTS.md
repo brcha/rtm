@@ -319,8 +319,11 @@ rtmapp/
   date or recurrence, or a threshold after the due date (`check_dates`, shown as `Dates: …`), keeps
   the dialog open with a message and writes nothing; one leading `+` or `@` on a project or context
   name is stripped, and a name with whitespace is refused, since it would split into several words
-  on reload; Escape and a click outside the dialog cancel. **Delete** (RTM-24): a trash button at the
-  left of the button row, opposite Cancel/Save, asks inline. The question gets its own line above
+  on reload. Dates must be exactly `YYYY-MM-DD` (`todotxt::strict_date`). The description is
+  saved with single spaces, and an edit whose line would read back as a different item (a leading
+  `x`, priority or date, or a tag typed in the description) is refused with a message naming the
+  field to use. Escape and a click outside the dialog cancel. **Delete** (RTM-24): a trash button
+  at the left of the button row, opposite Cancel/Save, asks inline. The question gets its own line above
   the row ("Delete this item?", or "… and N sub-items?" with the count from `remove_item` on a copy
   of the library, since `uuid`/`sub` are not shown anywhere), and Delete (red) and Keep replace the
   trash button; Keep goes back, Escape or the backdrop cancel the whole dialog. **Move to**
