@@ -190,6 +190,9 @@ pub struct Worker {
     /// was not handled still counts, so the app never writes the file over an unhandled pull.
     pending: usize,
     syncs_pending: usize,
+    /// Commits sent and not yet reported back, counted apart from syncs: on exit a commit gets
+    /// `SAVE_TIMEOUT` even when the last sync is queued on the same worker.
+    commits_pending: usize,
     /// Whether the repository has a remote, as a check on open found; without one there is
     /// nothing to sync.
     remote: bool,
@@ -247,6 +250,7 @@ impl Worker {
             results,
             pending: 0,
             syncs_pending: 0,
+            commits_pending: 0,
             remote: false,
         }
     }
@@ -277,6 +281,7 @@ impl Worker {
             .is_ok()
         {
             self.pending += 1;
+            self.commits_pending += 1;
         }
     }
 
@@ -301,6 +306,10 @@ impl Worker {
         self.syncs_pending > 0
     }
 
+    pub fn committing(&self) -> bool {
+        self.commits_pending > 0
+    }
+
     /// The results of the jobs finished since the last call.
     pub fn poll(&mut self) -> Vec<Done> {
         let mut done = Vec::new();
@@ -320,6 +329,10 @@ impl Worker {
         self.pending -= 1;
         if sync {
             self.syncs_pending -= 1;
+        }
+        // Only a commit job reports these.
+        if matches!(done, Done::Committed | Done::NotCommitted { .. }) {
+            self.commits_pending -= 1;
         }
         done
     }
