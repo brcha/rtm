@@ -21,7 +21,9 @@ pub fn run() -> ! {
 /// added in the app is served without restarting the client.
 fn sources(path: PathBuf) -> Sources {
     std::sync::Arc::new(move || {
-        let files = configured(&AppConfig::load(&path));
+        let config =
+            AppConfig::load(&path).map_err(|e| format!("Could not read rtmapp's config {e}"))?;
+        let files = configured(&config);
         if files.is_empty() {
             return Err("No todo.txt files are configured in rtmapp".to_owned());
         }

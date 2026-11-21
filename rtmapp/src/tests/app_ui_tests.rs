@@ -191,7 +191,7 @@ fn a_file_chosen_in_the_dialog_opens_and_is_saved_in_the_config() {
 
     assert_eq!(rows(&harness), ["From the dialog"]);
     assert_eq!(start_buttons(&harness), 0);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     let canonical = resolve(&chosen).unwrap();
     assert_eq!(config.file_name.as_deref(), canonical.to_str());
     let _ = std::fs::remove_dir_all(dir);
@@ -346,13 +346,32 @@ fn the_filter_and_sort_toggles_change_the_list_and_are_saved() {
     harness.run();
     assert_eq!(rows(&harness), ["Future item", "Late item", "Early item"]);
 
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert!(config.show_completed_items && config.show_future_items);
     assert!(config.hide_no_date && config.reverse_sort);
     assert_eq!(
         std::fs::read_to_string(dir.join("todo.txt")).unwrap(),
         contents
     );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_config_that_does_not_parse_is_shown_and_never_saved() {
+    let dir = temp_dir("ui-bad-config");
+    let config_path = dir.join("config.toml");
+    let text = "[[files]]\npath = \"/todo/home.txt\"\nname = \"Home\"\nthis is = = not toml\n";
+    std::fs::write(&config_path, text).unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(900.0, 650.0))
+        .with_max_steps(60)
+        .build_eframe(|cc| App::with_config(cc, config_path.clone(), closed_url()));
+    harness.run();
+    harness.get_by_label_contains("Could not read the config");
+
+    harness.get_by_label("Show completed items").click();
+    harness.run();
+    assert_eq!(std::fs::read_to_string(&config_path).unwrap(), text);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -456,7 +475,7 @@ fn settings_saves_sync_and_the_interval() {
     harness.run();
 
     assert!(harness.query_by_label("Settings").is_none());
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert!(!config.sync);
     assert_eq!(config.sync_interval_minutes, 25);
     let _ = std::fs::remove_dir_all(dir);
@@ -514,7 +533,7 @@ fn settings_saves_the_archive_settings() {
     harness.get_by_label("Save").click();
     harness.run();
 
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert!(config.auto_archive);
     assert_eq!(config.archive_older_than_days, 7);
     let _ = std::fs::remove_dir_all(dir);
@@ -558,7 +577,7 @@ fn an_interval_above_the_field_range_survives_a_save() {
     harness.run();
     harness.get_by_label("Save").click();
     harness.run();
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.sync_interval_minutes, 2880);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -668,7 +687,7 @@ fn clicking_a_tab_shows_its_file_and_quick_add_goes_there() {
     let work = std::fs::read_to_string(dir.join("work.txt")).unwrap();
     assert!(work.contains("Send invoice"), "{work}");
     assert_eq!(file_lines(&dir), ["Alpha"]);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     let canonical = resolve(&dir.join("work.txt")).unwrap();
     assert_eq!(config.file_name.as_deref(), canonical.to_str());
     let _ = std::fs::remove_dir_all(dir);
@@ -685,7 +704,7 @@ fn closing_a_tab_removes_it_and_its_entry() {
 
     assert!(harness.query_by_role_and_label(Role::Tab, "Work").is_none());
     assert_eq!(rows(&harness), ["Alpha"]);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     let [entry] = config.files.as_slice() else {
         panic!("one entry: {:?}", config.files);
     };
@@ -694,7 +713,7 @@ fn closing_a_tab_removes_it_and_its_entry() {
 
     close_tab(&mut harness, "todo.txt", "Close tab");
     assert_eq!(start_buttons(&harness), 2);
-    assert_eq!(AppConfig::load(&dir.join("config.toml")).files, []);
+    assert_eq!(AppConfig::load(&dir.join("config.toml")).unwrap().files, []);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -761,7 +780,7 @@ fn the_start_buttons_leave_when_a_file_opens_and_return_when_every_tab_closes() 
     close_tab(&mut harness, "new.txt", "Close tab");
     assert_eq!(start_buttons(&harness), 2);
     assert!(!add_row_enabled(&harness));
-    assert_eq!(AppConfig::load(&dir.join("config.toml")).files, []);
+    assert_eq!(AppConfig::load(&dir.join("config.toml")).unwrap().files, []);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -957,7 +976,7 @@ fn settings_turns_the_check_on_and_picks_the_channel() {
     harness.get_by_label("Save").click();
     harness.run();
 
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert!(config.check_for_updates);
     assert_eq!(config.update_channel, "beta");
     let _ = std::fs::remove_dir_all(dir);
@@ -986,7 +1005,11 @@ fn turning_the_check_off_hides_the_notice() {
     harness.run();
 
     assert!(harness.query_by_label(NOTICE).is_none());
-    assert!(!AppConfig::load(&dir.join("config.toml")).check_for_updates);
+    assert!(
+        !AppConfig::load(&dir.join("config.toml"))
+            .unwrap()
+            .check_for_updates
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -1076,7 +1099,7 @@ fn a_collapsed_section_is_saved_and_stays_collapsed() {
     harness.get_by_label("Projects").click();
     harness.run();
     assert_eq!(tag_rows(&harness), ["@office 1"]);
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert!(config.projects_collapsed && !config.contexts_collapsed);
 
     // A new start on the saved config.
@@ -1257,7 +1280,7 @@ fn a_tab_s_archive_settings_turn_archiving_on_for_its_file_and_back() {
 
     // The config holds the plain Windows form, not `canonicalize`'s verbatim one.
     let path = resolve(&dir.join("todo.txt")).unwrap();
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     assert_eq!(config.archive_rule(&path), (true, 30));
     // On now, so the file is archived at once.
     assert_eq!(file_lines(&dir), ["Alpha"]);
@@ -1267,7 +1290,7 @@ fn a_tab_s_archive_settings_turn_archiving_on_for_its_file_and_back() {
     harness.run();
     harness.get_by_label("Save").click();
     harness.run();
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     let entry = config.entry(&path).unwrap();
     assert_eq!(
         (entry.auto_archive, entry.archive_older_than_days),
@@ -1297,7 +1320,7 @@ fn name_field<'h>(harness: &'h Harness<'_, App>, name: &'h str) -> egui_kittest:
 /// The `name` of the `[[files]]` entry of `file` in `dir`'s config. The entry keeps the path the
 /// harness wrote until a save stores the resolved one (the temp dir is a symlink on macOS).
 fn saved_name(dir: &Path, file: &str) -> Option<String> {
-    let config = AppConfig::load(&dir.join("config.toml"));
+    let config = AppConfig::load(&dir.join("config.toml")).unwrap();
     let path = dir.join(file);
     let canonical = resolve(&path).unwrap();
     config

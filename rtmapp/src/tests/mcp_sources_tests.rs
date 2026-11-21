@@ -89,3 +89,22 @@ fn no_files_is_an_error_for_the_client() {
     assert_eq!(error, "No todo.txt files are configured in rtmapp");
     cleanup(&path);
 }
+
+#[test]
+fn an_invalid_config_is_an_error_for_the_client() {
+    let path = temp_path("invalid");
+    std::fs::write(
+        &path,
+        "[[files]]\npath = \"/todo/home.txt\"\nsync = maybe\n",
+    )
+    .unwrap();
+    let error = sources(path.clone())().unwrap_err();
+    assert!(
+        error.starts_with(&format!(
+            "Could not read rtmapp's config {}:",
+            path.display()
+        )),
+        "{error}"
+    );
+    cleanup(&path);
+}

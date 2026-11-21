@@ -91,15 +91,18 @@ impl AppConfig {
         self.update_channel == "beta"
     }
 
-    /// Reads the config. A missing or invalid file gives the defaults. Nothing is written: a
-    /// migrated config reaches the file on the next save.
-    pub fn load(path: &Path) -> Self {
-        let mut config: AppConfig = std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| toml::from_str(&text).ok())
-            .unwrap_or_default();
+    /// Reads the config. A missing file gives the defaults; one that cannot be read or parsed is
+    /// an error naming the file. Nothing is written: a migrated config reaches the file on the
+    /// next save.
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let error = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
+        let mut config: AppConfig = match std::fs::read_to_string(path) {
+            Ok(text) => toml::from_str(&text).map_err(|e| error(&e))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => AppConfig::default(),
+            Err(e) => return Err(error(&e)),
+        };
         config.migrate();
-        config
+        Ok(config)
     }
 
     /// Brings a config from an older version (or edited by one) into the list of files: an entry

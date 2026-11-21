@@ -29,6 +29,7 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
             .map(|library| OpenFile::loaded(library, None))
             .collect(),
         error: None,
+        config_error: None,
         new_item: String::new(),
         editing: None,
         settings: None,

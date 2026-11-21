@@ -103,7 +103,12 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
 - **Config:** `rtm/config.toml` under `dirs::config_dir()`. The schema is the one versions up to 0.1.3
   wrote, so existing users' settings carry over: do not rename fields or change defaults
   (`#[serde(default)]` on `AppConfig`). The file is written after a successful file load (or creation), a tab
-  closed, clicked or renamed, a filter change or Save in the Settings dialog, never at startup. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
+  closed, clicked or renamed, a filter change or Save in the Settings dialog, never at startup.
+  A missing file gives the defaults. A file that exists but cannot be read or parsed
+  (`AppConfig::load` returns the error) also gives the defaults for the run, but `App::config_error`
+  shows the error on the app line and `save_config` writes nothing until the app restarts with the
+  file fixed, so the saved session is never replaced by the defaults. Nothing in the UI overwrites
+  it. Defaults live in a manual `impl Default` (since RTM-64, so `sync` can
   default to true): a new field gets its default there. Keys added for sync: `sync` (default true;
   false turns off commits as well as pulls and pushes) and, until RTM-124, a top-level `vcs`.
   `sync_interval_minutes` (RTM-20, default 10; 0 turns the timer off) sets the background sync.
@@ -217,6 +222,7 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     successful change or by loading the file again.
   - **the app line** (`App::error`): a config save, a New File or Load File that failed, "Please
     load a file first", an unparsable quick-add. Cleared by a successful config save or change.
+    Above it, a config file that could not be read (`App::config_error`), which nothing clears.
   So a file message stays when a filter changes, and a config or input error no longer hides it.
 - **Tabs (RTM-127, epic RTM-66):** every `[[files]]` entry opens at startup (`open_session`), in
   order, and the one `file_name` names is shown, else the first. A file that fails to load (missing,
@@ -353,7 +359,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   nothing else writes to stdout. Every `[[files]]` entry is served, `file_name`'s first as the
   default, with its tab name, its Git-or-Pijul choice (`sync::chosen`) and the config's `sync`. The
   config is read again at every tool call (it is small), so files added or renamed in the app reach
-  the client without a restart; a config with no files gives the client an error. On Windows the
+  the client without a restart; a config with no files, or one that cannot be read or parsed, gives
+  the client an error. On Windows the
   release build's `windows` subsystem still uses the stdin and stdout pipes the client passes
   (the Release workflow checks it on the MSI, see `doc/release-process.md`).
   Tests: `tests/mcp_sources_tests.rs`.
