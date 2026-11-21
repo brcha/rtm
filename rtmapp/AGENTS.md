@@ -214,7 +214,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
   it does not sync (`not_syncing`). Two error lines, the app's above the file's, each shown when set:
   - **the file line** (`OpenFile::error`): the configured file failing to load at startup, a
     conflict, "Don't open", a failed write, commit or reload, changes a pull dropped. Cleared by a
-    successful change or by loading the file again.
+    successful change or by loading the file again. A failed write keeps its changes pending:
+    the next flush that succeeds writes them (the next change, closing the tab, quitting), and
+    the tab refuses to close while they are pending.
   - **the app line** (`App::error`): a config save, a New File or Load File that failed, "Please
     load a file first", an unparsable quick-add. Cleared by a successful config save or change.
   So a file message stays when a filter changes, and a config or input error no longer hides it.
@@ -433,8 +435,8 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     app's pending changes wait for the check, then are redone on the file. The check job takes
     `todotxt::WriteLock` on the worker thread (`rtmsync::lock_target`), so another rtm process
     caught between its save and its commit is waited for instead of being asked about. A tab whose
-    changes are still pending (waiting for that check, or for a file that could not be read)
-    refuses to close, so they are not lost with it.
+    changes are still pending (waiting for that check, for a file that could not be read, or
+    after a failed write) refuses to close, so they are not lost with it.
   - **The write lock** (`todotxt::WriteLock` on `rtmsync::lock_target(file)`, the repository's
     directory, else the file; RTM-142) is shared with rtmcli and the MCP server. `OpenFile::flush`
     takes it first, then checks for outside changes, then saves: never the other way round, or
@@ -463,8 +465,9 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     whose `MoveOut` is not yet in `App::delivered` (the moves written to their targets, kept on
     `App` so closing the target cannot lose them) is not written at all, and cannot be closed.
     `App::flush` repeats its pass when a target was written, so a source listed first is freed in
-    the same flush. When the target's half is lost (a conflict or "Don't open" closes the target,
-    or its write fails), `restore_lost_moves` turns the `MoveOut` into an edit with the dialog's
+    the same flush. A target whose write fails keeps its half pending, and the source waits for
+    it. When the target's half is lost (a conflict or "Don't open" closes the target),
+    `restore_lost_moves` turns the `MoveOut` into an edit with the dialog's
     changes and reads the source again: the item stays, edited, and the file line says the move
     failed. A pull that changes the item before the source is written leaves it in both files: a
     duplicate, never a loss. A pull that changes it, or what moves with it, while the move question
@@ -506,7 +509,10 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     lists the todo file and the archive (`rtm: archive <description>` or `rtm: archive <n> items`,
     a line of `rtm: N changes` with others); an ignored archive is written and left out by
     `commit_files`. An archive that moved nothing adds nothing to the commit, and a write error
-    goes to the file line while the other changes are saved. While the todo file's
+    goes to the file line while the other changes are saved. When the todo file's save after it
+    fails, the archive stays pending with its items (`Change::due_archive` is then none): the
+    next flush does not archive again and commits the archive file with the save, and a reload
+    meanwhile keeps those items out of the list. While the todo file's
     outside-changes question is open, nothing is committed, so the archive stays pending until
     the answer. It also stays pending while the edit dialog is open on an item of the file, since
     the dialog keeps its item by position (`form.index`); it is written with the dialog's Save,

@@ -482,9 +482,9 @@ impl App {
 
     /// Puts an item back in its file when the arriving half of its move is lost: not written to the
     /// target, and no longer pending in a loaded file (the target was closed by a conflict or "Don't
-    /// open", or its write failed). The leaving half is replaced with the edit dialog's changes, if
-    /// any, and the source read again, so the item is where it was, edited. The source's file line
-    /// names it. True when an item was put back.
+    /// open"; a target whose write failed keeps its half pending). The leaving half is replaced
+    /// with the edit dialog's changes, if any, and the source read again, so the item is where it
+    /// was, edited. The source's file line names it. True when an item was put back.
     fn restore_lost_moves(&mut self) -> bool {
         let arriving = |id: u64| {
             self.files.iter().any(|file| {
@@ -1184,8 +1184,8 @@ impl App {
         };
         let mut repo = find_repo(&mut self.repos, file.repo.as_ref());
         // Closing is refused while the edit dialog is open, so there is no form to keep. Changes
-        // still pending (waiting for a check after an outside change, or for a file that could
-        // not be read) would be lost with the tab, so it stays.
+        // still pending (waiting for a check after an outside change, for a file that could not
+        // be read, or after a failed write) would be lost with the tab, so it stays.
         if !file.flush(repo.as_deref_mut(), &mut self.delivered, None, false)
             || file.checking
             || !file.pending.is_empty()
@@ -2103,7 +2103,7 @@ impl OpenFile {
     /// unless it has a job outstanding: it may be a pull about to change the file, and the changes
     /// are redone on what it brings. An item moved out of the file is removed from it on disk only
     /// after its target was written: the move's id is in `delivered`, to which this file's arriving
-    /// moves are added once written. False when the write failed.
+    /// moves are added once written. False when the write failed; the changes then stay pending.
     fn flush(
         &mut self,
         mut repo: Option<&mut RepoSync>,
@@ -2163,20 +2163,15 @@ impl OpenFile {
         if self.asking.is_some() || self.edited.is_some() {
             let (archives, rest) = changes
                 .into_iter()
-                .partition(|change| matches!(change, Change::Archive { .. }));
+                .partition(|change| change.due_archive().is_some());
             self.pending = archives;
             changes = rest;
         }
         // The archive is written here, under the lock and with the worker idle, since
         // `TodoLibrary::archive` appends to it at once; the later cutoff covers an earlier one.
-        let cutoff = changes
-            .iter()
-            .filter_map(|change| match change {
-                Change::Archive { cutoff, .. } => Some(*cutoff),
-                _ => None,
-            })
-            .max();
-        changes.retain(|change| !matches!(change, Change::Archive { .. }));
+        // One written before a failed save stays as it is, to be committed with the archive file.
+        let cutoff = changes.iter().filter_map(Change::due_archive).max();
+        changes.retain(|change| change.due_archive().is_none());
         if let Some(cutoff) = cutoff {
             match library.archive(Some(cutoff)) {
                 Ok(archived) if archived.is_empty() => {}
@@ -2191,6 +2186,9 @@ impl OpenFile {
         }
         if let Err(e) = library.save() {
             self.error = Some(format!("{}: {e}", library.file_name));
+            // Tried again with the next flush, ahead of anything held back or added since.
+            changes.append(&mut self.pending);
+            self.pending = changes;
             return false;
         }
         self.seen = disk_state(&self.path);
@@ -2264,6 +2262,8 @@ impl OpenFile {
 impl eframe::App for App {
     /// Writes and commits the pending changes and syncs once more, within a few seconds.
     fn on_exit(&mut self) {
+        // A write that failed earlier is tried once more.
+        self.flush();
         let deadline = Instant::now() + Duration::from_secs(5);
         self.finish_jobs(deadline);
         self.write_through_lock(Instant::now() + SAVE_TIMEOUT);
@@ -2462,7 +2462,8 @@ enum Change {
         id: u64,
     },
     /// Moves the done items completed before `cutoff` to the file's archive. Nothing changes in
-    /// the list until `OpenFile::flush` archives, which fills `archived` with the items moved.
+    /// the list until `OpenFile::flush` archives, which fills `archived` with the items moved; a
+    /// filled one stays pending when the save after it fails.
     Archive {
         cutoff: NaiveDate,
         archived: Vec<TodoItem>,
@@ -2496,7 +2497,15 @@ impl Change {
             // Not through `add_item`, which gives an item without one a creation date: a moved
             // item arrives as it was.
             Change::MoveIn { items, .. } => library.items.extend(items.iter().cloned()),
-            Change::Archive { .. } => {}
+            // Written to the archive before a failed save: kept out of the list read again. Never
+            // dropped, or the commit would leave the archive file out.
+            Change::Archive { archived, .. } => {
+                for item in archived {
+                    if let Some(index) = find(library, item) {
+                        library.items.remove(index);
+                    }
+                }
+            }
             Change::Delete { original, removing }
             | Change::MoveOut {
                 original, removing, ..
@@ -2511,6 +2520,14 @@ impl Change {
             }
         }
         true
+    }
+
+    /// The cutoff of an archive not written yet.
+    fn due_archive(&self) -> Option<NaiveDate> {
+        match self {
+            Change::Archive { cutoff, archived } if archived.is_empty() => Some(*cutoff),
+            _ => None,
+        }
     }
 
     fn move_out(&self) -> Option<u64> {
