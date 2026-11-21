@@ -59,7 +59,10 @@
   against `main` or `releases/**` is opened, edited, pushed to or reopened.
   - When the title lacks ` -- RTM-NN` and the branch name carries a key (`issues/RTM-27/foo`), it
     appends the key to the title. Then it checks the title: a conventional-commit type, one scope
-    from the list under "Commit subjects" in `AGENTS.md`, and ` -- RTM-NN` at the end.
+    from the list under "Commit subjects" in `AGENTS.md`, and ` -- RTM-NN` at the end. The edit
+    starts no new run and the check action reads only the event's old title, so after appending
+    the key the job checks the new title in a step of its own, against the same lists (job-level
+    `env` in `pr-title.yml`).
   - GitHub does not render the `RTM-NN` autolink in titles, so the job also starts the
     description with `Issue: [RTM-NN](https://brcha.atlassian.net/browse/RTM-NN)`, the key taken
     from the title. It adds the line when missing, replaces it when the title's key changes, and
