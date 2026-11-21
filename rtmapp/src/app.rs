@@ -1097,6 +1097,11 @@ impl App {
     /// Creates `path` empty and opens it. A file open in a tab is not replaced: its tab would keep
     /// the old items and write them back.
     fn create_file(&mut self, path: &Path) {
+        // `File::create` would write through the link, dangling or not.
+        if let Err(e) = todotxt::refuse_symlink(path) {
+            self.error = Some(e.to_string());
+            return;
+        }
         if let Ok(canonical) = resolve(path)
             && self
                 .files
@@ -2632,6 +2637,8 @@ fn resolve(path: &Path) -> std::io::Result<PathBuf> {
 
 /// `path` is the `PathBuf` from the file dialog, with no string or URI conversion in between.
 fn load_library(path: &Path) -> Result<TodoLibrary, String> {
+    // Before `resolve`, which would replace the link with its target.
+    todotxt::refuse_symlink(path).map_err(|e| e.to_string())?;
     let canonical = resolve(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut library = TodoLibrary::new(canonical.to_string_lossy().into_owned());
     library

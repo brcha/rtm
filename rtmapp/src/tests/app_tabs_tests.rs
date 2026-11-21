@@ -319,3 +319,33 @@ fn keeping_the_label_unchanged_writes_nothing() {
     assert!(!dir.join("config.toml").exists());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_entry_shows_why_in_its_tab_and_opening_its_target_loads_it_there() {
+    let dir = temp_dir("tabs symlink");
+    let todo = write(&dir, "todo.txt", "Alpha\n");
+    let real = write(&dir, "real.txt", "Real item\n");
+    let link = dir.join("link.txt");
+    let refusal = symlink(&real, &link);
+    let mut app = app_on_session(&dir, session(&[&link, &todo], &link));
+
+    assert_eq!(paths(&app), [link.as_path(), todo.as_path()]);
+    let shown = app.file().unwrap();
+    assert!(shown.library.is_none());
+    assert_eq!(shown.error.as_deref(), Some(refusal.as_str()));
+
+    app.open_file(&real);
+
+    assert_eq!(paths(&app), [real.as_path(), todo.as_path()]);
+    assert_eq!(app.file().unwrap().error, None);
+    assert_eq!(app.library().unwrap().items[0].description, "Real item");
+    let config = AppConfig::load(&dir.join("config.toml"));
+    let entries: Vec<_> = config
+        .files
+        .iter()
+        .map(|entry| entry.path.as_str())
+        .collect();
+    assert_eq!(entries, [real.to_str().unwrap(), todo.to_str().unwrap()]);
+    let _ = std::fs::remove_dir_all(dir);
+}

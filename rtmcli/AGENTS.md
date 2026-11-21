@@ -14,6 +14,7 @@ repository (RTM-21).
 rtmcli/src/
 └── main.rs     ← Single file: CLI definition + all command handlers
 rtmcli/tests/   ← Integration tests, running the binary on scratch files
+├── cli_archive_tests.rs   ← archive outside a repository: which items move where
 ├── cli_commands_tests.rs  ← add, list, complete, delete
 ├── cli_filter_tests.rs    ← The due-date filters of list and complete
 ├── cli_file_tests.rs      ← Finding the file: -f, $TODOTXT, todo.txt in the working directory
@@ -36,6 +37,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 | `add`          | Add a new item in Todo.txt format                        |
 | `complete`     | Complete items by filter, index, or UUID                 |
 | `delete`       | Delete an item and its sub-items, after confirmation     |
+| `archive`      | Move done items to the file's archive                    |
 | `sync`         | Pull and push the repository holding the file            |
 | `check-update` | Check whether a newer release of rtm exists              |
 | `mcp`          | Serve the file to MCP clients over stdio (RTM-116)       |
@@ -46,7 +48,9 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 
 - **Edition:** Rust 2024
 - File path resolved from: `-f <file>` flag → `$TODOTXT` env var → `todo.txt` (cwd fallback).
-  `-f` is global: it may come before or after the subcommand.
+  `-f` is global: it may come before or after the subcommand. A file that is a symbolic link is
+  refused right after the path is known, before the lock and the repository check
+  (`todotxt::refuse_symlink`): `Error: <message>`, exit 1, nothing pulled or written.
 - Filters: `today`, `week`, `all`, `overdue`, `future` (date-range based).
 - `list` takes any number of filter terms, in any order (RTM-123): at most one date filter, plus
   `+project` and `@context` terms. An item must match all of them (`TodoItem::matches`, see
@@ -63,6 +67,13 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   (`TodoLibrary::remove_item`), prints every line it will remove, and asks `Delete? [y/N]`;
   anything but `y`/`yes`, including no input, exits 0 without writing. `-y`/`--yes` skips the
   prompt.
+- `archive [--older-than DAYS]` moves done items to the file's archive (`TodoLibrary::archive`,
+  see `todotxt/AGENTS.md`: `done.txt` next to `todo.txt`, `<stem>.done.<ext>` otherwise) and
+  prints `Archived <n> item(s) from '<file>' to '<archive>':` with each line, indented. Without
+  `--older-than` (or `RTM_ARCHIVE_DAYS`, which it overrides) every done item moves; with it, only
+  items completed before today minus DAYS (`0`: before today), plus done items without a
+  completion date. Nothing to archive prints `No items to archive in '<file>'` and writes nothing.
+  It never asks: archiving moves lines, it deletes none.
 - No config file — stateless, all options via CLI args/env.
 
 ## Update check (RTM-137)
@@ -116,6 +127,14 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   `delete` then commit (`rtm: add <description>`, `rtm: complete <item>` or `rtm: complete <n>
   items`, `rtm: delete <item>`) and sync again (`Repo::commit_and_sync`). Without a remote they only
   commit, silently.
+- `archive` commits the file and its archive in one commit (`rtm: archive <item>` or `rtm: archive
+  <n> items`, `Repo::commit_files_and_sync`, which uses `Vcs::commit_files`); an untracked archive
+  is added. Before the pull it checks the archive as `Repo::find` checks the file
+  (`Repo::check_archive`): changes rtm did not commit exit 1 unless `--commit-changes`, which commits
+  them first as `rtm: commit outside changes`; a missing archive is not checked. After writing, an
+  archive the repository ignores is left out of the commit with a note on stderr (`'<archive>' is
+  ignored by <Vcs>; the archived items are not synced`); it is checked then, not before, so the first
+  archive, which creates the file, is reported too.
 - `complete` and `delete` resolve their items against the file **before** the pull, then find the
   same items (equal lines) after it; if one is gone or changed, nothing is written and rtmcli exits
   1, printing the item's new text when its UUID still exists.

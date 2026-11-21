@@ -72,6 +72,9 @@ them.
   of its sync jobs runs until the job ends, then writes them in one commit (see `rtmapp/AGENTS.md`).
   rtmcli (and the MCP server) pull before each change and push right after it; rtmapp's worker
   pushes on its schedule (RTM-20).
+- **Symlinked todo files are refused** by every frontend (`todotxt::refuse_symlink`), with a
+  message naming the link's target to open instead, so files kept next to the todo file always
+  sit next to the real one. Links among its parent directories are allowed.
 - **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`, or from
   `releases/vYY.M` for a PR against a release branch (see [Release Process](doc/release-process.md)).
   A cherry-pick of a merged change to a release branch goes on `cherry/RTM-NN/<slug>`, branched
@@ -123,7 +126,7 @@ them.
   - Every test works in scratch directories under the system temp directory and never reads or
     writes the user's real `rtm/config.toml` or todo.txt. A new test that runs a program removes
     the environment variables that would change its result (`TODOTXT`, `RTM_NO_SYNC`, `RTM_VCS`,
-    `RTM_UPDATE_URL`).
+    `RTM_UPDATE_URL`, `RTM_ARCHIVE_DAYS`).
 - **Epic close** (RTM-159): before closing an epic whose changes touch `rtmmcp/`, `todotxt/src/`
   (how a line is printed and parsed, which the MCP tools show and match on) or the `mcp` entry
   points (`rtmcli/src/main.rs`'s `mcp`, `rtmapp/src/mcp.rs`), run the LLM eval of the MCP tools,
@@ -147,6 +150,8 @@ them.
   - Work types: Epic, Story, Task, Bug, Spike; an issue's epic is its parent field. Links:
     "depends on", "blocks", "relates to".
   - Access: the Atlassian MCP, or the REST API with the credentials in `~/.config/rtm-jira/env`.
+  - Each new pull request is added to its issue's links by Jira Automation flows whose API token
+    expires on 2027-11-21; see "PR title and issue links" in [CI](doc/ci.md).
   - History before 2026-11-11 is also in the frozen YouTrack project RTM. `PER-N` keys are
     perseus_helm issues, which are still in YouTrack.
 - **Vercel bot comments** (RTM-141): `vercel[bot]` comments on every pull request with the

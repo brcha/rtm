@@ -218,6 +218,8 @@ fn write(
 ) -> Result<String, String> {
     // Everything up to the save refuses the change and leaves the file as it was.
     let refused = |e: String| format!("{e} Nothing was changed.");
+    // Before the lock and the pull, which a symlink would lead to the target's repository.
+    todotxt::refuse_symlink(&source.path).map_err(|e| refused(format!("{e}.")))?;
     // The repository's, not only the file's: a pull rewrites every file of the repository.
     let target = rtmsync::lock_target(&source.path);
     let _lock = WriteLock::acquire(&target)
@@ -240,6 +242,7 @@ fn write(
 }
 
 fn load(source: &Source) -> Result<TodoLibrary, String> {
+    todotxt::refuse_symlink(&source.path).map_err(|e| format!("{e}."))?;
     let mut lib = TodoLibrary::new(source.path.to_string_lossy().into_owned());
     lib.load()
         .map_err(|e| format!("Cannot read '{}': {e}.", source.path.display()))?;

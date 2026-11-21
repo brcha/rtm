@@ -47,6 +47,8 @@ rtmmcp/
   directory with both. `Sources` is a closure the server calls at the start of every tool call (the
   frontend may re-read its config); the first source is the default. A tool's `file` argument picks
   a source by name or path; anything else is refused. The client never names a path of its own.
+  A source that is a symbolic link is refused by every tool (`todotxt::refuse_symlink`), a write
+  before its lock and pull, with the message naming the target to configure instead.
 - **Server identity:** `rtm` for both frontends, with the same tools, so a client sees one server.
 - **One rtm server per client (`claim.rs`):** the first server takes `try_lock` on
   `mcp-client-<parent pid>.lock` in `todotxt::write_lock::lock_dir()`; a held lock is tried again

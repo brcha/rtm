@@ -124,9 +124,16 @@ branch is on pollster 1; upgrade `rfd` once that is released (RTM-84).
     moves into that entry (an older version wrote it for `file_name`, so it replaces the entry's
     choice) and is never written again. An older rtmapp drops `[[files]]` when it saves; the
     migration rebuilds the active entry from `file_name`. At startup, when a loaded file's
-    resolved path differs from its entry's (a symlink, `..`), the entry, and `file_name` when it
-    names it, take the resolved path in memory (`rename`), since entries are looked up by the
-    loaded file's path.
+    resolved path differs from its entry's (a symlinked directory, `..`), the entry, and
+    `file_name` when it names it, take the resolved path in memory (`rename`), since entries are
+    looked up by the loaded file's path.
+  - **Symlinked files are refused:** `load_library` calls `todotxt::refuse_symlink` before it
+    resolves the path, so a file that is itself a symbolic link is never opened: an entry shows
+    the message in its tab, a file picked in the open dialog shows it on the error line, and
+    `create_file` refuses a link named in the save dialog before `File::create` would write
+    through it. Opening the target then loads it into the entry's tab (`resolves_to` matches the
+    link's resolved path), which takes the target's path. The message comes from `todotxt`, which
+    has no `plain_path`, so on Windows its target is in the verbatim form.
   - **Plain Windows paths (RTM-217):** paths are resolved with `canonicalize`, which on Windows
     returns the verbatim form (`\\?\C:\…`, `\\?\UNC\server\share\…`), then converted to the plain
     one (`config::plain_path`, through `app::resolve`) everywhere the app resolves a path, so the
