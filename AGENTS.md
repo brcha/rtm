@@ -175,7 +175,8 @@ them.
 
   **Run-time-only libraries are the exception to item 1.** `rtmapp` links no native libraries beyond
   glibc: egui, winit, wgpu and the font provider load Wayland, xkbcommon, X11, GL, Vulkan and
-  fontconfig with `dlopen`. Those go only into the Nix `eguiDeps` list (put on the binary's rpath,
+  fontconfig with `dlopen`, and rfd's file dialog loads libdbus the same way. Those go only into
+  the Nix `eguiDeps` list (put on the binary's rpath,
   and, on Linux, on the dev shell's `LD_LIBRARY_PATH`); not into an apt step: `rust.yml` builds and
   tests without ever starting the GUI, and the Release workflow's smoke launches get them from the
   installed deb's `depends`, installing only its `suggests` and the Mesa drivers themselves. A new run-time library also goes into the `rtmapp` deb's `depends` (or `suggests`, if the

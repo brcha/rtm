@@ -28,6 +28,7 @@ let
     libxrandr
     libxi
     fontconfig
+    dbus
   ];
 
   # pname, version and meta from a crate's [package], so nothing here can drift from it.

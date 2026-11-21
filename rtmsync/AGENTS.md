@@ -155,7 +155,7 @@ rtmsync/
   unless `RTM_REQUIRE_PIJUL` is set. Its sync part clones the scratch repository twice; each clone
   keeps its todo.txt at the same depth (`a/sub`, `b/sub`), so the relative socket path still
   resolves.
-- CI (`rust.yml`) builds pijul 1.0.0-beta.24 on Linux and macOS, cached per OS and version, and
+- CI (`rust.yml`) builds pijul 1.0.0-beta.26 on Linux and macOS, cached per OS and version, and
   sets `RTM_REQUIRE_PIJUL=1`. Windows downloads the community build of 1.0.0-beta.11 linked from
   pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
   from source there (libsodium-sys's build script panics under MSVC, and pijul's own Windows code

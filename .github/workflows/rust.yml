@@ -62,9 +62,9 @@ jobs:
         # is a stub on Windows that always fails, so newer releases cannot record there.
         include:
           - os: ubuntu-latest
-            pijul: 1.0.0-beta.24
+            pijul: 1.0.0-beta.26
           - os: macos-latest
-            pijul: 1.0.0-beta.24
+            pijul: 1.0.0-beta.26
           - os: windows-latest
             pijul: 1.0.0-beta.11
             pijul-sha256: 7CD979499A37A8AF4AED237D5A3584F1B109281B39BC8CBD76D8CFC8D414B271

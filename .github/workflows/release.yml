@@ -276,7 +276,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-10-16
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable, 2026-11-15
         with:
           toolchain: stable
 
@@ -800,7 +800,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-10-16
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable, 2026-11-15
         with:
           toolchain: stable
 
@@ -813,7 +813,7 @@ jobs:
       # cannot run in this AlmaLinux 9 container (glibc 2.34). Version pinned and --locked, so a new
       # release cannot change the packages mid-run.
       - name: Install cargo-deb
-        run: cargo install cargo-deb --locked --version 3.7.0
+        run: cargo install cargo-deb --locked --version 3.8.0
 
       # Compiled for the same reasons as cargo-deb above. It writes the RPMs itself: no
       # rpmbuild or spec file to install.
@@ -1420,7 +1420,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-10-16
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable, 2026-11-15
         with:
           toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin

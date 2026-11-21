@@ -13,9 +13,9 @@ rtmmcp = { path = "../rtmmcp" }
 eframe = "0.37"
 chrono = "0.4.31"
 serde = { version = "1", features = ["derive"] }
-dirs = "5"
-toml = "0.8"
-rfd = "0.16"
+dirs = "7"
+toml = "1"
+rfd = "0.18"
 # Waits for rfd's async file dialog on its own thread (the one exception to "no async").
 pollster = "1"
 env_logger = { version = "0.11.11", default-features = false }
@@ -34,7 +34,7 @@ update-check = ["dep:rtmupdate"]
 
 # The taskbar ID (AppUserModelID); 0.52 is the version winit already pulls in.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_UI_Shell"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell"] }
 
 [dev-dependencies]
 # UI tests: drives App headless through the AccessKit tree; no snapshot (wgpu) features.
@@ -42,7 +42,7 @@ egui_kittest = { version = "0.37", features = ["eframe"] }
 
 # CoTaskMemFree, for the test that reads the ID back.
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Com"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Com"] }
 
 [build-dependencies]
 # Embeds the exe icon on Windows targets (see build.rs).
@@ -53,15 +53,15 @@ winresource = "0.1.34"
 # libc6 floor is that build image's glibc, so it changes with it. The rest is what the app needs on
 # Wayland (it loads these with dlopen, so no tool could see them): the Wayland client and xkbcommon, a GPU
 # API (OpenGL ES through EGL, or Vulkan), fontconfig (system fonts for glyphs missing from the bundled
-# Inter), and the XDG portal with a backend that has a file chooser (not the virtual
-# xdg-desktop-portal-backend: xdg-desktop-portal-wlr provides it without one). X11 support is optional,
-# and so are git and pijul (sync through the repository the todo.txt lives in).
+# Inter), libdbus (the file dialog's link to the portal), and the XDG portal with a backend that has a
+# file chooser (not the virtual xdg-desktop-portal-backend: xdg-desktop-portal-wlr provides it without
+# one). X11 support is optional, and so are git and pijul (sync through the repository the todo.txt lives in).
 [package.metadata.deb]
 name = "rtmapp"
 maintainer = "Filip Brcic <filip.brcic@brcha.com>"
 section = "utils"
 priority = "optional"
-depends = "libc6 (>= 2.34), libgcc-s1, libwayland-client0, libxkbcommon0, libegl1 | libvulkan1, libwayland-egl1, libfontconfig1, xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde"
+depends = "libc6 (>= 2.34), libgcc-s1, libwayland-client0, libxkbcommon0, libegl1 | libvulkan1, libwayland-egl1, libfontconfig1, libdbus-1-3, xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde"
 suggests = "libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon-x11-0, git, pijul"
 assets = [
     ["target/release/rtmapp", "usr/bin/", "755"],
@@ -102,6 +102,7 @@ assets = [
 "(libEGL.so.1()(64bit) or libvulkan.so.1()(64bit))" = "*"
 "libwayland-egl.so.1()(64bit)" = "*"
 "libfontconfig.so.1()(64bit)" = "*"
+"libdbus-1.so.3()(64bit)" = "*"
 xdg-desktop-portal = "*"
 "(xdg-desktop-portal-gtk or xdg-desktop-portal-gnome or xdg-desktop-portal-kde)" = "*"
 
