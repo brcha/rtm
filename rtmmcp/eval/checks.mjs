@@ -154,3 +154,31 @@ export function recurring(_output, context) {
     return failures;
   });
 }
+
+// The archive of home.txt (`TodoLibrary::archive_path`), empty when it was never written.
+const archived = () =>
+  fs.existsSync(path.join(dir, 'todo', 'home.done.txt')) ? lines('home.done.txt') : [];
+
+// Exactly the `moved` lines of home.txt (as the test started) went to its archive, by one
+// archive_items call; delete_item or edit_item never stand in for it.
+function archivedOnly(calls, moved) {
+  const failures = only(calls, ['archive_items']);
+  const archives = named(calls, 'archive_items');
+  if (archives.length !== 1) failures.push(`${archives.length} archive_items calls`);
+  const kept = lines('home.txt', 'start').filter((line) => !moved.includes(line));
+  if (JSON.stringify(lines('home.txt')) !== JSON.stringify(kept))
+    failures.push(`home.txt reads ${JSON.stringify(lines('home.txt'))}`);
+  if (JSON.stringify(archived()) !== JSON.stringify(moved))
+    failures.push(`the archive reads ${JSON.stringify(archived())}`);
+  return failures;
+}
+
+export function archiveAll(_output, context) {
+  return check(context, (calls) =>
+    archivedOnly(calls, ['x 2026-09-15 2026-09-01 Pay rent', 'x 2026-10-20 2026-10-18 Water the plants']),
+  );
+}
+
+export function archiveBefore(_output, context) {
+  return check(context, (calls) => archivedOnly(calls, ['x 2026-09-15 2026-09-01 Pay rent']));
+}

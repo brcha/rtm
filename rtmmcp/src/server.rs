@@ -1,3 +1,4 @@
+use chrono::{Days, NaiveDate};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -164,6 +165,43 @@ struct EditArgs {
     new_line: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct ArchiveArgs {
+    /// The file's name or path, as list_files shows it; the default file when left out.
+    file: Option<String>,
+    /// Only items completed more than this many days ago (0: before today). Leave it out, or
+    /// give completed_before instead.
+    older_than_days: Option<u32>,
+    /// Only items completed before this date, as YYYY-MM-DD. Leave it out, or give
+    /// older_than_days instead.
+    completed_before: Option<String>,
+}
+
+/// The date `archive_items` archives items completed before: from at most one of its arguments,
+/// none for every done item.
+fn archive_cutoff(
+    older_than_days: Option<u32>,
+    completed_before: Option<&str>,
+    today: NaiveDate,
+) -> Result<Option<NaiveDate>, String> {
+    match (older_than_days, completed_before) {
+        (Some(_), Some(_)) => {
+            Err("Give older_than_days or completed_before, not both. Nothing was changed.".into())
+        }
+        (Some(days), None) => Ok(Some(
+            today
+                .checked_sub_days(Days::new(days.into()))
+                .unwrap_or(NaiveDate::MIN),
+        )),
+        (None, Some(date)) => NaiveDate::parse_from_str(date.trim(), "%Y-%m-%d")
+            .map(Some)
+            .map_err(|_| {
+                format!("'{date}' is not a date in YYYY-MM-DD form. Nothing was changed.")
+            }),
+        (None, None) => Ok(None),
+    }
+}
+
 #[tool_router]
 impl Server {
     #[tool(
@@ -296,6 +334,33 @@ impl Server {
     }
 
     #[tool(
+        description = "Moves completed items to the file's archive: done.txt next to todo.txt, \
+            <name>.done.<ext> next to any other file. Open items never move, and nothing is lost: \
+            the items stay in the archive. Give older_than_days or completed_before, at most one, \
+            to keep recently completed items; a completed item without a completion date always \
+            moves. Returns the archive and the moved lines.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    async fn archive_items(
+        &self,
+        Parameters(args): Parameters<ArchiveArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let today = chrono::Local::now().date_naive();
+        let cutoff = match archive_cutoff(
+            args.older_than_days,
+            args.completed_before.as_deref(),
+            today,
+        ) {
+            Ok(cutoff) => cutoff,
+            Err(e) => return Ok(failure(e)),
+        };
+        self.on_file(args.file, move |source| {
+            tools::archive_items(source, cutoff)
+        })
+        .await
+    }
+
+    #[tool(
         description = "Deletes an item and its sub-items. Returns every line it removed. Ask the \
             user before deleting; completing an item is usually what they want.",
         annotations(read_only_hint = false, destructive_hint = true)
@@ -323,3 +388,7 @@ impl ServerHandler for Server {
 #[cfg(test)]
 #[path = "tests/server_duplicate_tests.rs"]
 mod duplicate_tests;
+
+#[cfg(test)]
+#[path = "tests/server_archive_tests.rs"]
+mod archive_tests;

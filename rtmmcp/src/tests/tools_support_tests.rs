@@ -29,6 +29,45 @@ pub(super) fn remove(source: Source) {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+pub(super) fn git(dir: &std::path::Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?}: {output:?}");
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+/// A synced source whose todo.txt holds "Buy milk", committed in a repository without a remote,
+/// with local config keeping the user's identity, signing, hooks and rerere out.
+pub(super) fn synced_source() -> Source {
+    synced_source_with("Buy milk\n")
+}
+
+/// `synced_source` with a todo.txt holding `lines`.
+pub(super) fn synced_source_with(lines: &str) -> Source {
+    let source = Source {
+        sync: true,
+        ..source_with(lines)
+    };
+    let dir = source.path.parent().unwrap();
+    std::fs::create_dir(dir.join("no hooks")).unwrap();
+    git(dir, &["init", "--quiet"]);
+    for (key, value) in [
+        ("user.name", "rtm test"),
+        ("user.email", "rtm@example.com"),
+        ("commit.gpgsign", "false"),
+        ("core.hooksPath", dir.join("no hooks").to_str().unwrap()),
+        ("rerere.enabled", "false"),
+    ] {
+        git(dir, &["config", key, value]);
+    }
+    git(dir, &["add", "todo.txt"]);
+    git(dir, &["commit", "--quiet", "-m", "start"]);
+    source
+}
+
 /// A not-synced source whose todo.txt is a symbolic link to `real.txt` holding `lines`, and the
 /// message refusing it.
 #[cfg(unix)]
