@@ -6,8 +6,9 @@ use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabiliti
 use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
+use todotxt::DateFilter;
 
-use crate::tools::{self, Due, Filter, Status};
+use crate::tools::{self, Filter, Status};
 use crate::{Source, Sources};
 
 /// What the assistant is told about the server.
@@ -105,16 +106,16 @@ enum StatusArg {
 #[derive(Deserialize, JsonSchema, Default, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 enum DueArg {
-    /// Any due date, or none.
+    /// Any item.
     #[default]
     All,
-    /// Due today.
+    /// Due date or threshold date (t:) today.
     Today,
-    /// Due within the next 7 days, today included.
+    /// Due date or threshold date (t:) within the next 7 days, today included.
     Week,
     /// Due before today.
     Overdue,
-    /// Due after today.
+    /// Not actionable yet: it has a due or threshold date, and every one it has is after today.
     Future,
 }
 
@@ -124,7 +125,7 @@ struct ListArgs {
     file: Option<String>,
     /// By completion; open items when left out.
     status: Option<StatusArg>,
-    /// By due date; any when left out.
+    /// By due or threshold date; any when left out.
     due: Option<DueArg>,
     /// Only items carrying every one of these projects (with or without the +).
     projects: Option<Vec<String>>,
@@ -199,8 +200,8 @@ impl Server {
 
     #[tool(
         description = "Lists the items of a todo.txt file, one per line: the item's number and \
-            its todo.txt line. Open items by default; filter by status, due date, projects, \
-            contexts and text.",
+            its todo.txt line. Open items by default; filter by status, due or threshold date, \
+            projects, contexts and text.",
         annotations(read_only_hint = true)
     )]
     async fn list_items(
@@ -214,11 +215,11 @@ impl Server {
                 StatusArg::All => Status::All,
             },
             due: match args.due.unwrap_or_default() {
-                DueArg::All => Due::All,
-                DueArg::Today => Due::Today,
-                DueArg::Week => Due::Week,
-                DueArg::Overdue => Due::Overdue,
-                DueArg::Future => Due::Future,
+                DueArg::All => DateFilter::All,
+                DueArg::Today => DateFilter::Today,
+                DueArg::Week => DateFilter::Week,
+                DueArg::Overdue => DateFilter::Overdue,
+                DueArg::Future => DateFilter::Future,
             },
             projects: args.projects.unwrap_or_default(),
             contexts: args.contexts.unwrap_or_default(),

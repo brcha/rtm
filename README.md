@@ -247,9 +247,12 @@ Projects in 'todo.txt':
 Names are compared without regard to case: `+Work` and `+work` are one project, shown as first
 spelled in the file. A tag with `(0)` is found only on completed items.
 
-`rtmcli list` takes projects and contexts as filters, in any order and next to a due-date filter
+`rtmcli list` takes projects and contexts as filters, in any order and next to a date filter
 (`today`, `week`, `all`, `overdue`, `future`); an item must match all of them, and `-c` lists
-completed items instead of open ones:
+completed items instead of open ones. `today` selects items whose due or threshold date (`t:`)
+is today, `week` those whose due or threshold date is within the next 7 days, `overdue` items
+due before today, and `future` items that have a due or threshold date and every one of them
+after today:
 
 ```
 $ rtmcli list +work @phone today
