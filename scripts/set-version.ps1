@@ -143,6 +143,8 @@ $targets = @(
     @{ Path = Join-Path $RepoRoot 'todotxt/Cargo.toml'; Handler = ${function:Set-TomlPackageVersion} }
 )
 
+# Check every target before writing any, so a failure leaves the tree untouched.
+$pending = @()
 foreach ($target in $targets) {
     $path = $target.Path
 
@@ -157,6 +159,13 @@ foreach ($target in $targets) {
         throw "Version key pattern not found in '$path'. The file may have been reformatted or " +
               'the key renamed/relocated; refusing to silently leave this file unversioned.'
     }
+
+    $pending += @{ Path = $path; Result = $result }
+}
+
+foreach ($item in $pending) {
+    $path = $item.Path
+    $result = $item.Result
 
     # UTF-8 without BOM, preserving the file's existing line endings verbatim (we only ever
     # touch the matched substring).
