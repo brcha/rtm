@@ -145,6 +145,36 @@ fn automatic_archiving_is_off_by_default() {
 }
 
 #[test]
+fn a_file_that_cannot_archive_does_not_shorten_the_repaint_wait() {
+    let dir = temp_dir("archive repaint");
+    let old = days_ago(60);
+    let mut app = app_with(&dir, &format!("Open\nx {old} Old\n"));
+    app.config.auto_archive = true;
+    let delays = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = delays.clone();
+    app.ctx
+        .set_request_repaint_callback(move |info| recorded.lock().unwrap().push(info.delay));
+    let start = Instant::now();
+    app.files[0].archived_at = Some(start);
+    let later = start + ARCHIVE_INTERVAL + Duration::from_secs(1);
+
+    let library = app.files[0].library.take();
+    app.archive_due(later);
+    assert_eq!(*delays.lock().unwrap(), []);
+    app.files[0].library = library;
+
+    app.files[0].archive_asking = true;
+    app.archive_due(later);
+    assert_eq!(*delays.lock().unwrap(), []);
+
+    app.files[0].archive_asking = false;
+    app.archive_due(later);
+    assert_eq!(done_lines(&dir), [format!("x {old} Old")]);
+    assert_eq!(*delays.lock().unwrap(), [ARCHIVE_INTERVAL]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn only_a_new_archive_rule_in_settings_archives_again() {
     let dir = temp_dir("archive settings");
     let mut app = app_with(&dir, "Open\n");
