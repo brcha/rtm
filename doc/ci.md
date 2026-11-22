@@ -53,6 +53,7 @@
     (`do_not_enforce_on_create`), so a release branch can be cut by pushing a `main` commit,
     which has no PR checks. Besides the checks, the
     ruleset forbids deleting and force-pushing those branches and allows only squash-merged PRs.
+  - A second ruleset, "Protect tags", covers every tag (see "Workflow token").
 
   A new required check needs the same shape: a gate job that always runs, not a path filter.
 - **PR title and issue links (RTM-219):** `pr-title.yml` (job `validate`) runs when a pull request
@@ -134,8 +135,10 @@
     visible only with write access (the release check in `version`), and `publish` creates the
     draft. Neither runs a build. The build jobs run dependencies' build scripts, and
     `actions/checkout` leaves the token in the git config, so they stay read-only.
-  - There is no tag ruleset, only the branch ruleset above, so a write token could create or
-    move tags. A job that builds or runs third-party code never gets `contents: write`.
+  - The ruleset "Protect tags" covers every tag (`~ALL`) and restricts creating, moving and
+    deleting tags. Its only bypass actor is the Repository admin role; workflow tokens are not
+    in the bypass list. A job that builds or runs third-party code still never gets
+    `contents: write`: draft releases and their assets are not covered by the ruleset.
   - `pr-title.yml`'s `pull-requests: write` and `claude-review.yml`'s `id-token: write` are
     described in their own entries.
 - **Claude review (RTM-147):** `claude-review.yml` runs Anthropic's `claude-code-action` with the
