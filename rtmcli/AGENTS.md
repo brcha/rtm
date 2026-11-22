@@ -62,6 +62,9 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   tags come from `todotxt`, see `todotxt/AGENTS.md`). They never write.
 - `add` refuses an item whose threshold date is after its due date (`TodoItem::check_dates`):
   it prints `Error: <message>` and exits 1 without writing.
+- `add` refuses text holding a line break (`\n` or `\r`, a trailing one too; the argument is not
+  trimmed) with `TodoItem::check_one_line`: it prints `Error: <message>` and exits 1 before
+  syncing or writing, instead of adding one item per line.
 - `add` creates the file when it does not exist. Any other load error (invalid UTF-8, no read
   permission) prints `Error loading file '<file>': <error>` and exits 1 without writing, so a
   file it cannot read is never replaced by the new item alone.

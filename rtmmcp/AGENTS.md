@@ -80,7 +80,8 @@ rtmmcp/
   repository check (another rtm process between its save and its commit would look like an outside
   change) until after the push; `RepoWrite::find`, pull, load, change, save, commit, pull and
   push. Every refusal in that sequence before the save ends with "Nothing was changed." (an
-  invalid line, a line whose threshold date is after its due date (`check_dates`, for `add_item`
+  invalid line (`add_item` and `edit_item` trim it, then refuse it empty or holding `\n` or `\r`,
+  `TodoItem::check_one_line`), a line whose threshold date is after its due date (`check_dates`, for `add_item`
   and `edit_item`), or an unknown `file`, refused before it starts, also changes nothing); after
   the save nothing fails the tool (a client might repeat a change that landed): a failed commit
   or push, and a conflict, are notes in the result.

@@ -168,6 +168,11 @@ todotxt/tests/
   `add_item`, `replace_item`, `complete_item` and `Display` accept such an item, so a line already
   in a file loads and saves unchanged. The next occurrence of a recurring item never breaks the
   rule: both dates move by the same interval, or keep their distance.
+- **`TodoItem::check_one_line(text)`** refuses entered text holding `\n` or `\r`
+  (`TodoItemLineError`, "give exactly one todo.txt line, without line breaks"): `from_str` keeps
+  them in the layout, so the item would be saved as several lines. rtmcli's `add` and the MCP
+  server's `add_item` and `edit_item` call it before parsing; rtmapp's single-line text fields
+  already replace pasted line breaks with spaces. Nothing in the library calls it.
 - **`is_future(today)`** says whether an item is not actionable yet: it has a threshold (`t:`) or
   due date, and every one it has is after `today`. A passed threshold or due date makes it current;
   an item without either is never future. rtmapp's "Show future items" uses it.

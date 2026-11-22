@@ -541,6 +541,10 @@ fn main() {
             }
         }
         Commands::Add { description } => {
+            if let Err(e) = TodoItem::check_one_line(&description) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
             if let Some(repo) = repo {
                 repo.sync();
             }
