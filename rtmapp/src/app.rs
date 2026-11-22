@@ -533,6 +533,7 @@ impl App {
             let mut restored = Vec::new();
             file.pending.retain_mut(|change| {
                 let Change::MoveOut {
+                    index,
                     original,
                     edited,
                     id,
@@ -550,6 +551,7 @@ impl App {
                     return false;
                 }
                 let edit = Change::Edit {
+                    index: *index,
                     original: original.clone(),
                     edited: edited.clone(),
                 };
@@ -622,6 +624,7 @@ impl App {
         if let Some(item) = items.iter_mut().find(|item| **item == original) {
             *item = edited.clone();
         }
+        let index = form.index;
         let id = self.next_move;
         self.next_move += 1;
         self.close_editor();
@@ -638,6 +641,7 @@ impl App {
             file.pending.push(arriving);
         }
         self.apply(Change::MoveOut {
+            index,
             original,
             edited,
             removing,
@@ -1654,7 +1658,7 @@ impl App {
     fn toggle(&mut self, index: usize) {
         let item = self.library().and_then(|l| l.items.get(index));
         if let Some(item) = item.cloned() {
-            self.apply(Change::Toggle(item));
+            self.apply(Change::Toggle { index, item });
         }
     }
 
@@ -1736,8 +1740,13 @@ impl App {
             form.error = Some(e);
             return;
         }
+        let index = form.index;
         self.close_editor();
-        self.apply(Change::Edit { original, edited });
+        self.apply(Change::Edit {
+            index,
+            original,
+            edited,
+        });
     }
 
     /// Shows the delete confirmation with the number of sub-items the delete would take, counted by
@@ -1795,7 +1804,11 @@ impl App {
         let removing = library.clone().remove_item(form.index);
         self.close_editor();
         if let (Some(original), Some(removing)) = (original, removing) {
-            self.apply(Change::Delete { original, removing });
+            self.apply(Change::Delete {
+                index: form.index,
+                original,
+                removing,
+            });
         }
     }
 
@@ -2262,7 +2275,7 @@ impl OpenFile {
         let (Some(form), Some(original)) = (form, &self.edited) else {
             return;
         };
-        let Some(index) = library.items.iter().position(|item| item == original) else {
+        let Some(index) = find_item(&library.items, form.index, original) else {
             self.stale = true;
             return;
         };
@@ -2447,17 +2460,23 @@ impl eframe::App for App {
 }
 
 /// A change to the list, kept until it is written, so it can be redone on the file a pull brought.
-/// Items are found by equality, so a change whose item the pull changed or removed is not redone.
+/// Items are found at the `index` they had when the change was made, else by equality
+/// (`find_item`), so a change whose item the pull changed or removed is not redone.
 #[derive(Clone)]
 enum Change {
     Add(TodoItem),
-    Toggle(TodoItem),
+    Toggle {
+        index: usize,
+        item: TodoItem,
+    },
     Edit {
+        index: usize,
         original: TodoItem,
         edited: TodoItem,
     },
     /// `removing`: the item and its sub-items, as the confirmation counted them.
     Delete {
+        index: usize,
         original: TodoItem,
         removing: Vec<TodoItem>,
     },
@@ -2472,6 +2491,7 @@ enum Change {
     /// `Delete` does; `to` is the target's tab label. `edited` is the item with the edit dialog's
     /// fields, kept if the move fails.
     MoveOut {
+        index: usize,
         original: TodoItem,
         edited: TodoItem,
         removing: Vec<TodoItem>,
@@ -2490,12 +2510,11 @@ enum Change {
 impl Change {
     /// Applies the change to `library`; false when its item is not there as it was.
     fn redo(&self, library: &mut TodoLibrary) -> bool {
-        let find = |library: &TodoLibrary, item| library.items.iter().position(|i| i == item);
         match self {
             // Sets the creation date when the item has none.
             Change::Add(item) => library.add_item(item.clone()),
-            Change::Toggle(item) => {
-                let Some(index) = find(library, item) else {
+            Change::Toggle { index, item } => {
+                let Some(index) = find_item(&library.items, *index, item) else {
                     return false;
                 };
                 if item.done {
@@ -2505,8 +2524,12 @@ impl Change {
                     library.complete_item(index);
                 }
             }
-            Change::Edit { original, edited } => {
-                let Some(index) = find(library, original) else {
+            Change::Edit {
+                index,
+                original,
+                edited,
+            } => {
+                let Some(index) = find_item(&library.items, *index, original) else {
                     return false;
                 };
                 library.items[index] = edited.clone();
@@ -2518,16 +2541,23 @@ impl Change {
             // dropped, or the commit would leave the archive file out.
             Change::Archive { archived, .. } => {
                 for item in archived {
-                    if let Some(index) = find(library, item) {
+                    if let Some(index) = library.items.iter().position(|i| i == item) {
                         library.items.remove(index);
                     }
                 }
             }
-            Change::Delete { original, removing }
+            Change::Delete {
+                index,
+                original,
+                removing,
+            }
             | Change::MoveOut {
-                original, removing, ..
+                index,
+                original,
+                removing,
+                ..
             } => {
-                let Some(index) = find(library, original) else {
+                let Some(index) = find_item(&library.items, *index, original) else {
                     return false;
                 };
                 if library.clone().remove_item(index).as_ref() != Some(removing) {
@@ -2558,8 +2588,10 @@ impl Change {
     fn describe(&self) -> String {
         match self {
             Change::Add(item) => format!("rtm: add {}", item.description),
-            Change::Toggle(item) if item.done => format!("rtm: uncomplete {}", item.description),
-            Change::Toggle(item) => format!("rtm: complete {}", item.description),
+            Change::Toggle { item, .. } if item.done => {
+                format!("rtm: uncomplete {}", item.description)
+            }
+            Change::Toggle { item, .. } => format!("rtm: complete {}", item.description),
             Change::Edit { original, .. } => format!("rtm: edit {}", original.description),
             Change::Delete { original, .. } => format!("rtm: delete {}", original.description),
             Change::MoveIn { items, from, .. } => {
@@ -2575,6 +2607,15 @@ impl Change {
             },
         }
     }
+}
+
+/// `index` while `item` is still there, so the clicked one of two identical lines is the one
+/// changed; else the first item equal to it, for a list a pull or an earlier change renumbered.
+fn find_item(items: &[TodoItem], index: usize, item: &TodoItem) -> Option<usize> {
+    if items.get(index) == Some(item) {
+        return Some(index);
+    }
+    items.iter().position(|i| i == item)
 }
 
 /// The file name of `path`, to name a file that is no longer open.

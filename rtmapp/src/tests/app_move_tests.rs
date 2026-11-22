@@ -40,6 +40,19 @@ fn an_item_moves_to_the_other_file() {
 }
 
 #[test]
+fn the_second_of_two_identical_lines_is_the_one_moved() {
+    let dir = temp_dir("move twice");
+    let (mut app, work) = two_files(&dir, "Call dentist\nOther\nCall dentist\n", "Report\n");
+
+    open_editor(&mut app, 2);
+    app.move_item(&work);
+
+    assert_eq!(file_lines(&dir), ["Call dentist", "Other"]);
+    assert_eq!(lines(&work), ["Report", "Call dentist"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn an_item_moves_with_its_sub_items() {
     let dir = temp_dir("move sub-items");
     let todo =
