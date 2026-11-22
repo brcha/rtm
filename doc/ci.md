@@ -128,6 +128,16 @@
     workflows still pass `toolchain: stable`, so the choice shows next to the SHA.
   - Workflows from fork pull requests wait for the maintainer's approval ("Require approval for
     all external contributors"), not only those from first-time contributors.
+- **Workflow token:** every workflow declares its `permissions`, `contents: read` unless a job
+  needs more, so a change to the repository's default (read today) cannot widen them.
+  - In `release.yml` only `version` and `publish` get `contents: write`: draft releases are
+    visible only with write access (the release check in `version`), and `publish` creates the
+    draft. Neither runs a build. The build jobs run dependencies' build scripts, and
+    `actions/checkout` leaves the token in the git config, so they stay read-only.
+  - There is no tag ruleset, only the branch ruleset above, so a write token could create or
+    move tags. A job that builds or runs third-party code never gets `contents: write`.
+  - `pr-title.yml`'s `pull-requests: write` and `claude-review.yml`'s `id-token: write` are
+    described in their own entries.
 - **Claude review (RTM-147):** `claude-review.yml` runs Anthropic's `claude-code-action` with the
   official `code-review` plugin. It reviews a pull request against `main` or `releases/**` and
   posts the findings as comments from `claude[bot]`.

@@ -178,7 +178,9 @@
   `dist-linux`, see "Linux (RTM-8)") → `publish` (`needs: [version, windows, linux, linux-deb,
   linux-deb-install, linux-rpm, macos]`, skipped on pull requests, downloads all artifact sets and
   performs the dry-run upload or draft-release publish exactly once). The `release` gate needs the
-  same jobs. The platform jobs deliberately do **not** call `softprops/action-gh-release` themselves —
+  same jobs. `version` and `publish` are the only jobs with `contents: write` (see "Workflow
+  token" in [CI](ci.md)). The platform jobs deliberately do **not** call
+  `softprops/action-gh-release` themselves —
   independent jobs calling it concurrently would race to create/update the same tagged release.
 - **Versioning:** `major.minor.patch`, all numeric, or a beta of a minor release,
   `major.minor.0-beta.N` (RTM-139). The MSI `ProductVersion` allows only numbers, and each package
