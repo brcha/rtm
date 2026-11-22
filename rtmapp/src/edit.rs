@@ -1,6 +1,7 @@
-//! The edit dialog. Invalid dates or recurrence and tag names with whitespace are refused, and a
-//! typed `+` or `@` in front of a tag name is dropped. A description that the file would read back
-//! as a different item is refused. Delete and Move to each ask inline first.
+//! The edit dialog: the item's todo.txt line, kept in sync with the fields below it in both
+//! directions. Invalid dates or recurrence and tag names with whitespace are refused, and a typed
+//! `+` or `@` in front of a tag name is dropped. A done item is shown read-only. Delete and Move to
+//! each ask inline first.
 
 use std::path::PathBuf;
 
@@ -17,13 +18,17 @@ const DATE_FORMAT: &str = "%Y-%m-%d";
 /// The fields of the dialog, as text, for the item at `index` in the file.
 pub struct EditForm {
     pub index: usize,
-    pub description: String,
+    /// The item's line as in the file, less its `uuid:` and `sub:` tags, which link sub-items and
+    /// are put back on Save.
+    pub line: String,
     pub priority: Option<u8>,
     pub due: String,
     pub threshold: String,
     pub recurrence: String,
     pub projects: String,
     pub contexts: String,
+    /// A done item: shown, but not edited (uncomplete it to edit it).
+    pub read_only: bool,
     /// Why the last Save was refused; shown above the buttons.
     pub error: Option<String>,
     /// While the delete confirmation is shown: how many sub-items go with the item.
@@ -32,6 +37,40 @@ pub struct EditForm {
     pub targets: Vec<MoveTarget>,
     /// While the move confirmation is shown: where to, and how many sub-items go with the item.
     pub confirm_move: Option<ConfirmMove>,
+    /// The line and the fields as of the last `sync`, to tell which of them changed since.
+    synced: Snapshot,
+}
+
+/// The line and the fields as text.
+#[derive(Clone, Default, PartialEq)]
+struct Snapshot {
+    line: String,
+    priority: Option<u8>,
+    due: String,
+    threshold: String,
+    recurrence: String,
+    projects: String,
+    contexts: String,
+}
+
+impl Snapshot {
+    /// The fields of `item`, without the line.
+    fn of(item: &TodoItem) -> Self {
+        let date = |d: Option<NaiveDate>| d.map(|d| d.format(DATE_FORMAT).to_string());
+        Snapshot {
+            line: String::new(),
+            priority: item.priority.priority,
+            due: date(item.due).unwrap_or_default(),
+            threshold: date(item.threshold).unwrap_or_default(),
+            recurrence: item
+                .recurrence
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default(),
+            projects: join(item.projects.iter().map(|p| p.name.as_str())),
+            contexts: join(item.contexts.iter().map(|c| c.name.as_str())),
+        }
+    }
 }
 
 /// An open file the edit dialog's item can be moved to.
@@ -61,93 +100,174 @@ pub enum Outcome {
 
 impl EditForm {
     pub fn new(index: usize, item: &TodoItem) -> Self {
-        let date = |d: Option<NaiveDate>| d.map(|d| d.format(DATE_FORMAT).to_string());
+        let shown = TodoItem {
+            uuid: None,
+            sub: None,
+            ..item.clone()
+        };
+        let synced = Snapshot {
+            line: shown.to_string(),
+            ..Snapshot::of(item)
+        };
+        let s = synced.clone();
         EditForm {
             index,
-            description: item.description.clone(),
-            priority: item.priority.priority,
-            due: date(item.due).unwrap_or_default(),
-            threshold: date(item.threshold).unwrap_or_default(),
-            recurrence: item
-                .recurrence
-                .as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_default(),
-            projects: join(item.projects.iter().map(|p| p.name.as_str())),
-            contexts: join(item.contexts.iter().map(|c| c.name.as_str())),
+            line: s.line,
+            priority: s.priority,
+            due: s.due,
+            threshold: s.threshold,
+            recurrence: s.recurrence,
+            projects: s.projects,
+            contexts: s.contexts,
+            read_only: item.done,
             error: None,
             confirm_delete: None,
             targets: Vec::new(),
             confirm_move: None,
+            synced,
         }
     }
 
-    /// Validates every field, then writes them to `item`. On an error `item` is left untouched.
-    /// Fields the dialog does not show (`done`, the completion and creation dates, `uuid`, `sub`) are
-    /// kept.
-    pub fn apply(&self, item: &mut TodoItem) -> Result<(), String> {
-        let description = self.description.trim();
-        if description.is_empty() {
-            return Err("Description is required".to_owned());
-        }
-        let due = date(&self.due, "Due date")?;
-        let threshold = date(&self.threshold, "Threshold")?;
-        let recurrence = recurrence(&self.recurrence)?;
-        let projects = names(&self.projects, '+', "Projects")?;
-        let contexts = names(&self.contexts, '@', "Contexts")?;
-
-        let mut new = item.clone();
-        // Single spaces, as the line reads back.
-        new.description = description.split_whitespace().collect::<Vec<_>>().join(" ");
-        new.priority = TodoPriority {
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            line: self.line.clone(),
             priority: self.priority,
+            due: self.due.clone(),
+            threshold: self.threshold.clone(),
+            recurrence: self.recurrence.clone(),
+            projects: self.projects.clone(),
+            contexts: self.contexts.clone(),
+        }
+    }
+
+    /// Carries the changes made since the last call from the line to the fields and back. A field
+    /// changed since is written into the line, unless it does not parse yet (`2026-1` while a date
+    /// is typed), which leaves its part of the line alone. When the line was edited, the fields
+    /// not changed since are filled from it. Run once a frame and before Save.
+    pub fn sync(&mut self) {
+        let was = self.synced.clone();
+        if self.snapshot() == was {
+            return;
+        }
+        let Ok(mut item) = self.line.parse::<TodoItem>() else {
+            return;
         };
-        new.due = due;
-        new.threshold = threshold;
-        new.recurrence = recurrence;
-        new.projects = projects
-            .into_iter()
-            .map(|name| TodoProject { name })
-            .collect();
-        new.contexts = contexts
-            .into_iter()
-            .map(|name| TodoContext { name })
-            .collect();
+        let mut written = false;
+        if self.priority != was.priority {
+            item.priority = TodoPriority {
+                priority: self.priority,
+            };
+            written = true;
+        }
+        if self.due != was.due
+            && let Ok(due) = date(&self.due, "")
+        {
+            item.due = due;
+            written = true;
+        }
+        if self.threshold != was.threshold
+            && let Ok(threshold) = date(&self.threshold, "")
+        {
+            item.threshold = threshold;
+            written = true;
+        }
+        if self.recurrence != was.recurrence
+            && let Ok(recurrence) = recurrence(&self.recurrence)
+        {
+            item.recurrence = recurrence;
+            written = true;
+        }
+        if self.projects != was.projects
+            && let Ok(projects) = names(&self.projects, '+', "")
+        {
+            item.projects = projects
+                .into_iter()
+                .map(|name| TodoProject { name })
+                .collect();
+            written = true;
+        }
+        if self.contexts != was.contexts
+            && let Ok(contexts) = names(&self.contexts, '@', "")
+        {
+            item.contexts = contexts
+                .into_iter()
+                .map(|name| TodoContext { name })
+                .collect();
+            written = true;
+        }
+        if self.line != was.line {
+            let read = Snapshot::of(&item);
+            if self.priority == was.priority {
+                self.priority = read.priority;
+            }
+            if self.due == was.due {
+                self.due = read.due;
+            }
+            if self.threshold == was.threshold {
+                self.threshold = read.threshold;
+            }
+            if self.recurrence == was.recurrence {
+                self.recurrence = read.recurrence;
+            }
+            if self.projects == was.projects {
+                self.projects = read.projects;
+            }
+            if self.contexts == was.contexts {
+                self.contexts = read.contexts;
+            }
+        }
+        if written {
+            self.line = item.to_string();
+        }
+        self.synced = self.snapshot();
+    }
+
+    /// Syncs, validates the line and the fields, then writes the line to `item`, with the item's
+    /// `uuid:` and `sub:` tags put back. On an error `item` is left untouched; so is a done item,
+    /// which the dialog does not edit, and an item the line leaves as it was.
+    pub fn apply(&mut self, item: &mut TodoItem) -> Result<(), String> {
+        if self.read_only {
+            return Ok(());
+        }
+        self.sync();
+        let line = self.line.trim();
+        TodoItem::check_one_line(line).map_err(|e| format!("Line: {e}"))?;
+        let mut new: TodoItem = line.parse().map_err(|e| format!("Line: {e}"))?;
+        if new.description.is_empty() {
+            return Err("Line: a description is required".to_owned());
+        }
+        if new.done {
+            return Err(
+                "Line: complete the item with its checkbox, not with a leading \"x\"".to_owned(),
+            );
+        }
+        if new.uuid.is_some() || new.sub.is_some() {
+            return Err("Line: uuid: and sub: tags link sub-items and cannot be typed".to_owned());
+        }
+        // The line holds every field that parses (`sync`); these are the ones that do not.
+        date(&self.due, "Due date")?;
+        date(&self.threshold, "Threshold")?;
+        recurrence(&self.recurrence)?;
+        names(&self.projects, '+', "Projects")?;
+        names(&self.contexts, '@', "Contexts")?;
+        new.uuid = item.uuid;
+        new.sub = item.sub;
         new.check_dates().map_err(|e| format!("Dates: {e}"))?;
         read_back(&new)?;
-        *item = new;
+        if new != *item {
+            *item = new;
+        }
         Ok(())
     }
 }
 
-/// Refuses an item whose line reads back as a different item: text typed in the description
-/// that the file reads as a tag, a completion mark, a priority or a date.
+/// Refuses an item whose line would read back as a different item.
 fn read_back(new: &TodoItem) -> Result<(), String> {
-    let back = new.to_string().parse::<TodoItem>().ok();
-    if back.as_ref() == Some(new) {
-        return Ok(());
+    if new.to_string().parse::<TodoItem>().ok().as_ref() == Some(new) {
+        Ok(())
+    } else {
+        Err("Line: reads back as a different item".to_owned())
     }
-    let field = back.and_then(|back| {
-        if back.projects != new.projects {
-            Some("projects in the Projects field")
-        } else if back.contexts != new.contexts {
-            Some("contexts in the Contexts field")
-        } else if back.due != new.due {
-            Some("the due date in the Due Date field")
-        } else if back.threshold != new.threshold {
-            Some("the threshold in the Threshold field")
-        } else if back.recurrence != new.recurrence {
-            Some("the recurrence in the Recurrence field")
-        } else {
-            None
-        }
-    });
-    Err(match field {
-        Some(field) => format!("Description: put {field}"),
-        None => "Description: reads back as a different item; remove the leading \"x\", \
-                 priority or date, or the key:value tag"
-            .to_owned(),
-    })
 }
 
 fn join<'a>(names: impl Iterator<Item = &'a str>) -> String {
@@ -244,6 +364,7 @@ pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Out
             // from the modal's previous size and stays too short; the dialog is about 560 px tall and
             // the window opens at 650 px. Revisit if the form grows or small windows matter.
             outcome = form_ui(ui, p, form);
+            form.sync();
         });
     // Escape or a click on the backdrop.
     if modal.should_close() {
@@ -253,7 +374,6 @@ pub fn show(ctx: &egui::Context, p: &Palette, form: &mut EditForm) -> Option<Out
 }
 
 fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
-    let mut submit = false;
     ui.spacing_mut().item_spacing = egui::vec2(16.0, 16.0);
     ui.label(
         RichText::new("Edit Item")
@@ -261,43 +381,52 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
             .color(p.text),
     );
     ui.add_space(4.0);
-    submit |= field(ui, p, "Description", &mut form.description, "");
-    ui.columns(2, |c| {
-        group(&mut c[0], "Priority", |ui, label| {
-            priority_combo(ui, p, &mut form.priority, label)
-        });
-        submit |= date_field(&mut c[1], p, "Due Date", &mut form.due, "Select due date");
-    });
-    ui.columns(2, |c| {
-        submit |= field(
-            &mut c[0],
-            p,
-            "Recurrence",
-            &mut form.recurrence,
-            "e.g., 1d, 1w, 1m",
-        );
-        submit |= date_field(
-            &mut c[1],
-            p,
-            "Threshold",
-            &mut form.threshold,
-            "Select threshold",
-        );
-    });
-    submit |= field(
-        ui,
-        p,
-        "Projects (comma separated)",
-        &mut form.projects,
-        "e.g., Work, Personal",
-    );
-    submit |= field(
-        ui,
-        p,
-        "Contexts (comma separated)",
-        &mut form.contexts,
-        "e.g., home, office",
-    );
+    let editable = !form.read_only;
+    // A done item's fields are shown disabled; Enter in them does not save.
+    let submit = ui
+        .add_enabled_ui(editable, |ui| {
+            let mut submit = false;
+            submit |= field(ui, p, "Line", &mut form.line, "");
+            ui.columns(2, |c| {
+                group(&mut c[0], "Priority", |ui, label| {
+                    priority_combo(ui, p, &mut form.priority, label)
+                });
+                submit |= date_field(&mut c[1], p, "Due Date", &mut form.due, "Select due date");
+            });
+            ui.columns(2, |c| {
+                submit |= field(
+                    &mut c[0],
+                    p,
+                    "Recurrence",
+                    &mut form.recurrence,
+                    "e.g., 1d, 1w, 1m",
+                );
+                submit |= date_field(
+                    &mut c[1],
+                    p,
+                    "Threshold",
+                    &mut form.threshold,
+                    "Select threshold",
+                );
+            });
+            submit |= field(
+                ui,
+                p,
+                "Projects (comma separated)",
+                &mut form.projects,
+                "e.g., Work, Personal",
+            );
+            submit |= field(
+                ui,
+                p,
+                "Contexts (comma separated)",
+                &mut form.contexts,
+                "e.g., home, office",
+            );
+            submit
+        })
+        .inner
+        && editable;
     if let Some(error) = &form.error {
         ui.label(RichText::new(error).color(p.due));
     }
@@ -312,7 +441,7 @@ fn form_ui(ui: &mut Ui, p: &Palette, form: &mut EditForm) -> Option<Outcome> {
     // Top-aligned: a centred cross axis would stretch the row over all the height below it.
     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        if theme::success_button(ui, "Save").clicked() {
+        if editable && theme::success_button(ui, "Save").clicked() {
             outcome = Some(Outcome::Save);
         }
         if theme::secondary_button(ui, "Cancel").clicked() {

@@ -127,7 +127,7 @@ fn saving_an_edit_writes_the_item_and_keeps_the_others() {
     let dir = temp_dir("edit");
     let mut app = app_with(&dir, "First\n(D) Second +Home\nThird\n");
     let form = open_editor(&mut app, 1);
-    form.description = "Second, edited".into();
+    form.line = "(D) Second, edited +Home".into();
     form.due = "2026-11-02".into();
 
     app.save_edit();

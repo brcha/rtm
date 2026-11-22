@@ -324,15 +324,26 @@ rtmapp/
   the dialog: it stays the question asked on open. Escape and the backdrop cancel, as in the edit
   dialog.
 - **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled from the item; Save (or
-  Enter in a field) writes the fields, then `save`. Fields the dialog does not show (done, dates of
-  completion and creation, `uuid`, `sub`) are kept. The priority dropdown offers A to Z; an invalid
+  Enter in a field) writes it, then `save`. The top field, Line, holds the item's line as in the
+  file, priority, creation date and tags in their written order, less its `uuid:` and `sub:` tags
+  (they link sub-items; Save puts them back, at the end of the line). The line and the fields
+  below stay in sync in both directions (`EditForm::sync`, once a frame and before Save, against a
+  snapshot of the last sync): a field changed since is written into the line through
+  `todotxt`'s in-place printing (a project or context added is appended, one removed goes from
+  wherever it stands, a date, recurrence or priority is replaced in place), unless it does not
+  parse yet (a date half typed), which leaves the line alone; when the line was edited, the
+  fields not changed since are filled from it, so a tag typed anywhere in the line shows in its
+  field at once (a `due:` once its date reads as one). Save takes the line as typed, so a project
+  or context stays where it was typed. It refuses an empty description, a leading `x` (complete
+  with the checkbox, which creates a recurring item's next occurrence), a typed `uuid:` or `sub:`
+  tag, and a line that would read back as a different item. A Save that changes nothing leaves the
+  line byte for byte. A done item opens read-only: the line and the fields are disabled and Save
+  is hidden; Delete and Move to still work. The priority dropdown offers A to Z; an invalid
   date or recurrence, or a threshold after the due date (`check_dates`, shown as `Dates: …`), keeps
   the dialog open with a message and writes nothing; one leading `+` or `@` on a project or context
   name is stripped, and a name with whitespace is refused, since it would split into several words
-  on reload. Dates must be exactly `YYYY-MM-DD` (`todotxt::strict_date`). The description is
-  saved with single spaces, and an edit whose line would read back as a different item (a leading
-  `x`, priority or date, or a tag typed in the description) is refused with a message naming the
-  field to use. Escape and a click outside the dialog cancel. **Delete** (RTM-24): a trash button
+  on reload. Dates must be exactly `YYYY-MM-DD` (`todotxt::strict_date`). Escape and a click
+  outside the dialog cancel. **Delete** (RTM-24): a trash button
   at the left of the button row, opposite Cancel/Save, asks inline. The question gets its own line above
   the row ("Delete this item?", or "… and N sub-items?" with the count from `remove_item` on a copy
   of the library, since `uuid`/`sub` are not shown anywhere), and Delete (red) and Keep replace the
@@ -340,7 +351,7 @@ rtmapp/
   (RTM-128), beside the trash button and shown only when another file is open and loaded, lists
   those files by tab name (a `Popup` made a sublayer of the dialog); picking one asks inline the
   same way ("Move this item to Work?", or "… and N sub-items to Work?"), with Move and Keep. Move
-  applies the dialog's fields as Save does, then moves the item (see "Moving an item" under Sync).
+  applies the dialog's edits as Save does, then moves the item (see "Moving an item" under Sync).
 - **Calendar** (`calendar.rs`): Due Date and Threshold are text fields (typing still works, as
   flatpickr's `allowInput` did) with a popup drawn at the sizes of the flatpickr popup of versions up
   to 0.1.3 (`rtmapp/src/assets/flatpickr.min.css` at `5076649`). It opens on a click or focus and closes on
@@ -564,7 +575,7 @@ rtmapp/
     description (and is toggled when done), like the row's text label, so queries name the role
     (`get_by_role_and_label(Role::CheckBox, …)`). The edit dialog's fields and the priority
     dropdown are `labelled_by` their labels; kittest then returns the field, not the label, for
-    `get_by_label("Description")`. The quick-add input is the only `Role::TextInput` outside the
+    `get_by_label("Line")`. The quick-add input is the only `Role::TextInput` outside the
     dialog, except a tab's name field while it is renamed (the rename tests find it by its value).
   - kittest's accessibility check is on: after each `run()`, any visible input without an
     accessible name fails the test. A new input needs a name (a linked label, `accessible_name`, or

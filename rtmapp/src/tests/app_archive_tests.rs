@@ -274,7 +274,7 @@ fn archived_while_editing_beta(name: &str) -> (PathBuf, App, String) {
     let old = format!("x {} Old", days_ago(60));
     let mut app = app_with(&dir, &format!("{old}\nAlpha\nBeta\nGamma\n"));
     app.config.auto_archive = true;
-    open_editor(&mut app, 2).description = "Beta edited".to_owned();
+    open_editor(&mut app, 2).line = "Beta edited".to_owned();
     app.archive_due(Instant::now());
     assert_eq!(file_lines(&dir), [old.as_str(), "Alpha", "Beta", "Gamma"]);
     (dir, app, old)
