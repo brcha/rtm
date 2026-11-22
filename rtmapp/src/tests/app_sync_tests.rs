@@ -6,7 +6,10 @@ fn a_commit_message_names_only_the_description() {
     let item: TodoItem = "(A) 2026-10-30 Pay bill +Home @online due:2026-11-01 rec:w"
         .parse()
         .unwrap();
-    assert_eq!(Change::Toggle(item).describe(), "rtm: complete Pay bill");
+    assert_eq!(
+        Change::Toggle { index: 0, item }.describe(),
+        "rtm: complete Pay bill"
+    );
 }
 
 // Sync: scratch git remotes and clones on local paths, no network.

@@ -315,6 +315,68 @@ fn deleting_an_item_with_sub_items_asks_and_removes_them_all() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Two identical lines with another between them, so the file shows which of the two changed.
+const TWICE: &str = "Call dentist\nOther\nCall dentist\n";
+
+/// The second of the two `Call dentist` nodes with `role`: the file's third line.
+fn second_call<'h>(harness: &'h Harness<'_, App>, role: Role) -> egui_kittest::Node<'h> {
+    harness
+        .get_all_by_role_and_label(role, "Call dentist")
+        .nth(1)
+        .unwrap()
+}
+
+#[test]
+fn the_checkbox_of_the_second_identical_line_completes_that_line() {
+    let dir = temp_dir("ui-twice-toggle");
+    let mut harness = harness(&dir, TWICE, |_| {});
+
+    second_call(&harness, Role::CheckBox).click();
+    harness.run();
+
+    let done = format!("x {} Call dentist", today());
+    assert_eq!(file_lines(&dir), ["Call dentist", "Other", done.as_str()]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn saving_the_second_identical_line_edits_that_line() {
+    let dir = temp_dir("ui-twice-edit");
+    let mut harness = harness(&dir, TWICE, |_| {});
+
+    second_call(&harness, Role::Label).click();
+    harness.run();
+    let description = harness.get_by_label("Description");
+    description.focus();
+    harness.key_combination_modifiers(egui::Modifiers::COMMAND, &[Key::A]);
+    description.type_text("Call the dentist");
+    harness.run();
+    harness.get_by_label("Save").click();
+    harness.run();
+
+    assert_eq!(
+        file_lines(&dir),
+        ["Call dentist", "Other", "Call the dentist"]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn deleting_the_second_identical_line_removes_that_line() {
+    let dir = temp_dir("ui-twice-delete");
+    let mut harness = harness(&dir, TWICE, |_| {});
+
+    second_call(&harness, Role::Label).click();
+    harness.run();
+    harness.get_by_label("Delete item").click();
+    harness.run();
+    harness.get_by_label("Delete").click();
+    harness.run();
+
+    assert_eq!(file_lines(&dir), ["Call dentist", "Other"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn the_filter_and_sort_toggles_change_the_list_and_are_saved() {
     let dir = temp_dir("ui-filters");

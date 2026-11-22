@@ -409,7 +409,8 @@ rtmapp/
     every repository) and on exit. The timer and the results run in `App::logic`, which eframe also calls
     while the window is minimized or hidden; `request_repaint_after` wakes it when a sync is due.
   - **Editing never waits.** Each mutation is a `Change` (add, toggle, edit, delete) applied to the
-    list at once and kept in its file's `pending` until written. `flush` writes a file and queues one
+    list at once and kept in its file's `pending` until written. A change keeps its item's index,
+    so a click on the second of two identical lines changes that line. `flush` writes a file and queues one
     `Commit` only while its repository's worker is idle (`Worker::busy`: jobs sent whose result was
     not handled yet, so a pull whose reload has not happened still counts); changes made during a
     job wait in memory and make one commit (`rtm: N changes`, one line each). Messages name the
@@ -418,9 +419,11 @@ rtmapp/
     outstanding; nothing else. New File and Load File no longer wait for jobs (until RTM-127 they
     replaced the shown file); adding a tab leaves the other files alone.
   - **A pull that changed files** (also one whose push then failed: `NotSynced { changed }`)
-    reloads each of them and redoes its `pending` on it, finding each item by equality (with two identical lines,
-    the first); a change whose item the pull changed or removed is dropped and named in the file's
-    error line. The edit dialog's item (kept in `edited`) is then found again; if it is gone, or what
+    reloads each of them and redoes its `pending` on it, finding each item at the index it had
+    when it is still there, else by equality (with two identical lines, the first; `find_item`);
+    a change whose item the pull changed or removed is dropped and named in the file's error line.
+    The edit dialog's item (kept
+    in `edited`) is then found again the same way, from `form.index`; if it is gone, or what
     deleting or moving it would take changed, `stale` makes Save, Delete and Move refuse. The header
     shows the shown file's repository: "Syncing…", or "Not synced: …" (git's first line; the rest
     on hover) after a failed pull or push; for a file outside any repository, why it does not sync.
