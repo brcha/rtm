@@ -16,7 +16,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         # The packages are defined once, in default.nix.
-        inherit (import ./default.nix { inherit pkgs; craneLib = crane.mkLib pkgs; }) rtmcli rtmapp;
+        inherit (import ./default.nix { inherit pkgs; craneLib = crane.mkLib pkgs; }) rtmcli rtmapp ci;
       in {
         packages = {
           inherit rtmcli rtmapp;
@@ -28,6 +28,9 @@
           rtmapp = flake-utils.lib.mkApp { drv = rtmapp; };
           default = flake-utils.lib.mkApp { drv = rtmcli; };
         };
+
+        # What nix.yml builds: both packages without LTO, tests included.
+        checks = { inherit (ci) rtmcli rtmapp; };
 
         devShells.default = import ./shell.nix { inherit pkgs; };
       }

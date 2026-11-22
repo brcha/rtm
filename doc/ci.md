@@ -105,10 +105,12 @@
 - **Nix cache:** `nix.yml`'s `build` job uses the public Cachix cache `rtm`
   (`cachix/cachix-action`, https://rtm.cachix.org) as a binary cache next to cache.nixos.org.
   - It downloads every derivation an earlier run built, on any branch, and pushes every
-    derivation this run builds: the `-deps` derivations, which hold the compiled dependencies (see
-    "Two-stage build" in [Nix Packaging](nix-packaging.md)), the packages and whatever else it
-    builds. Paths that cache.nixos.org serves are not stored.
-  - A run with unchanged inputs downloads both packages and compiles nothing; a change to the
+    derivation this run builds: the flake's checks (both packages built with the CI build profile,
+    see [Nix Packaging](nix-packaging.md)), their `-deps` derivations, which hold the compiled
+    dependencies (see "Two-stage build" there), and whatever else it builds. The packages users
+    install are not built in CI, so the cache does not hold them. Paths that cache.nixos.org
+    serves are not stored.
+  - A run with unchanged inputs downloads both checks and compiles nothing; a change to the
     sources only downloads the `-deps` derivations and compiles the workspace crates.
   - Entries are keyed by derivation hash, so they always match the nixpkgs pin, crane and
     `Cargo.lock` of the run: after a bump the old entries are simply not asked for.

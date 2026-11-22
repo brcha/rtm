@@ -72,9 +72,11 @@ jobs:
         name: rtm
         authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-    # The check phase runs the test suites, the sync tests with git and pijul among them.
-    - name: Build the flake
-      run: nix build -L .#rtmcli .#rtmapp
+    # The flake's checks build both packages with the `ci` cargo profile (no LTO) and run their
+    # test suites, the sync tests with git and pijul among them. The packages users install are
+    # evaluated, not built; release.yml covers their LTO link.
+    - name: Build and test the flake checks
+      run: nix flake check -L
 
   # The check the main ruleset requires: passes when the builds passed, or were skipped
   # because the pull request changes none of their inputs; fails when any of them failed or was
