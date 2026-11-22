@@ -159,10 +159,12 @@ rtmapp/
 - **Projects and contexts (RTM-120, epic RTM-118):** the sidebar shows the shown tab's
   `TodoLibrary::projects` and `contexts` below the view checkboxes (`App::tags`, `tag_section`):
   a collapsing header per section ("Projects", "Contexts") and a row per tag, in the list's
-  project or context colour (muted when no open item carries it), with its open-item count at the
-  right; the order, case merging and counts come from `todotxt` (see `todotxt/AGENTS.md`), so they
-  match `rtmcli projects`. An empty section says "No projects" / "No contexts"; no sections while
-  no file is shown or its tab is not loaded. Drawn each frame from the library, so they follow
+  project or context colour, with its open-item count at the right; the order, case merging and
+  counts come from `todotxt` (see `todotxt/AGENTS.md`), so they match `rtmcli projects`. A tag
+  that no open item carries is left out, which `rtmcli projects` does not do, unless "Show
+  completed items" is checked (the list then shows its done items) or the tag is selected (so
+  completing an item never changes the filter); such a row is muted. An empty section says "No
+  projects" / "No contexts"; no sections while no file is shown or its tab is not loaded. Drawn each frame from the library, so they follow
   every change, reload and tab switch. A click on a header flips `projects_collapsed` /
   `contexts_collapsed` and saves the config, like the view checkboxes. The `Total items` footer is
   laid out first (bottom-up) and the sections scroll above it.

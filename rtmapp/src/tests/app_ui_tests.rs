@@ -1214,11 +1214,55 @@ fn the_sidebar_lists_projects_and_contexts_with_open_counts() {
     let dir = temp_dir("ui-tags");
     let contents = "Write the report +work @office\nCall the client +Work @phone\n\
                     x 2026-01-01 Plant bulbs +garden\n";
-    let harness = harness(&dir, contents, |_| {});
+    let mut harness = harness(&dir, contents, |_| {});
+    // A tag on done items only is listed only while done items are shown.
+    assert_eq!(tag_rows(&harness), ["+work 2", "@office 1", "@phone 1"]);
+    harness.get_by_label("Show completed items").click();
+    harness.run();
     assert_eq!(
         tag_rows(&harness),
         ["+garden 0", "+work 2", "@office 1", "@phone 1"]
     );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_entry_leaves_with_its_last_active_item_and_returns_with_a_new_one() {
+    let dir = temp_dir("ui-tags-active");
+    let mut harness = harness(&dir, "Fix the fence +home @garden\n", |_| {});
+    assert_eq!(tag_rows(&harness), ["+home 1", "@garden 1"]);
+
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Fix the fence")
+        .click();
+    harness.run();
+    assert!(tag_rows(&harness).is_empty());
+    harness.get_by_label("No projects");
+    harness.get_by_label("No contexts");
+
+    // Marked not done (from the list showing done items, then hidden again).
+    harness.get_by_label("Show completed items").click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Fix the fence")
+        .click();
+    harness.run();
+    harness.get_by_label("Show completed items").click();
+    harness.run();
+    assert_eq!(tag_rows(&harness), ["+home 1", "@garden 1"]);
+
+    // Done again, then a new item carrying the tags.
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Fix the fence")
+        .click();
+    harness.run();
+    assert!(tag_rows(&harness).is_empty());
+    let input = harness.get_by_role(Role::TextInput);
+    input.focus();
+    input.type_text("Paint the fence +home @garden");
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(tag_rows(&harness), ["+home 1", "@garden 1"]);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -1240,7 +1284,7 @@ fn the_sidebar_follows_changes_and_tabs() {
         .get_by_role_and_label(Role::CheckBox, "Water plants")
         .click();
     harness.run();
-    assert_eq!(tag_rows(&harness), ["+home 0"]);
+    assert!(tag_rows(&harness).is_empty());
 
     tab(&harness, "Work").click();
     harness.run();
@@ -1341,14 +1385,44 @@ fn the_tag_filter_combines_with_the_view_settings() {
     let dir = temp_dir("ui-filter-view");
     let mut harness = harness(&dir, TAGGED, |_| {});
 
+    harness.get_by_label("Show completed items").click();
+    harness.run();
     harness.get_by_label("+garden").click();
+    harness.run();
+    assert_eq!(rows(&harness), ["Plant bulbs"]);
+
+    // The selected tag stays listed once done items are hidden.
+    harness.get_by_label("Show completed items").click();
     harness.run();
     assert!(rows(&harness).is_empty());
     harness.get_by_label("No items found.");
+    assert!(tag_rows(&harness).contains(&"+garden 0 (selected)".to_owned()));
+    let _ = std::fs::remove_dir_all(dir);
+}
 
-    harness.get_by_label("Show completed items").click();
+#[test]
+fn a_selected_tag_stays_listed_after_its_last_active_item_is_done() {
+    let dir = temp_dir("ui-filter-done");
+    let mut harness = harness(&dir, TAGGED, |_| {});
+
+    harness.get_by_label("+home").click();
     harness.run();
-    assert_eq!(rows(&harness), ["Plant bulbs"]);
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Fix the fence")
+        .click();
+    harness.run();
+    assert!(rows(&harness).is_empty());
+    assert!(tag_rows(&harness).contains(&"+home 0 (selected)".to_owned()));
+    harness.get_by_label("Clear filter (1)");
+
+    harness.get_by_label("+home").click();
+    harness.run();
+    assert!(
+        !tag_rows(&harness)
+            .iter()
+            .any(|row| row.starts_with("+home"))
+    );
+    assert_eq!(rows(&harness), ["Write the report", "Call the client"]);
     let _ = std::fs::remove_dir_all(dir);
 }
 
