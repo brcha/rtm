@@ -12,11 +12,16 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # Every title names one scope from this list, the one in AGENTS.md (change both together).
+    # The empty scope "" is left out so that a title without a scope fails.
+    env:
+      TASK_TYPES: '["feat","fix","docs","test","ci","build","refactor","perf","style","chore","revert"]'
+      SCOPE_TYPES: '["todotxt","rtmcli","rtmapp","rtmsync","rtmupdate","rtmmcp","site","release","nix","github","workspace"]'
     steps:
       # If the branch name carries an RTM-NN reference (e.g. issues/RTM-27/foo) and the PR
       # title doesn't already end with " -- RTM-NN", append it automatically. Edits made with
       # the workflow token start no new run, so the validate step below is skipped on this run:
-      # it would check the event's old title, not the fixed one.
+      # it would check the event's old title. "Validate the fixed title" checks the new one.
       - name: Autofix PR title from branch name
         id: autofix
         env:
@@ -38,9 +43,10 @@ jobs:
             exit 0
           fi
 
-          gh pr edit "$PR_NUMBER" --repo "${{ github.repository }}" \
-            --title "${PR_TITLE} -- ${ticket}"
+          title="${PR_TITLE} -- ${ticket}"
+          gh pr edit "$PR_NUMBER" --repo "${{ github.repository }}" --title "$title"
           echo "patched=true" >> "$GITHUB_OUTPUT"
+          printf 'title=%s\n' "$title" >> "$GITHUB_OUTPUT"
 
       # GitHub does not render autolinks in PR titles, so the description starts with a link to
       # the issue named in the title: added when missing, replaced when the title's key changes,
@@ -97,13 +103,27 @@ jobs:
           printf '%s' "$new" > "$RUNNER_TEMP/pr-body.md"
           gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/pr-body.md"
 
-      # Every title names one scope from this list, the one in AGENTS.md (change both together).
-      # The empty scope "" is left out so that a title without a scope fails.
+      # The same rules as the action below, which reads only the event's title: optional leading
+      # spaces, type, one scope, optional "!", ": ", and the key at the end.
+      - name: Validate the fixed title
+        if: steps.autofix.outputs.patched == 'true'
+        env:
+          TITLE: ${{ steps.autofix.outputs.title }}
+        run: |
+          set -euo pipefail
+
+          types=$(jq -r 'join("|")' <<<"$TASK_TYPES")
+          scopes=$(jq -r 'join("|")' <<<"$SCOPE_TYPES")
+          if ! printf '%s' "$TITLE" | grep -qE -- "^[[:space:]]*(${types})\((${scopes})\)!?: .* -- RTM-[0-9]+\$"; then
+            echo "::error::PR title \"$TITLE\" needs a type (${types//|/, }) and one scope (${scopes//|/, }), as in \"fix(github): summary -- RTM-NN\". Editing the title runs this check again."
+            exit 1
+          fi
+
       - name: Validate PR title
         if: steps.autofix.outputs.patched != 'true'
         uses: ytanikin/pr-conventional-commits@639145d78959c53c43112365837e3abd21ed67c1 # 1.5.2
         with:
-          task_types: '["feat","fix","docs","test","ci","build","refactor","perf","style","chore","revert"]'
-          scope_types: '["todotxt","rtmcli","rtmapp","rtmsync","rtmupdate","rtmmcp","site","release","nix","github","workspace"]'
+          task_types: ${{ env.TASK_TYPES }}
+          scope_types: ${{ env.SCOPE_TYPES }}
           title_regex: ' -- RTM-\d+$'
           add_label: 'true'
