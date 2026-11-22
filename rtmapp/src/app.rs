@@ -1569,7 +1569,8 @@ impl App {
         });
     }
 
-    /// The shown file's projects and contexts with their open-item counts, in sections
+    /// The shown file's projects and contexts that have open items (all of them while done items
+    /// are shown, and the selected ones) with their open-item counts, in sections
     /// whose collapsed state is saved like the view settings. A click on a tag toggles it in the
     /// shown file's selection, which filters the list; Clear filter empties it.
     fn tags(&mut self, ui: &mut Ui, p: &Palette) {
@@ -1589,6 +1590,19 @@ impl App {
         let context_names: Vec<&str> = contexts.iter().map(|(t, _)| t.name.as_str()).collect();
         file.projects.retain(|t| listed(&project_names, &t.name));
         file.contexts.retain(|t| listed(&context_names, &t.name));
+        // Tags without an open item are left out, unless done items are shown or the tag is
+        // selected, so completing an item never changes the filter under the user.
+        let all = self.config.show_completed_items;
+        let projects: Vec<_> = (projects.into_iter())
+            .filter(|(t, n)| {
+                all || *n > 0 || file.projects.iter().any(|s| same_tag(&s.name, &t.name))
+            })
+            .collect();
+        let contexts: Vec<_> = (contexts.into_iter())
+            .filter(|(t, n)| {
+                all || *n > 0 || file.contexts.iter().any(|s| same_tag(&s.name, &t.name))
+            })
+            .collect();
         let project_rows: Vec<_> = (projects.iter())
             .map(|(t, n)| {
                 (
