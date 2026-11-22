@@ -142,6 +142,11 @@ todotxt/tests/
   lines that differ only in spacing are equal items; a new field must be added there too. A
   done line with its priority between the `x` and the dates (`x (A) 2011-03-02 …`) is written
   in the specification's form even unchanged (`x 2011-03-02 … pri:A`).
+- **`TodoItem::words`** gives the words of the item's line after its head, in written order,
+  each with what it set (`WordKind`: a description word, a project, a context, `due:`, `rec:`,
+  `t:`, `uuid:`, `sub:` or a `pri:` that set the priority). It prints the item and reads the line
+  again, so an item changed since it was read gives its new line. rtmapp's rows use it to show
+  a line as written.
 - **Priority has two serialization forms, chosen by `done`:** an open item writes `(X)`
   before the description; a completed item writes `pri:X` (appended at the end of the line
   when rtm completes it). `(X)` parses on any line; `pri:X` sets the priority only on a done

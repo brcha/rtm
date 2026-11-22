@@ -71,13 +71,13 @@ pub struct Layout {
 struct Token {
     start: usize,
     end: usize,
-    kind: Kind,
+    kind: WordKind,
 }
 
 /// What a word after the head set. `Pri` is a `pri:` tag that set the priority (only one on a
 /// done line does); one that did not, like any unreadable tag, is a description `Word`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Kind {
+pub enum WordKind {
     Word,
     Project,
     Context,
@@ -205,41 +205,41 @@ impl FromStr for TodoItem {
             let kind = if word.starts_with('+') && word.len() > 1 {
                 let project = TodoProject::from_str(word)?;
                 projects.push(project);
-                Kind::Project
+                WordKind::Project
             } else if word.starts_with('@') && word.len() > 1 {
                 let context = TodoContext::from_str(word)?;
                 contexts.push(context);
-                Kind::Context
+                WordKind::Context
             } else if word.starts_with("due:")
                 && word.len() > 5
                 && let Some(date) = strict_date(&word[4..])
             {
                 due = Some(date);
-                Kind::Due
+                WordKind::Due
             } else if word.starts_with("rec:")
                 && word.len() > 4
                 && let Ok(rec) = TodoRecurrence::from_str(&word[4..])
             {
                 recurrence = Some(rec);
-                Kind::Recurrence
+                WordKind::Recurrence
             } else if word.starts_with("t:")
                 && word.len() > 2
                 && let Some(date) = strict_date(&word[2..])
             {
                 threshold = Some(date);
-                Kind::Threshold
+                WordKind::Threshold
             } else if word.starts_with("uuid:")
                 && word.len() > 5
                 && let Ok(parsed_uuid) = Uuid::parse_str(&word[5..])
             {
                 uuid = Some(parsed_uuid);
-                Kind::Uuid
+                WordKind::Uuid
             } else if word.starts_with("sub:")
                 && word.len() > 4
                 && let Ok(parsed_sub) = Uuid::parse_str(&word[4..])
             {
                 sub = Some(parsed_sub);
-                Kind::Sub
+                WordKind::Sub
             } else if done
                 && word.starts_with("pri:")
                 && word.len() > 4
@@ -250,10 +250,10 @@ impl FromStr for TodoItem {
                 && (!priority_from_parens || priority.priority == parsed.priority)
             {
                 priority = parsed;
-                Kind::Pri
+                WordKind::Pri
             } else {
                 clean_description_parts.push(word.to_string());
-                Kind::Word
+                WordKind::Word
             };
             tokens.push(Token {
                 start,
@@ -393,7 +393,7 @@ impl TodoItem {
         let read = &*layout.read;
         let text = layout.text.as_str();
         let mut edits = Edits::new(text);
-        let of = |kind: Kind| layout.tokens.iter().filter(move |t| t.kind == kind);
+        let of = |kind: WordKind| layout.tokens.iter().filter(move |t| t.kind == kind);
 
         let priority_changed =
             self.done != read.done || self.priority != read.priority || layout.priority_in_head;
@@ -413,7 +413,7 @@ impl TodoItem {
         }
 
         // Description words: keep the common start and end, replace the middle.
-        let old: Vec<&Token> = of(Kind::Word).collect();
+        let old: Vec<&Token> = of(WordKind::Word).collect();
         let old_words: Vec<&str> = old.iter().map(|t| &text[t.start..t.end]).collect();
         let new_words: Vec<&str> = self.description.split_whitespace().collect();
         if old_words != new_words {
@@ -461,35 +461,35 @@ impl TodoItem {
 
         let mut appended: Vec<String> = Vec::new();
         if priority_changed {
-            of(Kind::Pri).for_each(|t| edits.remove(t));
+            of(WordKind::Pri).for_each(|t| edits.remove(t));
             appended.extend(self.pri_tag());
         }
         appended.extend(tags(
             &mut edits,
-            of(Kind::Project),
+            of(WordKind::Project),
             &read.projects,
             &self.projects,
         ));
         appended.extend(tags(
             &mut edits,
-            of(Kind::Context),
+            of(WordKind::Context),
             &read.contexts,
             &self.contexts,
         ));
         for (kind, changed, tag) in [
-            (Kind::Due, self.due != read.due, self.due_tag()),
+            (WordKind::Due, self.due != read.due, self.due_tag()),
             (
-                Kind::Recurrence,
+                WordKind::Recurrence,
                 self.recurrence != read.recurrence,
                 self.recurrence_tag(),
             ),
             (
-                Kind::Threshold,
+                WordKind::Threshold,
                 self.threshold != read.threshold,
                 self.threshold_tag(),
             ),
-            (Kind::Uuid, self.uuid != read.uuid, self.uuid_tag()),
-            (Kind::Sub, self.sub != read.sub, self.sub_tag()),
+            (WordKind::Uuid, self.uuid != read.uuid, self.uuid_tag()),
+            (WordKind::Sub, self.sub != read.sub, self.sub_tag()),
         ] {
             if !changed {
                 continue;
@@ -748,6 +748,18 @@ impl TodoItem {
         let dates = [self.threshold, self.due];
         dates.iter().any(Option::is_some) && dates.iter().flatten().all(|&date| date > today)
     }
+
+    /// The words of the item's line after its head, in written order, with what each set. The
+    /// line is printed and read again, so an item changed since it was read gives its new line.
+    pub fn words(&self) -> Vec<(WordKind, String)> {
+        let line = self.to_string();
+        let Some(layout) = line.parse::<TodoItem>().ok().and_then(|item| item.layout) else {
+            return Vec::new();
+        };
+        (layout.tokens.iter())
+            .map(|t| (t.kind, layout.text[t.start..t.end].to_owned()))
+            .collect()
+    }
 }
 
 /// Which items a date filter selects: rtmcli's `today`, `week`, ... and the MCP `due` argument.
@@ -828,3 +840,7 @@ mod dates_tests;
 #[cfg(test)]
 #[path = "tests/todo_item_input_tests.rs"]
 mod input_tests;
+
+#[cfg(test)]
+#[path = "tests/todo_item_words_tests.rs"]
+mod words_tests;
