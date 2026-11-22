@@ -201,6 +201,7 @@ fn month(ui: &mut Ui, p: &Palette, view_id: egui::Id, selected: Option<NaiveDate
     let (days, _) = ui.allocate_exact_size(vec2(WIDTH, DAY * 6.0), Sense::hover());
     let today = today();
     for (i, date) in grid(view, first).into_iter().enumerate() {
+        let Some(date) = date else { continue };
         let center = Pos2::new(
             days.left() + column * ((i % 7) as f32 + 0.5),
             days.top() + DAY * ((i / 7) as f32 + 0.5),
@@ -345,12 +346,20 @@ fn step(view: NaiveDate, months: i32) -> NaiveDate {
 }
 
 /// The 42 days shown for the month of `view`: six weeks starting on the `first` weekday on or
-/// before the 1st, so the end of the previous month and the start of the next are shown.
-fn grid(view: NaiveDate, first: Weekday) -> [NaiveDate; 42] {
+/// before the 1st, so the end of the previous month and the start of the next are shown. Days
+/// outside chrono's range are `None`.
+fn grid(view: NaiveDate, first: Weekday) -> [Option<NaiveDate>; 42] {
     let start = first_of_month(view);
     let back = (start.weekday().num_days_from_monday() + 7 - first.num_days_from_monday()) % 7;
-    let start = start - chrono::Days::new(u64::from(back));
-    std::array::from_fn(|i| start + chrono::Days::new(i as u64))
+    std::array::from_fn(|i| {
+        let offset = i as i64 - i64::from(back);
+        let days = chrono::Days::new(offset.unsigned_abs());
+        if offset < 0 {
+            start.checked_sub_days(days)
+        } else {
+            start.checked_add_days(days)
+        }
+    })
 }
 
 fn short_name(day: Weekday) -> &'static str {
