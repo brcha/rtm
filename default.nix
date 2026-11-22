@@ -3,7 +3,21 @@
 #   nix-build -A rtmcli
 #   nix-build -A rtmapp   # desktop app
 
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import <nixpkgs> {}
+  # flake.nix passes crane's library; without it, the revision locked in flake.lock is used.
+, craneLib ? import (
+    let
+      lock = builtins.fromJSON (builtins.readFile ./flake.lock);
+      crane = lock.nodes.${lock.nodes.root.inputs.crane}.locked;
+    in
+    # The URL below is GitHub's; another input type needs another fetcher.
+    assert crane.type == "github";
+    fetchTarball {
+      url = "https://github.com/${crane.owner}/${crane.repo}/archive/${crane.rev}.tar.gz";
+      sha256 = crane.narHash;
+    }
+  ) { inherit pkgs; }
+}:
 
 let
   # Filtered source — avoids copying build artefacts into the Nix store.
@@ -45,14 +59,32 @@ let
       };
     };
 
+  # Builds a crate in two stages: its dependencies, from a copy of the workspace whose sources are
+  # empty programs, so that only Cargo.lock and the Cargo.toml files decide when they are rebuilt;
+  # then the workspace crates on top of them. Both stages must run the same cargo commands, or cargo
+  # compiles the dependencies again.
+  buildCrate = crate: testPackages: args:
+    let
+      common = {
+        inherit src;
+        inherit (crate) pname version;
+        # No update check: Nix users update through the flake (doc/nix-packaging.md).
+        cargoExtraArgs      = "--locked --no-default-features";
+        cargoBuildExtraArgs = "-p ${crate.pname}";
+        cargoTestExtraArgs  = pkgs.lib.concatMapStringsSep " " (p: "-p ${p}") testPackages;
+      };
+      cargoArtifacts = craneLib.buildDepsOnly (common // {
+        # Without crane's default `cargo check --all-targets`, which the package stage never runs.
+        buildPhaseCargoCommand =
+          "cargoWithProfile build ${common.cargoExtraArgs} ${common.cargoBuildExtraArgs}";
+        cargoTestExtraArgs = "${common.cargoTestExtraArgs} --no-run";
+      });
+    in
+    craneLib.buildPackage (common // { inherit cargoArtifacts; } // args);
+
 in {
-  rtmcli = let crate = fromCargo "rtmcli"; in pkgs.rustPlatform.buildRustPackage (crate // {
-    inherit src;
-    cargoLock.lockFile = ./Cargo.lock;
-    cargoBuildFlags    = [ "-p" "rtmcli" ];
-    # No update check: Nix users update through the flake (doc/nix-packaging.md).
-    buildNoDefaultFeatures = true;
-    cargoTestFlags     = [ "-p" "rtmcli" "-p" "todotxt" "-p" "rtmsync" "-p" "rtmmcp" ];
+  rtmcli = let crate = fromCargo "rtmcli"; in buildCrate crate
+    [ "rtmcli" "todotxt" "rtmsync" "rtmmcp" ] {
     # The sync tests drive git and pijul; pijul signs through a scratch ssh-agent.
     nativeCheckInputs  = with pkgs; [ gitMinimal pijul openssh ];
     # Without it the Pijul test skips itself when pijul is missing.
@@ -61,17 +93,11 @@ in {
       platforms   = pkgs.lib.platforms.all;
       mainProgram = "rtmcli";
     };
-  });
+  };
 
   # The egui desktop app. No native build inputs: on Linux every library is loaded at run time, on
   # macOS the system frameworks come from stdenv's Apple SDK.
-  rtmapp = let crate = fromCargo "rtmapp"; in pkgs.rustPlatform.buildRustPackage (crate // {
-    inherit src;
-    cargoLock.lockFile = ./Cargo.lock;
-    cargoBuildFlags    = [ "-p" "rtmapp" ];
-    # No update check: Nix users update through the flake (doc/nix-packaging.md).
-    buildNoDefaultFeatures = true;
-    cargoTestFlags     = [ "-p" "rtmapp" ];
+  rtmapp = let crate = fromCargo "rtmapp"; in buildCrate crate [ "rtmapp" ] {
     # The sync tests drive git.
     nativeCheckInputs  = [ pkgs.gitMinimal ];
     postInstall = ''
@@ -100,5 +126,5 @@ in {
       platforms   = with pkgs.lib.platforms; linux ++ darwin;
       mainProgram = "rtmapp";
     };
-  });
+  };
 }
