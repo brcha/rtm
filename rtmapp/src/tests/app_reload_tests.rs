@@ -63,7 +63,7 @@ fn the_apps_own_writes_do_not_count_as_outside_changes() {
 fn an_edit_is_refused_when_another_program_changed_its_item() {
     let dir = temp_dir("reload stale edit");
     let mut app = app_with(&dir, "Alpha\nBravo\n");
-    open_editor(&mut app, 1).description = "Bravo, edited here".to_owned();
+    open_editor(&mut app, 1).line = "Bravo, edited here".to_owned();
     std::fs::write(dir.join("todo.txt"), "Alpha\nBravo, edited there\n").unwrap();
 
     app.reload_changed();

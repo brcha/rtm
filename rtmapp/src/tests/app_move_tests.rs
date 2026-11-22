@@ -78,7 +78,7 @@ fn the_dialogs_edits_are_moved() {
     let dir = temp_dir("move edits");
     let (mut app, work) = two_files(&dir, "Alpha\nBravo\n", "Report\n");
 
-    open_editor(&mut app, 1).description = "Bravo, renamed".to_owned();
+    open_editor(&mut app, 1).line = "Bravo, renamed".to_owned();
     app.move_item(&work);
 
     assert_eq!(file_lines(&dir), ["Alpha"]);

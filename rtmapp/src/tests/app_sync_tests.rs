@@ -253,7 +253,7 @@ fn a_pull_whose_push_fails_is_still_taken_in() {
 fn an_edit_is_refused_when_a_pull_changed_its_item() {
     let dir = remote_and_clones("sync stale", "Alpha\nBravo\n");
     let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
-    open_editor(&mut app, 1).description = "Bravo, edited here".to_owned();
+    open_editor(&mut app, 1).line = "Bravo, edited here".to_owned();
 
     push_from_b(&dir, "Alpha\nBravo, edited there\n");
     sync(&mut app);
@@ -271,7 +271,7 @@ fn an_edit_is_refused_when_a_pull_changed_its_item() {
 fn an_edit_follows_its_item_when_a_pull_renumbers() {
     let dir = remote_and_clones("sync renumber", "Alpha\nBravo\n");
     let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
-    open_editor(&mut app, 1).description = "Bravo, edited".to_owned();
+    open_editor(&mut app, 1).line = "Bravo, edited".to_owned();
 
     push_from_b(&dir, "First\nAlpha\nBravo\n");
     sync(&mut app);
@@ -346,7 +346,7 @@ fn a_conflict_found_by_a_sync_closes_the_file() {
     let mut app = synced_app(&dir, &dir.join("a/todo.txt"));
     // b changes the line before the app has pulled; the app then changes it too.
     push_from_b(&dir, "Alpha from b\n");
-    open_editor(&mut app, 0).description = "Alpha from a".to_owned();
+    open_editor(&mut app, 0).line = "Alpha from a".to_owned();
     app.save_edit();
     wait(&mut app);
     sync(&mut app);
@@ -707,7 +707,7 @@ fn a_conflict_closes_only_the_files_of_its_repository() {
     let two = remote_and_clones("sync conflict two", "Bravo\n");
     let mut app = app_on(&one, &[one.join("a/todo.txt"), two.join("a/todo.txt")]);
     push_from_b(&one, "Alpha from b\n");
-    open_editor(&mut app, 0).description = "Alpha from a".to_owned();
+    open_editor(&mut app, 0).line = "Alpha from a".to_owned();
     app.save_edit();
     wait(&mut app);
 
@@ -973,14 +973,14 @@ fn a_conflict_in_the_target_puts_the_moved_item_back() {
     let mut app = app_on(&one, &[source.clone(), target.clone()]);
     push_from_b(&two, "Report from b\n");
     app.active = Some(resolve(&target).unwrap());
-    open_editor(&mut app, 0).description = "Report from a".to_owned();
+    open_editor(&mut app, 0).line = "Report from a".to_owned();
     app.save_edit();
     wait(&mut app);
     // The pull conflicts; the move's arriving half waits behind it.
     app.sync_repo(&key_of(&app, &target), Instant::now());
 
     app.active = Some(resolve(&source).unwrap());
-    open_editor(&mut app, 1).description = "Bravo, renamed".to_owned();
+    open_editor(&mut app, 1).line = "Bravo, renamed".to_owned();
     app.move_item(&resolve(&target).unwrap());
     wait(&mut app);
 

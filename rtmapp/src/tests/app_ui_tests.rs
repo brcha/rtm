@@ -91,6 +91,16 @@ fn the_configured_file_opens_at_startup() {
 }
 
 #[test]
+fn a_row_shows_its_line_as_written() {
+    let dir = temp_dir("ui-row-as-written");
+    let line = "(B) Prepare presentation on +Horizon and @DDI-O for @SerbianWeekly due:2026-02-01";
+    let harness = harness(&dir, &format!("{line}\n"), |_| {});
+
+    harness.get_by_role_and_label(Role::Label, line);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn a_config_from_before_the_file_list_is_migrated_on_the_next_save_only() {
     let dir = temp_dir("ui-old-config");
     let mut harness = harness(&dir, "First item\n", |config| {
@@ -263,10 +273,10 @@ fn editing_in_the_dialog_saves_the_fields() {
         .click();
     harness.run();
     harness.get_by_label("Edit Item");
-    let description = harness.get_by_label("Description");
-    description.focus();
+    let line = harness.get_by_label("Line");
+    line.focus();
     harness.key_combination_modifiers(egui::Modifiers::COMMAND, &[Key::A]);
-    description.type_text("New text");
+    line.type_text("New text");
     harness.get_by_label("Due Date").focus();
     harness.get_by_label("Due Date").type_text("2026-11-05");
     harness.run();
@@ -278,6 +288,93 @@ fn editing_in_the_dialog_saves_the_fields() {
 
     assert_eq!(file_lines(&dir), ["New text due:2026-11-05", "Other"]);
     assert!(harness.query_by_label("Edit Item").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The value of the edit dialog's field labelled `label`.
+fn field_value(harness: &Harness<'_, App>, label: &str) -> String {
+    harness.get_by_label(label).value().unwrap_or_default()
+}
+
+/// Selects all of the edit dialog's field labelled `label` and types `text` over it.
+fn retype(harness: &mut Harness<'_, App>, label: &str, text: &str) {
+    let field = harness.get_by_label(label);
+    field.focus();
+    harness.key_combination_modifiers(egui::Modifiers::COMMAND, &[Key::A]);
+    harness.key_press(Key::Backspace);
+    harness.get_by_label(label).type_text(text);
+}
+
+#[test]
+fn tags_typed_in_the_line_show_in_the_fields_and_are_saved_in_place() {
+    let dir = temp_dir("ui-edit-line");
+    let mut harness = harness(&dir, "Prepare presentation\n", |_| {});
+    let typed = "(A) Prepare presentation on +Horizon and @DDI-O for @SerbianWeekly due:2026-12-01";
+
+    edit_row(&mut harness, "Prepare presentation");
+    retype(&mut harness, "Line", typed);
+    harness.run();
+    assert_eq!(
+        field_value(&harness, "Projects (comma separated)"),
+        "Horizon"
+    );
+    assert_eq!(
+        field_value(&harness, "Contexts (comma separated)"),
+        "DDI-O, SerbianWeekly"
+    );
+    assert_eq!(field_value(&harness, "Due Date"), "2026-12-01");
+    assert_eq!(field_value(&harness, "Priority"), "(A) High");
+
+    // Enter in a field saves, with that field in the line.
+    let projects = harness.get_by_label("Projects (comma separated)");
+    projects.focus();
+    harness.key_press(Key::End);
+    harness
+        .get_by_label("Projects (comma separated)")
+        .type_text(", Talks");
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(file_lines(&dir), [format!("{typed} +Talks")]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn field_changes_show_in_the_line() {
+    let dir = temp_dir("ui-edit-fields");
+    let mut harness = harness(&dir, "Prepare +Horizon slides for @work\n", |_| {});
+
+    edit_row(&mut harness, "Prepare +Horizon slides for @work");
+    retype(&mut harness, "Contexts (comma separated)", "work, phone");
+    harness.run();
+    assert_eq!(
+        field_value(&harness, "Line"),
+        "Prepare +Horizon slides for @work @phone"
+    );
+    retype(&mut harness, "Projects (comma separated)", "");
+    harness.run();
+    assert_eq!(
+        field_value(&harness, "Line"),
+        "Prepare slides for @work @phone"
+    );
+    harness.get_by_label("Save").click();
+    harness.run();
+
+    assert_eq!(file_lines(&dir), ["Prepare slides for @work @phone"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_done_item_opens_read_only() {
+    let dir = temp_dir("ui-edit-done");
+    let mut harness = harness(&dir, "x 2026-11-01 Paid rent +home\n", |config| {
+        config.show_completed_items = true;
+    });
+
+    edit_row(&mut harness, "Paid rent +home");
+    harness.get_by_label("Edit Item");
+    assert!(harness.get_by_label("Line").accesskit_node().is_disabled());
+    assert!(harness.query_by_label("Save").is_none());
+    harness.get_by_label("Cancel");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -346,10 +443,10 @@ fn saving_the_second_identical_line_edits_that_line() {
 
     second_call(&harness, Role::Label).click();
     harness.run();
-    let description = harness.get_by_label("Description");
-    description.focus();
+    let line = harness.get_by_label("Line");
+    line.focus();
     harness.key_combination_modifiers(egui::Modifiers::COMMAND, &[Key::A]);
-    description.type_text("Call the dentist");
+    line.type_text("Call the dentist");
     harness.run();
     harness.get_by_label("Save").click();
     harness.run();
