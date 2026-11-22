@@ -73,8 +73,9 @@
     (26.1.2 after 26.2.0) is created with `make_latest: false`; when publishing it, make sure "Set
     as the latest release" is unticked. Download and try the draft, then publish it by hand.
     Publishing creates the `vX.Y.Z` tag, which starts no run: the workflow has no tag trigger
-    (RTM-102). A beta (RTM-139) is created with `prerelease: true` and `make_latest: false`, and
-    is refused once its release exists; releases are not prereleases.
+    (RTM-102). Only a repository admin can create tags (see "Workflow token" in [CI](ci.md)), so
+    an admin publishes the draft. A beta (RTM-139) is created with `prerelease: true` and
+    `make_latest: false`, and is refused once its release exists; releases are not prereleases.
     Keep the `build(release): set version` and `docs(release): changelog` subjects exact when
     squash-merging: the changelog leaves those commits out.
   - **The MCP eval (RTM-159):** when a release changes `rtmmcp/`, `todotxt/src/` or the `mcp`
