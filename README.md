@@ -135,23 +135,6 @@ To install them on NixOS from a flake-based configuration:
 3. Run `sudo nixos-rebuild switch --flake .#myhost`, then start "Rusty Todo.txt Manager" from the
    application menu, or run `rtmapp` or `rtmcli --help`.
 
-CI pushes its builds of `main` and of pull requests from this repository to the public Cachix cache
-`rtm`, for `x86_64-linux` and `aarch64-darwin`. To download them instead of compiling rtm (about 20
-minutes), run `cachix use rtm`, or add the cache to your NixOS configuration:
-
-```nix
-nix.settings = {
-  extra-substituters = [ "https://rtm.cachix.org" ];
-  extra-trusted-public-keys = [ "rtm.cachix.org-1:g98SWhYL4AMNQBirOAU1yYMuH7LvBryiMtaF4FAa0Y8=" ];
-};
-```
-
-A revision CI has not built still downloads the compiled dependencies when its `Cargo.lock`, the
-crate versions in `Cargo.toml` and the nixpkgs pin match one that CI has. A NixOS configuration gets
-prebuilt packages only without the `inputs.nixpkgs.follows` line from step 1: following your own
-nixpkgs changes every derivation, so rtm is compiled. Leaving it out adds rtm's pinned nixpkgs to
-the system closure.
-
 ### macOS (Apple Silicon and Intel)
 
 Universal binaries for macOS 11 (Big Sur) and later. They are signed ad hoc only, not with an Apple
