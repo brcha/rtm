@@ -146,8 +146,9 @@ struct OpenFile {
     /// The file's modification time and size after the app's last load or write: anything else
     /// means another program changed it.
     seen: Option<(SystemTime, u64)>,
-    /// The last write found the write lock held by another rtm process; the changes wait.
-    locked_out: bool,
+    /// The last write found the write lock held by another rtm process: the changes wait, and the
+    /// lock is tried again at this time.
+    locked_out: Option<Instant>,
     /// When it was last archived, automatically or from the menu; the next automatic archive is
     /// due `ARCHIVE_INTERVAL` later.
     archived_at: Option<Instant>,
@@ -490,8 +491,9 @@ impl App {
                 break;
             }
         }
-        if self.files.iter().any(|file| file.locked_out) {
-            self.ctx.request_repaint_after(LOCK_RETRY);
+        if let Some(retry) = self.files.iter().filter_map(|file| file.locked_out).min() {
+            self.ctx
+                .request_repaint_after(retry.saturating_duration_since(Instant::now()));
         }
     }
 
@@ -853,13 +855,13 @@ impl App {
     /// changes, then writes them without it, as before the lock existed: in a rare case that
     /// overwrites another process's change, rather than losing the user's.
     fn write_through_lock(&mut self, until: Instant) {
-        while self.files.iter().any(|file| file.locked_out) && Instant::now() < until {
+        while self.files.iter().any(|file| file.locked_out.is_some()) && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(100));
             // Picks up the workers' results too, so a job that was outstanding no longer holds
             // the write back.
             self.sync_results();
         }
-        if self.files.iter().any(|file| file.locked_out) {
+        if self.files.iter().any(|file| file.locked_out.is_some()) {
             self.write_unlocked = true;
             self.flush();
             self.write_unlocked = false;
@@ -2144,7 +2146,7 @@ impl OpenFile {
         unlocked: bool,
     ) -> bool {
         // Set again below if the lock is still held; a file skipped here is not waiting for it.
-        self.locked_out = false;
+        let retry = self.locked_out.take();
         // During the check on open a write would look like an outside change.
         if self.pending.is_empty()
             || self.checking
@@ -2158,10 +2160,15 @@ impl OpenFile {
         // changes stay pending and are tried again. `unlocked` writes without it (on exit).
         let lock = match self.loaded_path() {
             Some(_) if unlocked => None,
+            // Each attempt takes about 10 ms of the UI thread, so not on every frame.
+            Some(_) if retry.is_some_and(|at| Instant::now() < at) => {
+                self.locked_out = retry;
+                return true;
+            }
             Some(path) => match try_lock_briefly(&rtmsync::lock_target(&path)) {
                 Ok(Some(lock)) => Some(lock),
                 Ok(None) => {
-                    self.locked_out = true;
+                    self.locked_out = Some(Instant::now() + LOCK_RETRY);
                     return true;
                 }
                 Err(e) => {
