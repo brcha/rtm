@@ -65,6 +65,13 @@ jobs:
 
     - uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
 
+    # Downloads what earlier runs built and pushes what this run builds (doc/ci.md, "Nix cache").
+    # Fork pull requests get no secrets, so they only download.
+    - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+      with:
+        name: rtm
+        authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
     # The check phase runs the test suites, the sync tests with git and pijul among them.
     - name: Build the flake
       run: nix build -L .#rtmcli .#rtmapp

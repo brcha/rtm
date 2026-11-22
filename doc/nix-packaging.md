@@ -7,7 +7,17 @@
   `aarch64-linux` and `aarch64-darwin`, not Intel Macs (`x86_64-darwin`).
 - **`shell.nix`** — the dev shell, defined once (see Dev shell); it takes `eguiDeps` from
   `default.nix` (`rtmapp.eguiDeps`, a `passthru`).
-- **`Cargo.lock` must stay committed** — `importCargoLock` in `buildRustPackage` requires it.
+- **`Cargo.lock` must stay committed** — crane's `vendorCargoDeps` reads it to fetch the crates.
+- **Two-stage build:** both packages are built with [crane](https://crane.dev) (`buildCrate` in
+  `default.nix`). `buildDepsOnly` first compiles the dependencies from a copy of the workspace whose
+  `.rs` files (`build.rs` included) are empty programs, and stores cargo's `target/` as a zstd
+  tarball (the `-deps` derivation); `buildPackage` unpacks it and compiles only the workspace
+  crates. The `-deps` derivation changes only with `Cargo.lock`, the `Cargo.toml` files
+  (dependencies, features, targets, crate versions, so a version bump rebuilds them once), the
+  nixpkgs pin and crane, so a source change does not recompile the dependencies. Both stages must run the same cargo commands (the same `-p`,
+  features and profile) for the dependencies to be reused; a third-party crate in the package
+  stage's `Compiling` lines means they differ. Unlike `buildRustPackage`, crane does not use
+  `cargo-auditable`, so the Nix binaries carry no embedded dependency list.
 - **`rtmapp` package (Linux and macOS):** no native build inputs; on Linux `eguiDeps` are added to
   the binary's rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which
   would drop them); on macOS the system frameworks come from stdenv's Apple SDK, and the result is
@@ -20,10 +30,11 @@
   `repository`) from each crate's `[package]`; only what Cargo has no field for (platforms,
   `mainProgram`, build flags) is written in Nix. The Cargo `description` is also the deb summary.
 - **No update check (RTM-137, RTM-138):** `rtmcli` and `rtmapp` are built with
-  `buildNoDefaultFeatures = true`, which leaves out their default `update-check` feature, so the
-  packages never make a network request: `rtmcli check-update` says to update through the package
-  manager instead, and `rtmapp` has no update notice and no update settings. Nix users update
-  through their flake inputs or nixpkgs. The flag applies to the check phase's tests too.
+  `--no-default-features` (`cargoExtraArgs` in `buildCrate`), which leaves out their default
+  `update-check` feature, so the packages never make a network request: `rtmcli check-update` says
+  to update through the package manager instead, and `rtmapp` has no update notice and no update
+  settings. Nix users update through their flake inputs or nixpkgs. The flag applies to the check
+  phase's tests too.
 - **Tests in the build (RTM-71):** the check phase runs the sync tests, so `gitMinimal`, `pijul` and
   `openssh` (the Pijul sync test signs through a scratch `ssh-agent`) are `nativeCheckInputs`;
   `rtmcli` also runs the tests of `todotxt`, `rtmsync` and `rtmmcp` (the libraries it links), with
@@ -32,9 +43,15 @@
 - **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
   macOS for pushes to `main` that change more than Markdown and pull requests against `main` or
   `releases/**` (RTM-78) that change one of its inputs (RTM-76, RTM-82; see "Which changes start
-  which build" in [CI](ci.md)).
+  which build" in [CI](ci.md)). The builds share the Cachix cache `rtm` (see "Nix cache" in
+  [CI](ci.md)), so a run compiles only what no earlier run has built.
   `nix-build` is not run in CI (it takes the caller's `<nixpkgs>`), but the flake builds the same
   definitions from `default.nix` with its pin.
+- **crane:** a flake input (`github:ipetkov/crane`, no inputs of its own), so it is locked in
+  `flake.lock` with nixpkgs and moves with `nix flake update`; consumers can override it with
+  `inputs.rtm.inputs.crane.follows`. `default.nix` called without `craneLib` (`nix-build`) reads
+  crane's locked revision from `flake.lock`, as `shell.nix` does for nixpkgs. crane needs Nix ≥
+  2.31.2 and a nixpkgs newer than 25.11.
 - **nixpkgs pin:** the flake follows the stable `nixos-26.05` (rustc 1.95, the minimum egui 0.37
   needs); consumers can override it with `inputs.rtm.inputs.nixpkgs.follows`. Move to
   `nixos-26.11` when it is released (RTM-45). Called directly (`nix-build`), `default.nix` uses

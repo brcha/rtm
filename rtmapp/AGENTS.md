@@ -311,7 +311,7 @@ rtmapp/
     tests, which share one process, use a local server or a closed port instead of setting the
     variable.
   - The default cargo feature `update-check` pulls in `rtmupdate`. Without it (the Nix package,
-    `buildNoDefaultFeatures`), the check is never enabled and the Settings dialog has no update
+    `--no-default-features`), the check is never enabled and the Settings dialog has no update
     controls; the config keys keep their values. `cargo test -p rtmapp --no-default-features`
     runs that build's tests.
 - **Settings dialog** (`settings.rs`, RTM-134): the update check's controls (see Update check

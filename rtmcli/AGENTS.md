@@ -96,7 +96,7 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   network; no other command checks for updates.
 - `RTM_UPDATE_URL` replaces the release list's URL (the tests point it at a local server).
 - The default cargo feature `update-check` pulls in `rtmupdate`. The Nix package builds without
-  it (`buildNoDefaultFeatures`, see `doc/nix-packaging.md`); there `check-update` says the build
+  it (`--no-default-features`, see `doc/nix-packaging.md`); there `check-update` says the build
   has no update check and to update through the package manager, exit 0. `cli_update_tests.rs`
   covers both builds (`cargo test -p rtmcli --no-default-features`).
 
