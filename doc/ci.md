@@ -56,6 +56,14 @@
   - A second ruleset, "Protect tags", covers every tag (see "Workflow token").
 
   A new required check needs the same shape: a gate job that always runs, not a path filter.
+- **Build cache:** `rust.yml`'s `build` job restores Cargo's registry and the dependencies' build
+  output with `Swatinem/rust-cache`, pinned as in `release.yml`, right after checkout.
+  - The action's default key (job id, OS and architecture, rustc version, a hash of every
+    `Cargo.lock`/`Cargo.toml`) gives each runner its own entry and keeps this debug build apart
+    from the release jobs' caches, so no `key` is set.
+  - A pull request's run restores its own cache, else `main`'s; the cache is saved only when the
+    job succeeds. The workspace crates themselves still compile on every run.
+  - pijul keeps its own cache (`~/.pijul-ci`), outside what the action saves.
 - **PR title and issue links (RTM-219):** `pr-title.yml` (job `validate`) runs when a pull request
   against `main` or `releases/**` is opened, edited, pushed to or reopened.
   - When the title lacks ` -- RTM-NN` and the branch name carries a key (`issues/RTM-27/foo`), it
