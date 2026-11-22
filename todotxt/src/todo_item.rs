@@ -786,7 +786,7 @@ impl DateFilter {
 
 /// A date in exactly the `YYYY-MM-DD` form the specification requires. chrono's `%Y-%m-%d`
 /// alone also takes `2011-3-2` and `11-03-02`, which are text.
-fn strict_date(word: &str) -> Option<NaiveDate> {
+pub fn strict_date(word: &str) -> Option<NaiveDate> {
     let shape = word.len() == 10
         && word.bytes().enumerate().all(|(i, b)| match i {
             4 | 7 => b == b'-',

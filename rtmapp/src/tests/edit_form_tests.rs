@@ -117,6 +117,99 @@ fn invalid_input_is_refused() {
     }
 }
 
+/// Saves `description` on the item read from `line`; the item as saved, or the error.
+fn save_description(line: &str, description: &str) -> Result<TodoItem, String> {
+    let mut target = item(line);
+    let mut f = form(line);
+    f.description = description.into();
+    f.apply(&mut target).map(|()| target)
+}
+
+/// A description the file would read back as a different item is refused, with the field to
+/// use when there is one, and the item is left untouched.
+#[test]
+fn a_description_that_reads_back_differently_is_refused() {
+    const OTHER: &str = "Description: reads back as a different item";
+    let cases = [
+        ("x marks the spot", OTHER),
+        ("(A) Call mom", OTHER),
+        ("2026-11-01 Call mom", OTHER),
+        ("Call uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8", OTHER),
+        (
+            "Call +mom",
+            "Description: put projects in the Projects field",
+        ),
+        (
+            "Call @phone",
+            "Description: put contexts in the Contexts field",
+        ),
+        (
+            "Call due:2027-01-01",
+            "Description: put the due date in the Due Date field",
+        ),
+        (
+            "Call t:2027-01-01",
+            "Description: put the threshold in the Threshold field",
+        ),
+        (
+            "Call rec:1w",
+            "Description: put the recurrence in the Recurrence field",
+        ),
+        // Projects are named first when several fields differ.
+        (
+            "Call +mom due:2027-01-01",
+            "Description: put projects in the Projects field",
+        ),
+    ];
+    for (description, message) in cases {
+        let mut target = item("Call mom");
+        let mut f = form("Call mom");
+        f.description = description.into();
+        let error = f.apply(&mut target).unwrap_err();
+        assert!(error.starts_with(message), "{description}: {error}");
+        assert_eq!(target, item("Call mom"), "{description}");
+    }
+}
+
+#[test]
+fn a_description_that_reads_back_the_same_is_saved() {
+    // After a creation date, a leading `x` is text.
+    let saved = save_description("2026-10-20 Call mom", "x marks the spot").unwrap();
+    assert!(!saved.done);
+    assert_eq!(saved.description, "x marks the spot");
+
+    let saved = save_description("Call mom", "  New   text\there ").unwrap();
+    assert_eq!(saved.description, "New text here");
+
+    // A changed description on a line with tags among its words.
+    let line = "(B) Call +mom about @phone the bill due:2026-12-01";
+    let saved = save_description(line, "Ring about the gas bill").unwrap();
+    assert_eq!(saved.to_string().parse::<TodoItem>().unwrap(), saved);
+    assert_eq!(saved.description, "Ring about the gas bill");
+    assert_eq!(saved.projects, item(line).projects);
+}
+
+/// Only the exact `YYYY-MM-DD` form is a date: the file reads anything else as text.
+#[test]
+fn dates_must_be_exactly_yyyy_mm_dd() {
+    for text in ["+10000-01-01", "2026-1-2", "26-01-02", "2026-01-02x"] {
+        let mut f = form("Call mom");
+        f.due = text.into();
+        assert_eq!(
+            f.apply(&mut item("Call mom")).unwrap_err(),
+            "Due date: expected YYYY-MM-DD",
+            "{text}"
+        );
+        let mut f = form("Call mom");
+        f.threshold = text.into();
+        assert_eq!(
+            f.apply(&mut item("Call mom")).unwrap_err(),
+            "Threshold: expected YYYY-MM-DD",
+            "{text}"
+        );
+    }
+}
+
 #[test]
 fn a_threshold_on_the_due_date_is_accepted() {
     let mut target = item(FULL);
