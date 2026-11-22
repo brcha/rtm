@@ -183,12 +183,12 @@ rtmapp/
     space after a short wrapped line still edits. The hovered tag is underlined (painted, since
     `LayoutJob` merges a tag with the space before it into one section); tags in the selection
     are bold in every row.
-  - **Links (RTM-193):** URLs in an item's description (`list::links`) are spans of the same
-    label (`RowTag::Link`, the URL's byte range in the description), in the palette's `link`
+  - **Links (RTM-193):** URLs in an item's description words (`list::links`) are spans of the same
+    label (`RowTag::Link`, holding the URL), in the palette's `link`
     colour (a purple apart from the project blue and the recurrence colour) and always underlined (`TextFormat::underline`).
     A click on one hands it to the OS (`ctx.open_url`) and returns no `RowAction`; the file never
-    changes. Only the description is searched: the parser takes tags out of it, so a `+project`
-    or `@context` is never a link, while URLs and unknown `key:value` words stay in it. Schemes:
+    changes. Only description words are searched (`WordKind::Word`), so a `+project` or
+    `@context` is never a link, while URLs and unknown `key:value` words are. Schemes:
     `http://`, `https://`, `mailto:`, in any case; not `file://` (a shared file could hand a
     local program to the OS) and not bare `www.` hosts. A link starts at the scheme at the start
     of a word or after a character that is not an ASCII letter or digit (`url:https://…` links
@@ -196,9 +196,13 @@ rtmapp/
     a trailing `)` only while it has more `)` than `(` (GitHub's autolink rule). Detection stays
     in rtmapp: rtmcli prints plain text, which terminals link themselves, and the MCP server
     returns lines as they are. The links are not AccessKit nodes of their own, as for tags.
-- **Item rows** show the visible items in that order. A done item is struck through entirely, as the
-  CSS did. Recurrence is shown through `TodoRecurrence`'s `Display`, always with its count (`rec:+m`
-  appears as `rec:+1m`; the file keeps its own spelling).
+- **Item rows** show the visible items in that order. Each row's text is the priority (`(A)`, also
+  for a done item's `pri:A`) followed by the words of the line after its head, as written
+  (`TodoItem::words`): projects, contexts, `due:`, `rec:` and `t:` stay where they stand, in their
+  own colours and sizes, and nothing is regrouped. The `x`, the completion and creation dates and
+  the `uuid:`/`sub:` tags are not shown. `RowTag` carries the clicked project, context or URL
+  itself, since the order on screen need not match `TodoItem::projects`. A done item is struck
+  through entirely, as the CSS did. Tags keep their spelling from the file (`rec:+m` is not shown as `rec:+1m`).
   The painted checkbox has a hit area larger than its 14 px box, so the row layout stays as the CSS had
   it. Rows report the clicked item's index in the file, never its position in the filtered list.
 - **Mutations** call `TodoLibrary` methods and save at once: add is `add_item` (which sets a

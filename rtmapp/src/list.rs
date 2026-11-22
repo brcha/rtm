@@ -6,12 +6,10 @@ use eframe::egui::{
     epaint::TextShape,
     text::{CCursor, LayoutJob, TextFormat},
 };
-use todotxt::{TodoContext, TodoItem, TodoProject};
+use todotxt::{TodoContext, TodoItem, TodoProject, WordKind};
 
 use crate::config::AppConfig;
 use crate::theme::{self, Palette};
-
-const DATE_FORMAT: &str = "%Y-%m-%d";
 
 /// Items without a due date first, then by due date (earliest first, latest with `reverse_sort`),
 /// then by priority (none last).
@@ -48,13 +46,12 @@ pub enum RowAction {
     Context(TodoContext),
 }
 
-/// A `+project` or `@context` in a row's text, by its index in the item's list, or a link in the
-/// description, by its byte range there.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// A `+project`, `@context` or link in a row's text.
+#[derive(Clone, Debug, PartialEq)]
 enum RowTag {
-    Project(usize),
-    Context(usize),
-    Link { start: usize, end: usize },
+    Project(TodoProject),
+    Context(TodoContext),
+    Link(String),
 }
 
 /// Where a tag or link is in a row's text: its characters (`+name`, without the space before
@@ -131,7 +128,7 @@ pub fn show(
                                 // The hovered tag is underlined glyph by glyph: `LayoutJob`
                                 // merges it with the space before it into one section. Links
                                 // are always underlined, through their format.
-                                let underlined = hovered.and_then(|span| match span.tag {
+                                let underlined = hovered.and_then(|span| match &span.tag {
                                     RowTag::Project(_) => Some((span, p.project)),
                                     RowTag::Context(_) => Some((span, p.context)),
                                     RowTag::Link { .. } => None,
@@ -168,19 +165,17 @@ pub fn show(
                                 );
                             }
                             if text.clicked() {
-                                match hovered.map(|span| span.tag) {
-                                    Some(RowTag::Project(i)) => {
-                                        clicked =
-                                            Some(RowAction::Project(item.projects[i].clone()));
+                                match hovered.map(|span| &span.tag) {
+                                    Some(RowTag::Project(project)) => {
+                                        clicked = Some(RowAction::Project(project.clone()));
                                     }
-                                    Some(RowTag::Context(i)) => {
-                                        clicked =
-                                            Some(RowAction::Context(item.contexts[i].clone()));
+                                    Some(RowTag::Context(context)) => {
+                                        clicked = Some(RowAction::Context(context.clone()));
                                     }
                                     // Handed to the OS's handler; the item is left alone.
-                                    Some(RowTag::Link { start, end }) => ui.ctx().open_url(
-                                        egui::OpenUrl::new_tab(&item.description[start..end]),
-                                    ),
+                                    Some(RowTag::Link(url)) => {
+                                        ui.ctx().open_url(egui::OpenUrl::new_tab(url))
+                                    }
                                     None => clicked = Some(RowAction::Edit(index)),
                                 }
                             }
@@ -241,10 +236,10 @@ fn checkbox(ui: &mut Ui, p: &Palette, item: &TodoItem, index: usize) -> bool {
     response.clicked()
 }
 
-/// The text of a row: priority, description and the `+project @context due: rec: t:` chips. A done
-/// item is struck through entirely. Tags in
-/// the selection (`projects`, `contexts`) are bold; links in the description are underlined in the
-/// link colour. Also returns where the tags and links are.
+/// The text of a row: the priority, then the words of the line after its head as they are written,
+/// with `+project`, `@context`, `due:`, `rec:` and `t:` in their own colours. A done item is struck
+/// through entirely. Tags in the selection (`projects`, `contexts`) are bold; links in the words
+/// are underlined in the link colour. Also returns where the tags and links are.
 fn row_job(
     p: &Palette,
     item: &TodoItem,
@@ -274,89 +269,58 @@ fn row_job(
         add(&mut job, &format!("({letter}) "), theme::bold(11.9), color);
     }
     let mut tags = Vec::new();
-    let description = &item.description;
-    let mut plain = 0;
-    for link in links(description) {
-        add(
-            &mut job,
-            &description[plain..link.start],
-            FontId::proportional(14.0),
-            main,
-        );
-        let chars = add(
-            &mut job,
-            &description[link.clone()],
-            FontId::proportional(14.0),
-            p.link,
-        );
-        // The link colour differs from the text's, so `append` gave the link its own section.
-        if let Some(section) = job.sections.last_mut() {
-            section.format.underline = Stroke::new(1.0, p.link);
+    let mut first = true;
+    // shortcut: every row prints and reads its line again each frame; keep the words per item if
+    // long lists turn slow.
+    for (kind, word) in item.words() {
+        let (font, color) = match kind {
+            WordKind::Word => (FontId::proportional(14.0), main),
+            WordKind::Project => (FontId::proportional(11.9), p.project),
+            WordKind::Context => (FontId::proportional(11.9), p.context),
+            WordKind::Due => (FontId::proportional(11.2), p.due),
+            WordKind::Recurrence => (FontId::proportional(11.2), p.recurrence),
+            WordKind::Threshold => (FontId::proportional(11.2), p.threshold),
+            // The priority is shown in front; `uuid:` and `sub:` link sub-items and stay hidden.
+            WordKind::Pri | WordKind::Uuid | WordKind::Sub => continue,
+        };
+        if !first {
+            add(&mut job, " ", font.clone(), color);
         }
-        let tag = RowTag::Link {
-            start: link.start,
-            end: link.end,
-        };
-        tags.push(TagSpan { tag, chars });
-        plain = link.end;
-    }
-    add(
-        &mut job,
-        &description[plain..],
-        FontId::proportional(14.0),
-        main,
-    );
-    let projects = (item.projects.iter().enumerate()).map(|(i, project)| {
-        let selected = projects.iter().any(|s| same_tag(&s.name, &project.name));
-        (
-            RowTag::Project(i),
-            format!("+{}", project.name),
-            selected,
-            p.project,
-        )
-    });
-    let contexts = (item.contexts.iter().enumerate()).map(|(i, context)| {
-        let selected = contexts.iter().any(|s| same_tag(&s.name, &context.name));
-        (
-            RowTag::Context(i),
-            format!("@{}", context.name),
-            selected,
-            p.context,
-        )
-    });
-    for (tag, text, selected, color) in projects.chain(contexts) {
-        let font = if selected {
-            theme::bold(11.9)
-        } else {
-            FontId::proportional(11.9)
-        };
-        add(&mut job, " ", FontId::proportional(11.9), color);
-        let chars = add(&mut job, &text, font, color);
-        tags.push(TagSpan { tag, chars });
-    }
-    if let Some(due) = item.due {
-        add(
-            &mut job,
-            &format!(" due:{}", due.format(DATE_FORMAT)),
-            FontId::proportional(11.2),
-            p.due,
-        );
-    }
-    if let Some(recurrence) = &item.recurrence {
-        add(
-            &mut job,
-            &format!(" rec:{recurrence}"),
-            FontId::proportional(11.2),
-            p.recurrence,
-        );
-    }
-    if let Some(threshold) = item.threshold {
-        add(
-            &mut job,
-            &format!(" t:{}", threshold.format(DATE_FORMAT)),
-            FontId::proportional(11.2),
-            p.threshold,
-        );
+        first = false;
+        match kind {
+            WordKind::Word => {
+                let mut plain = 0;
+                for link in links(&word) {
+                    add(&mut job, &word[plain..link.start], font.clone(), main);
+                    let chars = add(&mut job, &word[link.clone()], font.clone(), p.link);
+                    // The link colour differs from the text's, so `append` gave the link its own
+                    // section.
+                    if let Some(section) = job.sections.last_mut() {
+                        section.format.underline = Stroke::new(1.0, p.link);
+                    }
+                    let tag = RowTag::Link(word[link.clone()].to_owned());
+                    tags.push(TagSpan { tag, chars });
+                    plain = link.end;
+                }
+                add(&mut job, &word[plain..], font, main);
+            }
+            WordKind::Project | WordKind::Context => {
+                let name = word[1..].to_owned();
+                let (selected, tag) = if kind == WordKind::Project {
+                    let selected = projects.iter().any(|s| same_tag(&s.name, &name));
+                    (selected, RowTag::Project(TodoProject { name }))
+                } else {
+                    let selected = contexts.iter().any(|s| same_tag(&s.name, &name));
+                    (selected, RowTag::Context(TodoContext { name }))
+                };
+                let font = if selected { theme::bold(11.9) } else { font };
+                let chars = add(&mut job, &word, font, color);
+                tags.push(TagSpan { tag, chars });
+            }
+            _ => {
+                add(&mut job, &word, font, color);
+            }
+        }
     }
     (job, tags)
 }

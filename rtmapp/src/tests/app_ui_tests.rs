@@ -91,6 +91,16 @@ fn the_configured_file_opens_at_startup() {
 }
 
 #[test]
+fn a_row_shows_its_line_as_written() {
+    let dir = temp_dir("ui-row-as-written");
+    let line = "(B) Prepare presentation on +Horizon and @DDI-O for @SerbianWeekly due:2026-02-01";
+    let harness = harness(&dir, &format!("{line}\n"), |_| {});
+
+    harness.get_by_role_and_label(Role::Label, line);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn a_config_from_before_the_file_list_is_migrated_on_the_next_save_only() {
     let dir = temp_dir("ui-old-config");
     let mut harness = harness(&dir, "First item\n", |config| {
