@@ -16,3 +16,10 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# The Nix CI builds (the flake's checks): no LTO, so a source change does not re-optimise
+# every dependency in each link. Releases and installed Nix packages keep [profile.release].
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16

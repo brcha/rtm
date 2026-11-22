@@ -16,8 +16,21 @@
   (dependencies, features, targets, crate versions, so a version bump rebuilds them once), the
   nixpkgs pin and crane, so a source change does not recompile the dependencies. Both stages must run the same cargo commands (the same `-p`,
   features and profile) for the dependencies to be reused; a third-party crate in the package
-  stage's `Compiling` lines means they differ. Unlike `buildRustPackage`, crane does not use
-  `cargo-auditable`, so the Nix binaries carry no embedded dependency list.
+  stage's `Compiling` lines means they differ. `buildCrate` therefore sets all of them, the cargo
+  profile (`CARGO_PROFILE`) included, once in `common`, which both stages read; never through
+  `overrideAttrs` on the finished package, which reaches only the package stage. Unlike
+  `buildRustPackage`, crane does not use `cargo-auditable`, so the Nix binaries carry no embedded
+  dependency list.
+- **CI build profile:** the flake's `checks` (`ci.rtmcli` and `ci.rtmapp` in `default.nix`, with a
+  `-ci` suffix on their names) build both packages with `[profile.ci]` from the root `Cargo.toml`:
+  it inherits `release` but turns LTO off and uses 16 codegen units. With full LTO every link,
+  each test binary's included, re-optimises all the dependencies; without it a source change
+  takes 43 s instead of 126 s for `rtmcli` and 31 s instead of 215 s for `rtmapp` (package stage,
+  4 cores). Thin LTO was slower than none. The packages users install (`.#rtmcli`, `.#rtmapp`) and
+  the release packages keep `[profile.release]` (full LTO, 1 codegen unit); the installed ones
+  leave `CARGO_PROFILE` unset (crane's default, `release`), so the CI variants do not change their
+  derivations.
+  `cargo build --profile ci` reproduces the CI build outside Nix.
 - **`rtmapp` package (Linux and macOS):** no native build inputs; on Linux `eguiDeps` are added to
   the binary's rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which
   would drop them); on macOS the system frameworks come from stdenv's Apple SDK, and the result is
@@ -38,13 +51,18 @@
 - **Tests in the build (RTM-71):** the check phase runs the sync tests, so `gitMinimal`, `pijul` and
   `openssh` (the Pijul sync test signs through a scratch `ssh-agent`) are `nativeCheckInputs`;
   `rtmcli` also runs the tests of `todotxt`, `rtmsync` and `rtmmcp` (the libraries it links), with
-  `RTM_REQUIRE_PIJUL` set so the Pijul tests cannot skip themselves. At
+  `RTM_REQUIRE_PIJUL` set so the Pijul tests cannot skip themselves. The tests run in both the
+  packages and the checks (the same definitions); CI runs them in the checks. At
   run time both packages use `git`/`pijul` from the user's `PATH`; they are not wrapped.
-- **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
-  macOS for pushes to `main` that change more than Markdown and pull requests against `main` or
+- **CI:** `.github/workflows/nix.yml` runs `nix flake check`, which builds the checks (both
+  packages with the CI build profile, tests included) and evaluates the packages, apps and dev
+  shell, on Linux and macOS for pushes to `main` that change more than Markdown and pull requests against `main` or
   `releases/**` (RTM-78) that change one of its inputs (RTM-76, RTM-82; see "Which changes start
   which build" in [CI](ci.md)). The builds share the Cachix cache `rtm` (see "Nix cache" in
-  [CI](ci.md)), so a run compiles only what no earlier run has built.
+  [CI](ci.md)), so a run compiles only what no earlier run has built. It does not build the
+  installed packages themselves: they differ from the checks only in the cargo profile, and
+  `release.yml` covers the LTO link of both binaries on every pull request that changes the
+  crates.
   `nix-build` is not run in CI (it takes the caller's `<nixpkgs>`), but the flake builds the same
   definitions from `default.nix` with its pin.
 - **crane:** a flake input (`github:ipetkov/crane`, no inputs of its own), so it is locked in

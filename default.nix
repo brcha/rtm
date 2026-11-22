@@ -63,16 +63,18 @@ let
   # empty programs, so that only Cargo.lock and the Cargo.toml files decide when they are rebuilt;
   # then the workspace crates on top of them. Both stages must run the same cargo commands, or cargo
   # compiles the dependencies again.
-  buildCrate = crate: testPackages: args:
+  # `profile` is a cargo profile for both stages, or null for crane's default (release).
+  buildCrate = profile: crate: testPackages: args:
     let
       common = {
         inherit src;
-        inherit (crate) pname version;
+        inherit (crate) version;
+        pname = if profile == null then crate.pname else "${crate.pname}-${profile}";
         # No update check: Nix users update through the flake (doc/nix-packaging.md).
         cargoExtraArgs      = "--locked --no-default-features";
         cargoBuildExtraArgs = "-p ${crate.pname}";
         cargoTestExtraArgs  = pkgs.lib.concatMapStringsSep " " (p: "-p ${p}") testPackages;
-      };
+      } // pkgs.lib.optionalAttrs (profile != null) { CARGO_PROFILE = profile; };
       cargoArtifacts = craneLib.buildDepsOnly (common // {
         # Without crane's default `cargo check --all-targets`, which the package stage never runs.
         buildPhaseCargoCommand =
@@ -82,8 +84,7 @@ let
     in
     craneLib.buildPackage (common // { inherit cargoArtifacts; } // args);
 
-in {
-  rtmcli = let crate = fromCargo "rtmcli"; in buildCrate crate
+  rtmcli = profile: let crate = fromCargo "rtmcli"; in buildCrate profile crate
     [ "rtmcli" "todotxt" "rtmsync" "rtmmcp" ] {
     # The sync tests drive git and pijul; pijul signs through a scratch ssh-agent.
     nativeCheckInputs  = with pkgs; [ gitMinimal pijul openssh ];
@@ -97,7 +98,7 @@ in {
 
   # The egui desktop app. No native build inputs: on Linux every library is loaded at run time, on
   # macOS the system frameworks come from stdenv's Apple SDK.
-  rtmapp = let crate = fromCargo "rtmapp"; in buildCrate crate [ "rtmapp" ] {
+  rtmapp = profile: let crate = fromCargo "rtmapp"; in buildCrate profile crate [ "rtmapp" ] {
     # The sync tests drive git.
     nativeCheckInputs  = [ pkgs.gitMinimal ];
     postInstall = ''
@@ -126,5 +127,14 @@ in {
       platforms   = with pkgs.lib.platforms; linux ++ darwin;
       mainProgram = "rtmapp";
     };
+  };
+
+in {
+  rtmcli = rtmcli null;
+  rtmapp = rtmapp null;
+  # The flake's checks, which CI builds: [profile.ci] in Cargo.toml, no LTO.
+  ci = {
+    rtmcli = rtmcli "ci";
+    rtmapp = rtmapp "ci";
   };
 }
