@@ -125,20 +125,23 @@ impl Vcs {
                     State::Clean
                 })
             }
-            // Lists untracked files that are not ignored, and leaves ignored ones out; `pijul add`
-            // cannot tell, it reports success for an ignored file. Such a file shows as `U <path>`
-            // at the repository root and as `A <path>` below it (pijul 1.0.0-beta.18). `U` lines
-            // use the OS separator (`\` on Windows), so they are compared as paths.
+            // Lists untracked files that are not ignored as `U <path>`, root-relative with the OS
+            // separator, and leaves ignored ones out; `pijul add` cannot tell, it reports success
+            // for an ignored file. No path argument: with one, diff adds the untracked files under
+            // it, and pijul 1.0.0-beta.26 keeps them added. `A` lines are added, unrecorded files.
             (Vcs::Pijul, false) => {
                 let path = pijul_path(&file).unwrap_or_default();
                 let listed = output(
                     "pijul",
-                    command("pijul", dir).args(["diff", "--short", "--untracked", "."]),
+                    command("pijul", dir).args(["diff", "--short", "--untracked"]),
                 )?;
-                let untracked = listed.lines().any(|line| {
-                    let listed = line.strip_prefix("A ").or_else(|| line.strip_prefix("U "));
-                    listed.map(|listed| Path::new(listed.trim_start())) == Some(Path::new(&path))
-                });
+                // shortcut: an untracked directory is listed whole, so an ignored file inside one
+                // reads as untracked; pijul cannot show ignore rules there without adding it.
+                // Upgrade if pijul gains a read-only listing of untracked directories.
+                let untracked = listed
+                    .lines()
+                    .filter_map(|l| l.strip_prefix("U "))
+                    .any(|l| !l.is_empty() && Path::new(&path).starts_with(l));
                 Ok(if untracked {
                     State::Untracked
                 } else {

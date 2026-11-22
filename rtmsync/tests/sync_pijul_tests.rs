@@ -145,20 +145,26 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     pijul(&sub, &["add", "../other.txt"]);
 
     assert!(!Vcs::Pijul.is_tracked(&todo).unwrap());
+    let tracked = pijul(&sub, &["ls"]);
     assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Untracked);
-    // shortcut: pijul 1.0.0-beta.26 leaves a file added once `state` has listed it as untracked,
-    // so this checks a file nothing has looked at yet; check `todo` when `state` stops adding it.
-    let fresh = sub.join("fresh.txt");
-    std::fs::write(&fresh, "").unwrap();
-    let result = check(&fresh, None, false);
+    // Checking adds nothing, so a second check still finds it untracked.
+    assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Untracked);
+    let result = check(&todo, None, false);
     assert!(
         matches!(result, Ok(Checked::Untracked(Vcs::Pijul))),
         "{result:?}"
     );
+    assert_eq!(pijul(&sub, &["ls"]), tracked, "the state check added files");
     let ignored = sub.join("ignored.txt");
     std::fs::write(&ignored, "ignored\n").unwrap();
+    std::fs::write(repo.join("ignored.txt"), "ignored\n").unwrap();
     std::fs::write(repo.join(".ignore"), "ignored.txt\n").unwrap();
-    assert_eq!(Vcs::Pijul.state(&ignored).unwrap(), State::Ignored);
+    assert_eq!(
+        Vcs::Pijul.state(&repo.join("ignored.txt")).unwrap(),
+        State::Ignored
+    );
+    // Inside the untracked `sub`, pijul lists only `sub`: the known limit of `state`.
+    assert_eq!(Vcs::Pijul.state(&ignored).unwrap(), State::Untracked);
     // At the repository root, where a todo.txt usually is: added and never recorded, untracked.
     assert_eq!(
         Vcs::Pijul.state(&repo.join("other.txt")).unwrap(),
