@@ -416,8 +416,9 @@ impl App {
     /// Archives each loaded file once a day while automatic archiving is on, the first time once
     /// its check on open is done, and asks for a repaint when the next one is due.
     fn archive_due(&mut self, now: Instant) {
-        let config = &self.config;
-        let due = |file: &&OpenFile| {
+        // Whether `file` could archive now, the interval aside. It also filters the next repaint:
+        // a file that cannot archive must not set a wait of 0 on every frame.
+        let ready = |config: &AppConfig, file: &OpenFile| {
             config.archive_rule(&file.path).0
                 && file.library.is_some()
                 && !file.checking
@@ -425,14 +426,15 @@ impl App {
                 && file.asking.is_none()
                 && !file.archive_asking
                 && file.archive_wait.is_none()
-                && file
-                    .archived_at
-                    .is_none_or(|at| now.duration_since(at) >= ARCHIVE_INTERVAL)
         };
         let paths: Vec<_> = self
             .files
             .iter()
-            .filter(due)
+            .filter(|file| ready(&self.config, file))
+            .filter(|file| {
+                file.archived_at
+                    .is_none_or(|at| now.duration_since(at) >= ARCHIVE_INTERVAL)
+            })
             .map(|f| f.path.clone())
             .collect();
         for path in paths {
@@ -441,7 +443,7 @@ impl App {
         let next = self
             .files
             .iter()
-            .filter(|file| self.config.archive_rule(&file.path).0)
+            .filter(|file| ready(&self.config, file))
             .filter_map(|file| file.archived_at)
             .map(|at| (at + ARCHIVE_INTERVAL).saturating_duration_since(now))
             .min();

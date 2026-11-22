@@ -501,7 +501,9 @@ rtmapp/
   (`App::archive`; a done item without a completion date always moves), from the menu's Archive
   Done Items for the shown file, and, when the file's rule says so, for every loaded file once its
   check on open is done and then every 24 h (`archive_due`, in `logic`; `archived_at` per file,
-  set by either). The rule is `AppConfig::archive_rule`: each of the file's `[[files]]` keys
+  set by either). The repaint for the next one counts only the files that could archive then
+  (loaded, no question open, not waiting), so a file that cannot archive never keeps the app
+  repainting. The rule is `AppConfig::archive_rule`: each of the file's `[[files]]` keys
   `auto_archive` and `archive_older_than_days` where set, else the app-wide one. Saving Settings
   or a file's archive settings clears `archived_at` of each file whose rule changed
   (`rearchive`), so the new rule runs at once. Nothing happens when no item would move
