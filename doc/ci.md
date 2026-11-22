@@ -94,6 +94,31 @@
     then, create a new token and paste the new header value into that hidden header. A failed
     request shows in the flow's audit log and in an email to its owner. Copying the flow does
     not copy the hidden header's value.
+- **Nix cache:** `nix.yml`'s `build` job uses the public Cachix cache `rtm`
+  (`cachix/cachix-action`, https://rtm.cachix.org) as a binary cache next to cache.nixos.org.
+  - It downloads every derivation an earlier run built, on any branch, and pushes every
+    derivation this run builds: the `-deps` derivations, which hold the compiled dependencies (see
+    "Two-stage build" in [Nix Packaging](nix-packaging.md)), the packages and whatever else it
+    builds. Paths that cache.nixos.org serves are not stored.
+  - A run with unchanged inputs downloads both packages and compiles nothing; a change to the
+    sources only downloads the `-deps` derivations and compiles the workspace crates.
+  - Entries are keyed by derivation hash, so they always match the nixpkgs pin, crane and
+    `Cargo.lock` of the run: after a bump the old entries are simply not asked for.
+  - Pushing takes the repository secret `CACHIX_AUTH_TOKEN`, a write token for the `rtm` cache
+    only, created in the cache's settings on cachix.org. Only pushes to `main` and pull requests
+    from branches of this repository get it, and pushing a branch here takes write access. Fork
+    pull requests get no secrets, so they only download; the action then logs "Pushing is
+    disabled".
+  - The free plan gives open-source caches 5 GB; when it is full, Cachix deletes the least
+    recently used entries, which costs at most a cold build. One `Cargo.lock` state takes about
+    400 MB of `-deps` outputs and 500 MB of unpacked crates (before Cachix's compression) per
+    system.
+  - Not the GitHub Actions cache: the repository's 10 GB there is already taken by the Rust
+    caches, a Nix store is about 3 GiB per system, and a pull request's entries are invisible to
+    `main` and other pull requests.
+  - If the cache misbehaves, a failing substituter only makes the build slower: Nix builds what
+    it cannot download. Bad entries can be deleted in the cache's dashboard; a leaked token is
+    revoked there and replaced in the secret.
 - **Website (RTM-89):** `site.yml` builds the site and checks its links with
   `scripts/site/check.sh`: Zola's check and build, the shape of `releases.json` (`jq`), then
   lychee over the built pages and `releases.json` offline, with the absolute `base_url` mapped to

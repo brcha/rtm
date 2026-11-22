@@ -43,7 +43,8 @@
 - **CI:** `.github/workflows/nix.yml` builds `.#rtmcli` and `.#rtmapp`, tests included, on Linux and
   macOS for pushes to `main` that change more than Markdown and pull requests against `main` or
   `releases/**` (RTM-78) that change one of its inputs (RTM-76, RTM-82; see "Which changes start
-  which build" in [CI](ci.md)).
+  which build" in [CI](ci.md)). The builds share the Cachix cache `rtm` (see "Nix cache" in
+  [CI](ci.md)), so a run compiles only what no earlier run has built.
   `nix-build` is not run in CI (it takes the caller's `<nixpkgs>`), but the flake builds the same
   definitions from `default.nix` with its pin.
 - **crane:** a flake input (`github:ipetkov/crane`, no inputs of its own), so it is locked in
