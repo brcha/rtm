@@ -2,11 +2,13 @@
 # Checks that an rtm MCP server answers the MCP handshake over stdin and stdout: the server is
 # named rtm, it offers list_items, and its list_files names the expected todo.txt, which proves the
 # file came from where the platform keeps it (-f, or rtmapp's config). Used by the Release workflow
-# on every package; runs the same way anywhere. Bash 3.2 (macOS), no python, jq or timeout.
+# on every package; runs the same way anywhere. Bash 3.2 (macOS) and Git Bash (Windows), no
+# python, jq or timeout.
 #
 # Usage: scripts/check-mcp.sh <expected path> <command> [<argument>...]
 #   scripts/check-mcp.sh "$PWD/todo.txt" rtmcli -f "$PWD/todo.txt" mcp
 #   scripts/check-mcp.sh /home/me/todo.txt rtmapp mcp
+#   scripts/check-mcp.sh 'C:\todo.txt' 'C:/Program Files/Rusty Todo.txt Manager/rtmapp.exe' mcp
 #
 # Run one server at a time: servers with the same parent process count as one client, and a second
 # one running at once offers no tools.
@@ -63,5 +65,7 @@ fail() {
 [ "$status" = 0 ] || fail "$1 exited with status $status"
 grep -q '"name":"rtm"' "$out" || fail "$1 did not answer initialize as rtm"
 grep -q '"list_items"' "$out" || fail "$1 offers no list_items tool"
-grep -F -q "$expected" "$out" || fail "$1 does not serve $expected"
+# The path inside a JSON string: its backslashes are escaped.
+want=$(printf '%s' "$expected" | sed 's/\\/\\\\/g')
+grep -F -q "$want" "$out" || fail "$1 does not serve $expected"
 echo "MCP check passed: $* serves $expected"

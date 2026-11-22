@@ -152,7 +152,8 @@
   against `main` or `releases/**` (`pr-title.yml` checks those too); on those it builds and tests the packages (publishes nothing)
   only when they touch the crates (`rtmsync` included since RTM-21, `rtmupdate` since RTM-136, `rtmmcp` since RTM-115), `Cargo.toml`/`Cargo.lock`,
   `LICENSE`, `scripts/build-appimage.sh`, `scripts/build-macos.sh`,
-  `scripts/check-macos-quit.sh`, `scripts/check-mcp.sh` or the workflow, Markdown
+  `scripts/check-linux-install.sh`, `scripts/check-macos-quit.sh`, `scripts/check-mcp.sh`,
+  `scripts/release-helpers.ps1` or the workflow, Markdown
   excluded (its `changes` job, see "Which changes start which build" in [CI](ci.md)). It has no
   `v*` tag trigger (RTM-102): publishing a draft creates its tag, and a run started by that tag
   would rebuild the packages and publish them over the release, which could turn it back into a
@@ -260,7 +261,9 @@
   installed into a custom folder (one product afterwards, at the new version, still in that folder),
   then an upgrade from the previous release's MSI in the default folder (skipped with a notice when that
   is v0.1.3, already covered, or when it has no MSI). All read the product from the uninstall entries in
-  the registry: the Windows Installer COM API failed with `DISP_E_TYPEMISMATCH` from PowerShell. **The
+  the registry: the Windows Installer COM API failed with `DISP_E_TYPEMISMATCH` from PowerShell. Their
+  helpers (`Invoke-Msiexec`, `Get-Installed`; the `version` job's `Get-VersionKey`) are defined once in
+  `scripts/release-helpers.ps1`, which each step dot-sources, as steps share no PowerShell state. **The
   v0.1.3 upgrade test downloads that release's asset, so that release must stay.** The smoke launch
   starts the installed `rtmapp.exe` with a sample `todo.txt` (config in `%APPDATA%\rtm`) and expects it
   running after 5 s, then stops it by its PID; it only warns on failure, since the runner's desktop
@@ -279,12 +282,12 @@
   - The launcher is started with `Start-Process`, not `&`: a directly started rtmapp inherits the
     step's output pipe, and `&` would wait for it to exit.
 
-  Then the MCP check (RTM-116), which fails the job: a PowerShell
-  `System.Diagnostics.Process` with stdin and stdout on pipes, as an MCP client starts a server,
-  runs the installed `rtmapp.exe mcp` on that config (this proves stdio works in the `windows`
-  subsystem build) and the staged `rtmcli.exe -f <todo.txt> mcp`, one after the other. Each must
-  answer `initialize`, `tools/list` and a `list_files` call within 30 s (named `rtm`, a `list_items`
-  tool, the sample file's path) and exit once its stdin closes.
+  Then the MCP check (RTM-116), which fails the job after the uninstall: `scripts/check-mcp.sh`
+  (see "The MCP check" under Linux) through Git Bash, called by its full path since a bare `bash`
+  can be WSL's, runs the installed `rtmapp.exe mcp` on that config with stdin and stdout on pipes, as
+  an MCP client starts a server (this proves stdio works in the `windows` subsystem build), then the
+  staged `rtmcli.exe -f <todo.txt> mcp`. The exe is given with forward slashes, which bash runs as a
+  path; the todo path stays a Windows path.
 - **Manual check of the "Launch" check box** (RTM-216), on a release candidate's MSI, on a Windows
   machine with git from Scoop (`git` on `PATH` is `scoop\shims\git.exe`) and rtmapp configured with
   a synced todo.txt:
@@ -330,8 +333,9 @@
   `timeout-minutes`.
 - **Tests (`linux-deb`, `ubuntu-22.04`):** `apt-get install` of both debs from `dist-linux` (every
   `Depends` must resolve on jammy), checks that each binary's newest glibc symbol is within its deb's
-  `libc6` floor, that the desktop entry and all icon sizes are installed and that a portal backend
-  with a file chooser came with `rtmapp`; then two smoke launches of the installed `rtmapp` (the binary
+  `libc6` floor, then `scripts/check-linux-install.sh`, the checks shared by every Linux package
+  job: the binaries, the desktop entry, all icon sizes, a portal backend with a file chooser that
+  came with `rtmapp`, and the MCP check (below); then two smoke launches of the installed `rtmapp` (the binary
   in every Linux package) with a sample `todo.txt` (via `XDG_CONFIG_HOME`), each expected running
   after 5 s and stopped by its PID, logging with `RUST_LOG=info`: on X11 under `xvfb-run` with Mesa
   software rendering (lavapipe, llvmpipe; blocking, and its window must be mapped), and on Wayland
@@ -339,18 +343,21 @@
   previous release's debs installed and the new ones over them (`dpkg-query` must report the new
   version; skipped with a notice when the release lacks a deb). v0.1.3 is not skipped here: it is the
   0.1.x deb, also named `rtmapp`, and pulls webkit2gtk. Then the AppImage is extracted and checked,
-  and its `AppRun mcp` passes the MCP check. Before the smoke launches, the MCP check (below) runs
-  on the installed binaries.
-- **The MCP check (RTM-116)** runs in `linux-deb`, `linux-deb-install`, each `linux-rpm` container and
-  `macos`: `scripts/check-mcp.sh <expected path> <command…>` (bash 3.2, for macOS; no python, jq or
-  `timeout`, which some containers lack) sends `initialize`, `notifications/initialized`,
-  `tools/list` and a `list_files` call, keeps stdin open until the last reply, and checks the
-  replies for the name `rtm`, a `list_items` tool and the expected path, which proves the file came
-  from `-f` or from rtmapp's config in the platform's place. A watchdog kills a server that does
-  not exit within 30 s. It runs `rtmcli -f <todo.txt> mcp`, then `rtmapp mcp` with a scratch config
-  (`XDG_CONFIG_HOME`, or `HOME` on macOS), never both at once: servers with the same parent count
-  as one client. The Linux test jobs check out no sources, so the `linux` job uploads the script as
-  the `check-mcp` artifact (one day's retention; `publish` takes only `dist-*`).
+  and its `AppRun mcp` passes the MCP check. `linux-deb-install` and each `linux-rpm` container
+  run the same `check-linux-install.sh` after their own install checks.
+- **The MCP check (RTM-116)** runs in `windows`, `linux-deb`, `linux-deb-install`, each `linux-rpm`
+  container and `macos`: `scripts/check-mcp.sh <expected path> <command…>` (bash 3.2 for macOS, Git
+  Bash on Windows; no python, jq or `timeout`, which some containers lack) sends `initialize`,
+  `notifications/initialized`, `tools/list` and a `list_files` call, keeps stdin open until the
+  last reply (at most 20 s), and checks the replies for the name `rtm`, a `list_items` tool and the
+  expected path (its backslashes escaped, as JSON writes them), which proves the file came from
+  `-f` or from rtmapp's config in the platform's place. A watchdog kills a server that does not
+  exit within 30 s. It runs `rtmcli -f <todo.txt> mcp`, then `rtmapp mcp` with a scratch config
+  (`XDG_CONFIG_HOME`, or `HOME` on macOS; on Windows the runner's own `%APPDATA%`, written by the
+  smoke launch), never both at once: servers with
+  the same parent count as one client. The Linux test jobs check out no sources, so the `linux` job
+  uploads `check-mcp.sh` and `check-linux-install.sh` as the `check-scripts` artifact (one day's
+  retention; `publish` takes only `dist-*`).
 - **Which systems are tested:** the two ends of each package family, since an install test catches a
   package missing on the oldest release or renamed or dropped on the newest, and the releases in
   between follow from the ends. debs: Ubuntu 22.04 (`linux-deb`'s runner, the oldest) and the

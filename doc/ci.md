@@ -39,7 +39,7 @@
     - Nix: the crates, `Cargo.toml`/`Cargo.lock`, `flake.nix`, `flake.lock`, `default.nix`, the
       workflow. Not `shell.nix`: CI does not build the dev shell.
     - Release: its list of package inputs (the crates, `Cargo.toml`/`Cargo.lock`, `LICENSE`, the
-      build scripts and the macOS quit check, the workflow).
+      build and check scripts and the workflow's PowerShell helpers, the workflow).
 
     Keep each list in step with what its build reads (a tracked `rust-toolchain*` or `.cargo/`
     would go into Rust's and Nix's). The website (`site/`, `scripts/site/`, `site.yml`,
