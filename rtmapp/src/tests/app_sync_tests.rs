@@ -68,7 +68,10 @@ fn wait(app: &mut App) {
     loop {
         app.sync_results();
         // A write that found the lock held is tried again by the next frames, as here.
-        if !app.busy() && app.closing.is_empty() && !app.files.iter().any(|file| file.locked_out) {
+        if !app.busy()
+            && app.closing.is_empty()
+            && !app.files.iter().any(|file| file.locked_out.is_some())
+        {
             return;
         }
         assert!(

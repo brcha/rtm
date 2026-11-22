@@ -23,14 +23,42 @@ fn a_change_waits_while_another_process_holds_the_lock() {
     // Shown at once, not written, and kept for the next frames.
     let file = app.file().unwrap();
     assert_eq!(file.library.as_ref().unwrap().items.len(), 2);
-    assert!(file.locked_out && file.pending.len() == 1);
+    assert!(file.locked_out.is_some() && file.pending.len() == 1);
     assert_eq!(file_lines(&dir), ["Alpha"]);
 
     drop(held);
+    std::thread::sleep(LOCK_RETRY);
     app.flush();
-    assert!(!app.file().unwrap().locked_out);
+    assert!(app.file().unwrap().locked_out.is_none());
     let lines = file_lines(&dir);
     assert!(lines.len() == 2 && lines[1].ends_with("Bravo"), "{lines:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_held_lock_is_tried_again_only_after_lock_retry() {
+    let dir = temp_dir("lock retry");
+    let mut app = app_with(&dir, "Alpha\n");
+    let held = hold(&dir);
+    app.new_item = "Bravo".to_owned();
+    app.add_item();
+    assert!(app.file().unwrap().locked_out.is_some());
+
+    // Free now, but the next frames do not try it before `LOCK_RETRY` has passed.
+    drop(held);
+    app.flush();
+    let file = app.file().unwrap();
+    assert!(file.locked_out.is_some() && file.pending.len() == 1);
+    assert_eq!(file_lines(&dir), ["Alpha"]);
+
+    std::thread::sleep(LOCK_RETRY);
+    app.flush();
+    assert!(app.file().unwrap().locked_out.is_none());
+    let lines = file_lines(&dir);
+    let [_, added] = lines.as_slice() else {
+        panic!("two lines: {lines:?}")
+    };
+    assert!(added.ends_with("Bravo"), "{lines:?}");
     let _ = std::fs::remove_dir_all(dir);
 }
 
