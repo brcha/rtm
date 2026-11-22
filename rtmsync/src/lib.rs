@@ -379,7 +379,7 @@ fn output(program: &'static str, command: &mut Command) -> Result<String, Error>
             wait *= 2;
             continue;
         }
-        check(program, output.status, &output.stderr)?;
+        require_success(program, output.status, &output.stderr)?;
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
 }
@@ -412,7 +412,7 @@ fn output_within(
             }
             std::thread::sleep(Duration::from_millis(50));
         };
-        check(
+        require_success(
             program,
             status,
             &std::fs::read(&stderr_path).unwrap_or_default(),
@@ -441,7 +441,7 @@ fn private_temp_file() -> std::io::Result<(PathBuf, std::fs::File)> {
     }
 }
 
-fn check(program: &'static str, status: ExitStatus, stderr: &[u8]) -> Result<(), Error> {
+fn require_success(program: &'static str, status: ExitStatus, stderr: &[u8]) -> Result<(), Error> {
     if status.success() {
         Ok(())
     } else {
@@ -459,6 +459,95 @@ fn check(program: &'static str, status: ExitStatus, stderr: &[u8]) -> Result<(),
 /// resolved first, so a link into a repository counts as versioned.
 pub fn detect(file: &Path) -> Vec<Vcs> {
     nearest(file).map(|(_, found)| found).unwrap_or_default()
+}
+
+/// What `check` found: whether, and through which VCS, a frontend syncs the file.
+#[derive(Debug)]
+pub enum Checked {
+    /// Not synced, with nothing to tell the user: not in a repository, ignored by it, or missing
+    /// and not tracked.
+    NotVersioned,
+    /// Not synced: not tracked, and the caller does not add it (`commit_changes` off).
+    Untracked(Vcs),
+    /// Not synced: a check failed, for example because the executable is not installed.
+    Unavailable(Error),
+    /// Synced through `vcs`. `state` is `Clean`, or, only with `commit_changes`, `Modified` or
+    /// `Untracked`, which the caller commits before anything else.
+    Sync {
+        vcs: Vcs,
+        state: State,
+        remote: bool,
+    },
+}
+
+/// Why `check` refuses the file: the user has to act before rtm commits to its repository.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Refusal {
+    /// The directory belongs to several VCSs and no choice picks one of them.
+    Ambiguous(Vec<Vcs>),
+    /// The choice is not the directory's VCS.
+    NotChosen { found: Vcs, chosen: Vcs },
+    /// Conflicts, or a rebase or merge stopped half-way (`Vcs::is_conflicted`), with the file's
+    /// state: `Clean`, `Modified`, or, only with `commit_changes`, `Untracked`. Nothing can be
+    /// committed, so a caller may use an untracked file without sync instead (rtmapp does).
+    Conflicted(State),
+    /// Changes rtm did not commit, without `commit_changes`.
+    Modified,
+}
+
+/// The repository check every frontend runs before it commits to the repository holding `file`
+/// (the check on open, see `rtmsync/AGENTS.md`). `choice` picks the VCS in a directory used by
+/// several. With `commit_changes` the caller commits outside changes, and adds an untracked file,
+/// before anything else; without it outside changes are refused and an untracked file is not
+/// synced. Commits nothing itself.
+pub fn check(file: &Path, choice: Option<Vcs>, commit_changes: bool) -> Result<Checked, Refusal> {
+    let found = detect(file);
+    let vcs = match (found.as_slice(), choice) {
+        ([], _) => return Ok(Checked::NotVersioned),
+        ([only], None) => *only,
+        (found, Some(chosen)) if found.contains(&chosen) => chosen,
+        ([only], Some(chosen)) => {
+            return Err(Refusal::NotChosen {
+                found: *only,
+                chosen,
+            });
+        }
+        (several, _) => return Err(Refusal::Ambiguous(several.to_vec())),
+    };
+    let state = if file.exists() {
+        vcs.state(file)
+    } else {
+        // A missing file's state cannot be told reliably (Git calls a deleted tracked file
+        // modified, and committing that would delete every item): synced when tracked.
+        vcs.is_tracked(file).map(|tracked| {
+            if tracked {
+                State::Clean
+            } else {
+                State::Ignored
+            }
+        })
+    };
+    let state = match state {
+        Ok(State::Ignored) => return Ok(Checked::NotVersioned),
+        Ok(State::Untracked) if !commit_changes => return Ok(Checked::Untracked(vcs)),
+        Ok(state) => state,
+        Err(e) => return Ok(Checked::Unavailable(e)),
+    };
+    // Before the outside changes: during a stopped rebase the file counts as modified, and a
+    // commit then would land in the middle of the rebase.
+    match vcs.is_conflicted(file) {
+        Ok(false) => {}
+        Ok(true) => return Err(Refusal::Conflicted(state)),
+        Err(e) => return Ok(Checked::Unavailable(e)),
+    }
+    if state == State::Modified && !commit_changes {
+        return Err(Refusal::Modified);
+    }
+    Ok(Checked::Sync {
+        vcs,
+        state,
+        remote: vcs.has_remote(file).unwrap_or(false),
+    })
 }
 
 /// The repository's directory: the nearest directory, from the file's own up, that holds a

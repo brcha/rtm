@@ -1,7 +1,7 @@
-//! Sync of the open todo.txt through its Git or Pijul repository, with the same rules as
-//! rtmcli: outside changes and an untracked file are asked about first, an ignored file
-//! never syncs, a conflicted repository is not opened, a repository without a remote is committed
-//! to without pulling or pushing. Every git or pijul call, the check on open included, runs on its
+//! Sync of the open todo.txt through its Git or Pijul repository, with the rules of
+//! `rtmsync::check`, as rtmcli: outside changes and an untracked file are asked about first, an
+//! ignored file never syncs, a conflicted repository is not opened, a repository without a remote
+//! is committed to without pulling or pushing. Every git or pijul call, the check on open included, runs on its
 //! repository's worker thread, one per repository and VCS, so calls in one repository never overlap
 //! each other; the app writes a file only while its repository's worker is idle, so they
 //! never overlap a save either.
@@ -11,7 +11,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use eframe::egui;
-use rtmsync::{State, Vcs};
+use rtmsync::{Checked, Refusal, State, Vcs};
 
 use crate::config::AppConfig;
 
@@ -100,42 +100,31 @@ pub fn place(file: &Path, config: &AppConfig) -> Place {
 /// The check on open of `file` in the repository at `root`: its state, the
 /// repository's conflicts and whether it has a remote.
 pub fn check(vcs: Vcs, root: PathBuf, file: &Path) -> Found {
-    let state = if file.exists() {
-        vcs.state(file)
-    } else {
-        // A missing file's state cannot be told reliably (a deleted tracked file is modified for
-        // Git), so it keeps the rule from before the check, as in rtmcli: tracked files sync.
-        vcs.is_tracked(file).map(|tracked| {
-            if tracked {
-                State::Clean
-            } else {
-                State::Ignored
-            }
-        })
-    };
-    let question = match state {
-        Ok(State::Clean) => None,
-        Ok(State::Modified) => Some(Question::Modified),
-        Ok(State::Untracked) => Some(Question::Untracked),
-        Ok(State::Ignored) => return Found::NoSync,
-        Err(e) => return Found::Unavailable(e.to_string()),
-    };
-    match vcs.is_conflicted(file) {
-        Ok(false) => {}
+    // With `commit_changes`, as the app asks to commit outside changes and to add the file.
+    let (vcs, state, remote) = match rtmsync::check(file, Some(vcs), true) {
+        Ok(Checked::Sync { vcs, state, remote }) => (vcs, state, remote),
+        Ok(Checked::NotVersioned) => return Found::NoSync,
+        Ok(Checked::Unavailable(e)) => return Found::Unavailable(e.to_string()),
         // Nothing can be committed into the repository, so an untracked file opens as before.
-        Ok(true) if question == Some(Question::Untracked) => return Found::NoSync,
-        Ok(true) => return Found::Conflicted,
-        Err(e) => return Found::Unavailable(e.to_string()),
-    }
+        Err(Refusal::Conflicted(State::Untracked)) => return Found::NoSync,
+        Err(Refusal::Conflicted(_)) => return Found::Conflicted,
+        // `Untracked` and `Modified` never come with `commit_changes`; the choice refusals only
+        // when the markers changed since `place`.
+        Ok(Checked::Untracked(_))
+        | Err(Refusal::Ambiguous(_) | Refusal::NotChosen { .. } | Refusal::Modified) => {
+            return Found::NoSync;
+        }
+    };
     let repo = Repo {
         vcs,
         root,
         file: file.to_path_buf(),
-        remote: vcs.has_remote(file).unwrap_or(false),
+        remote,
     };
-    match question {
-        None => Found::Repo(repo),
-        Some(question) => Found::Ask(repo, question),
+    match state {
+        State::Modified => Found::Ask(repo, Question::Modified),
+        State::Untracked => Found::Ask(repo, Question::Untracked),
+        State::Clean | State::Ignored => Found::Repo(repo),
     }
 }
 

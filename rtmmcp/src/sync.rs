@@ -1,13 +1,14 @@
-//! Syncing a change through the repository holding the file, with rtmcli's rules (see
-//! `rtmcli/AGENTS.md`), returning what the user must fix instead of exiting: the server cannot ask
-//! the user, so an outside change or a conflict refuses the change, with a message for the client.
+//! Syncing a change through the repository holding the file, with the rules of `rtmsync::check`
+//! that rtmcli follows too, returning what the user must fix instead of exiting: the server cannot
+//! ask the user, so an outside change or a conflict refuses the change, with a message for the
+//! client.
 //!
 //! A write is: `RepoWrite::find`, `pull`, load, change, save, `commit_and_push`. Problems that do not
 //! stop the change (a failed pull or push, an untracked file) become notes in the tool's result.
 
 use std::path::{Path, PathBuf};
 
-use rtmsync::{State, Vcs};
+use rtmsync::{Checked, Refusal, State, Vcs};
 
 use crate::Source;
 
@@ -36,77 +37,45 @@ impl RepoWrite {
             return Ok(sync);
         }
         let file = &source.path;
-        let found = rtmsync::detect(file);
-        let vcs = match (found.as_slice(), source.vcs) {
-            ([], _) => return Ok(sync),
-            ([only], None) => *only,
-            (found, Some(chosen)) if found.contains(&chosen) => chosen,
-            ([only], Some(chosen)) => {
+        match rtmsync::check(file, source.vcs, false) {
+            // Without `commit_changes` the state is always clean.
+            Ok(Checked::Sync { vcs, remote, .. }) => {
+                sync.repo = Some(Repo {
+                    vcs,
+                    file: file.clone(),
+                    remote,
+                });
+            }
+            Ok(Checked::NotVersioned) => {}
+            Ok(Checked::Untracked(vcs)) => sync.notes.push(format!(
+                "'{}' is not tracked by {vcs:?}, so this change is not synced. The user can \
+                 add it when rtmapp asks, or with rtmcli's --commit-changes.",
+                file.display()
+            )),
+            Ok(Checked::Unavailable(e)) => sync.notes.push(format!("Not syncing: {e}")),
+            Err(Refusal::NotChosen { found, chosen }) => {
                 return Err(format!(
-                    "'{}' is in a {only:?} repository, not {chosen:?}.",
+                    "'{}' is in a {found:?} repository, not {chosen:?}.",
                     file.display()
                 ));
             }
-            (found, _) => {
+            Err(Refusal::Ambiguous(found)) => {
                 return Err(format!(
                     "'{}' is in a directory used by {found:?}; the user has to choose which one \
                      to sync through (in rtmapp, or with rtmcli's --vcs).",
                     file.display()
                 ));
             }
-        };
-        let state = if file.exists() {
-            vcs.state(file)
-        } else {
-            // A missing file's state cannot be told reliably: synced when tracked, as in rtmcli.
-            vcs.is_tracked(file).map(|tracked| {
-                if tracked {
-                    State::Clean
-                } else {
-                    State::Ignored
-                }
-            })
-        };
-        let modified = match state {
-            Ok(State::Clean) => false,
-            Ok(State::Modified) => true,
-            Ok(State::Ignored) => return Ok(sync),
-            Ok(State::Untracked) => {
-                sync.notes.push(format!(
-                    "'{}' is not tracked by {vcs:?}, so this change is not synced. The user can \
-                     add it when rtmapp asks, or with rtmcli's --commit-changes.",
+            Err(Refusal::Conflicted(_)) => return Err(conflicted(file)),
+            Err(Refusal::Modified) => {
+                return Err(format!(
+                    "'{}' has changes not committed by rtm (made by hand, or with sync off). The \
+                     user has to commit or revert them first (rtmapp offers to when it opens the \
+                     file, rtmcli has --commit-changes).",
                     file.display()
                 ));
-                return Ok(sync);
-            }
-            Err(e) => {
-                sync.notes.push(format!("Not syncing: {e}"));
-                return Ok(sync);
-            }
-        };
-        // Before the outside changes: during a stopped rebase the file counts as modified, and a
-        // commit then would land in the middle of the rebase.
-        match vcs.is_conflicted(file) {
-            Ok(false) => {}
-            Ok(true) => return Err(conflicted(file)),
-            Err(e) => {
-                sync.notes.push(format!("Not syncing: {e}"));
-                return Ok(sync);
             }
         }
-        if modified {
-            return Err(format!(
-                "'{}' has changes not committed by rtm (made by hand, or with sync off). The user \
-                 has to commit or revert them first (rtmapp offers to when it opens the file, \
-                 rtmcli has --commit-changes).",
-                file.display()
-            ));
-        }
-        sync.repo = Some(Repo {
-            vcs,
-            file: file.clone(),
-            remote: vcs.has_remote(file).unwrap_or(false),
-        });
         Ok(sync)
     }
 

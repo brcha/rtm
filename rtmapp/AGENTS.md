@@ -367,7 +367,7 @@ rtmapp/
   release build's `windows` subsystem still uses the stdin and stdout pipes the client passes
   (the Release workflow checks it on the MSI, see `doc/release-process.md`).
   Tests: `tests/mcp_sources_tests.rs`.
-- **Sync (RTM-64, background since RTM-20)** follows rtmcli's rules (`sync::place`, then `sync::check`): `sync = false`,
+- **Sync (RTM-64, background since RTM-20)** follows the rules of `rtmsync::check`, as rtmcli does (`sync::place`, then `sync::check`): `sync = false`,
   no repository or an ignored file → no sync and no commits; both Git and Pijul → the Git-or-Pijul
   dialog (or "Don't sync", which asks again next time); a conflicted repository (`is_conflicted`) →
   the file is not opened and the file's error line says to resolve it by hand; a failed check (e.g. `git`
@@ -381,7 +381,8 @@ rtmapp/
     file is `checking`: the header shows "Checking…", and changes stay in `pending`, unwritten, as a
     write would look like an outside change. A sync queued before the file joined did not list it,
     so the file is read again when the result arrives (`OpenFile::reload`, redoing its pending
-    changes). `check` reads `Vcs::state` and returns `Found::Ask(repo, question)` for a modified or
+    changes). `check` maps `rtmsync::check` (with `commit_changes` on, as the app asks; the VCS
+    from `place` is its choice) to `Found`: `Found::Ask(repo, question)` for a modified or
     untracked file; nothing is committed until `App::answer`, and a change made meanwhile is written
     but not committed. A modal (`sync_question`) asks. Modified: "Commit them" commits `rtm:
     commit outside changes` and syncs, "Don't open" closes the file with a "commit or revert by hand"
