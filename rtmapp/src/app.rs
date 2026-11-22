@@ -927,10 +927,13 @@ impl App {
 
     /// The Git-or-Pijul question, while it is open. The answer is saved in the config.
     fn vcs_question(&mut self, ctx: &egui::Context, p: &Palette) {
-        let Some(found) = self.file().and_then(|file| file.choose_vcs.as_ref()) else {
+        let Some(file) = self.file() else {
             return;
         };
-        let name = file_name(self.file());
+        let Some(found) = file.choose_vcs.as_ref() else {
+            return;
+        };
+        let name = file_name_of(&file.path);
         let mut answer = None;
         // Escape and the backdrop do nothing: the file waits for the answer.
         theme::question(
@@ -944,10 +947,7 @@ impl App {
             ),
             |ui| {
                 for vcs in found.iter().rev() {
-                    let vcs = match vcs {
-                        rtmsync::Vcs::Git => "Git",
-                        rtmsync::Vcs::Pijul => "Pijul",
-                    };
+                    let vcs = vcs_label(*vcs);
                     if theme::primary_button(ui, vcs).clicked() {
                         answer = Some(vcs.to_ascii_lowercase());
                     }
@@ -982,11 +982,8 @@ impl App {
         let Some((repo, question)) = &file.asking else {
             return;
         };
-        let name = file_name(Some(file));
-        let vcs = match repo.vcs() {
-            rtmsync::Vcs::Git => "Git",
-            rtmsync::Vcs::Pijul => "Pijul",
-        };
+        let name = file_name_of(&file.path);
+        let vcs = vcs_label(repo.vcs());
         let (title, text, yes, no) = match question {
             Question::Modified => (
                 format!("Commit the changes to {name}?"),
@@ -1343,7 +1340,7 @@ impl App {
             return;
         };
         file.name = if name.is_empty() {
-            OpenFile::default_name(path)
+            file_name_of(path)
         } else {
             name.to_owned()
         };
@@ -1451,10 +1448,7 @@ impl App {
         if file.archive_ignored != Some(true) {
             return None;
         }
-        file.repo.as_ref().map(|repo| match repo.vcs {
-            rtmsync::Vcs::Git => "Git",
-            rtmsync::Vcs::Pijul => "Pijul",
-        })
+        file.repo.as_ref().map(|repo| vcs_label(repo.vcs))
     }
 
     /// Starts or stops sync after Settings changed `sync`, once no job is outstanding: a running
@@ -2000,19 +1994,12 @@ fn ensure_repo<'a>(
 impl OpenFile {
     /// The file of the session at `path`, not loaded yet; `name` is its entry's tab label.
     fn new(path: PathBuf, name: Option<String>) -> Self {
-        let name = name.unwrap_or_else(|| OpenFile::default_name(&path));
+        let name = name.unwrap_or_else(|| file_name_of(&path));
         OpenFile {
             path,
             name,
             ..OpenFile::default()
         }
-    }
-
-    fn default_name(path: &Path) -> String {
-        path.file_name().map_or_else(
-            || path.display().to_string(),
-            |name| name.to_string_lossy().into_owned(),
-        )
     }
 
     /// A file loaded at its canonical path, labelled `name` or by its file name.
@@ -2627,12 +2614,20 @@ fn find_item(items: &[TodoItem], index: usize, item: &TodoItem) -> Option<usize>
     items.iter().position(|i| i == item)
 }
 
-/// The file name of `path`, to name a file that is no longer open.
+/// The name to show for the file at `path`: its file name, or the whole path when it has none.
 fn file_name_of(path: &Path) -> String {
     path.file_name().map_or_else(
         || path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     )
+}
+
+/// The name of `vcs` as the UI shows it.
+fn vcs_label(vcs: rtmsync::Vcs) -> &'static str {
+    match vcs {
+        rtmsync::Vcs::Git => "Git",
+        rtmsync::Vcs::Pijul => "Pijul",
+    }
 }
 
 /// One change's own message, or a count with one line per change.
@@ -3048,7 +3043,7 @@ fn tab(
         let mut field_ui = ui.new_child(egui::UiBuilder::new().max_rect(field));
         // The hint, also the field's accessible name, is the label an empty name gives.
         let mut output = egui::TextEdit::singleline(text)
-            .hint_text(OpenFile::default_name(&file.path))
+            .hint_text(file_name_of(&file.path))
             .font(font)
             .margin(egui::Margin::symmetric(4, 2))
             .desired_width(width)
@@ -3109,13 +3104,6 @@ fn scroll_to_once(ui: &Ui, tab: &egui::Response, path: &Path) {
         tab.scroll_to_me(None);
         ui.data_mut(|data| data.insert_temp(id, path));
     }
-}
-
-/// The file name of `file`, as the questions name it.
-fn file_name(file: Option<&OpenFile>) -> String {
-    file.and_then(|file| file.path.file_name())
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
 }
 
 /// `shortcut` as the menu shows it. egui spells out a key after modifier names ("Ctrl+Comma");
