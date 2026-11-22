@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use rtmsync::{Error, State, Vcs};
+use rtmsync::{Checked, Error, Refusal, State, Vcs, check};
 
 fn pijul(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("pijul")
@@ -146,6 +146,11 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
 
     assert!(!Vcs::Pijul.is_tracked(&todo).unwrap());
     assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Untracked);
+    let result = check(&todo, None, false);
+    assert!(
+        matches!(result, Ok(Checked::Untracked(Vcs::Pijul))),
+        "{result:?}"
+    );
     let ignored = sub.join("ignored.txt");
     std::fs::write(&ignored, "ignored\n").unwrap();
     std::fs::write(repo.join(".ignore"), "ignored.txt\n").unwrap();
@@ -164,6 +169,18 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     assert!(Vcs::Pijul.is_tracked(&todo).unwrap());
     assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Clean);
     assert!(!Vcs::Pijul.has_remote(&todo).unwrap());
+    let result = check(&todo, None, false);
+    assert!(
+        matches!(
+            result,
+            Ok(Checked::Sync {
+                vcs: Vcs::Pijul,
+                state: State::Clean,
+                remote: false
+            })
+        ),
+        "{result:?}"
+    );
     let log = pijul(&sub, &["log"]);
     assert!(log.contains("first"), "{log}");
 
@@ -176,6 +193,7 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
 
     std::fs::write(&todo, "Buy milk\nCall mom\n").unwrap();
     assert_eq!(Vcs::Pijul.state(&todo).unwrap(), State::Modified);
+    assert_eq!(check(&todo, None, false).unwrap_err(), Refusal::Modified);
     Vcs::Pijul.commit(&todo, "second").unwrap();
     assert!(pijul(&sub, &["log"]).contains("second"));
 
@@ -207,6 +225,11 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     pijul(&dir, &["clone", "repo", "b"]);
     let (a, b) = (dir.join("a/sub/todo.txt"), dir.join("b/sub/todo.txt"));
     assert!(Vcs::Pijul.has_remote(&a).unwrap());
+    let result = check(&a, None, false);
+    assert!(
+        matches!(result, Ok(Checked::Sync { remote: true, .. })),
+        "{result:?}"
+    );
 
     std::fs::write(&a, "Buy milk\nCall mom\nFrom a\n").unwrap();
     Vcs::Pijul.commit(&a, "from a").unwrap();
@@ -224,6 +247,8 @@ key = "EzvZqHUT69TW3kak4QKUNPUToh3pCYg7gfLtkZ1doeMB"
     let result = Vcs::Pijul.sync(&b);
     assert!(matches!(result, Err(Error::Conflict)), "{result:?}");
     assert!(Vcs::Pijul.is_conflicted(&b).unwrap());
+    let result = check(&b, None, true);
+    assert!(matches!(result, Err(Refusal::Conflicted(_))), "{result:?}");
     assert!(
         !pijul(&repo, &["log"]).contains("then b"),
         "a conflicted sync pushed"

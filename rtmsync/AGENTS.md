@@ -19,14 +19,14 @@ per-change sync (RTM-20), the GUI's check on open (RTM-70).
 ```
 rtmsync/
 ├── src/
-│   ├── lib.rs                ← Vcs enum, detect(), root(), lock_target(), Vcs::{commit,
+│   ├── lib.rs                ← Vcs enum, detect(), root(), lock_target(), check(), Vcs::{commit,
 │   │                           commit_files, sync, state, is_tracked, is_conflicted,
-│   │                           has_remote}, State, Error
+│   │                           has_remote}, State, Checked, Refusal, Error
 │   └── tests/                ← Unit tests: markers (lib_detect), timed calls (lib_process),
 │                               the lock target (lib_lock)
 └── tests/
     ├── sync_detect_tests.rs  ← detect() in repositories made by git init and pijul init
-    ├── sync_git_tests.rs     ← Vcs::commit, Vcs::state and Vcs::sync with Git
+    ├── sync_git_tests.rs     ← Vcs::commit, Vcs::state, Vcs::sync and check() with Git
     └── sync_pijul_tests.rs   ← The same with Pijul (a single test, see below)
 ```
 
@@ -110,9 +110,27 @@ rtmsync/
   | conflicted | not opened until the user resolves it (RTM-16 rule 8); an untracked file is used without sync instead |
   | missing | unchanged (the frontend's missing-file behaviour) |
 
-  rtmcli implements it (RTM-63), the desktop app with a dialog (RTM-70). Since RTM-20 the app writes
+  `check` (below) decides it for every frontend; rtmcli maps its result to exit codes and
+  `--commit-changes` (RTM-63), the desktop app to a dialog (RTM-70), the MCP server to refusals and
+  notes. Since RTM-20 the app writes
   and commits each change at once whenever no job runs; a failed commit or a crash between the two
   can still leave its own change uncommitted, which the check then reports as an outside change.
+- **`check(file, choice, commit_changes) -> Result<Checked, Refusal>`** is that check, the one
+  copy of its rules: rtmcli's `Repo::find`, the MCP server's `RepoWrite::find` and rtmapp's
+  `sync::check` call it and keep only their messages, exit codes, questions and commits. In order:
+  `detect` and `choice` (several VCSs and no choice among them → `Refusal::Ambiguous`, one VCS and
+  another choice → `Refusal::NotChosen`; none → `Checked::NotVersioned`); the file's state, a
+  missing file counting as clean when tracked and as ignored otherwise (`state` cannot classify
+  it, and committing a deleted file would remove every item); ignored → `NotVersioned`, untracked
+  without `commit_changes` → `Checked::Untracked`, both before the conflict check; `is_conflicted`
+  → `Refusal::Conflicted(state)`, before the outside changes, as a file in a stopped rebase is
+  also modified; modified without `commit_changes` → `Refusal::Modified`; otherwise
+  `Checked::Sync { vcs, state, remote }` (`has_remote`, false when it fails). A failed state or
+  conflict check is `Checked::Unavailable`, a warning, not a refusal. With `commit_changes` (rtmcli's
+  flag, rtmapp's questions; the MCP server passes false) a modified or untracked file comes back
+  as `Sync` for the caller to commit first; `check` commits nothing. An untracked file in a
+  conflicted repository is then `Conflicted(Untracked)`: rtmcli exits 1, rtmapp opens it without
+  sync, as the table's conflicted row says.
 - Network calls (pull, push) run with `GIT_TERMINAL_PROMPT=0`: credentials come from a helper or
   ssh-agent, never a terminal prompt (decided for the CLI too). They are killed after 60 s
   (`Timeout`). Their stdout is discarded and their stderr goes to a temporary file, not a pipe: ssh

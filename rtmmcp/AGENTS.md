@@ -17,7 +17,7 @@ rtmmcp/
 │   ├── lib.rs      ← Source, Sources, Error, serve(), serve_on()
 │   ├── server.rs   ← The rmcp server: tool parameters, annotations, instructions, get_info
 │   ├── tools.rs    ← What each tool does, synchronously, on one file; the write sequence
-│   ├── sync.rs     ← RepoWrite: rtmcli's sync rules for one change, returning messages
+│   ├── sync.rs     ← RepoWrite: rtmsync::check and the sync of one change, returning messages
 │   ├── claim.rs    ← One rtm server per client
 │   └── tests/      ← Unit tests: claim, the server's duplicate check and archive arguments,
 │                     sync (git), tools (listing, changes, archive)
@@ -85,12 +85,12 @@ rtmmcp/
   and `edit_item`), or an unknown `file`, refused before it starts, also changes nothing); after
   the save nothing fails the tool (a client might repeat a change that landed): a failed commit
   or push, and a conflict, are notes in the result.
-- **Sync (`sync.rs`)** follows rtmcli (`rtmcli/AGENTS.md`), returning messages instead of
-  exiting: sync off, no repository or an ignored file → not synced; an untracked file → changed
-  without sync, with a note (no `--commit-changes` equivalent); both Git and Pijul without a
-  choice, or a choice the directory lacks → refused; a conflicted repository → refused, checked
-  before the outside changes, since a file in a stopped rebase is also modified; outside changes →
-  refused, the user commits or reverts them. No remote → commit only.
+- **Sync (`sync.rs`)** maps `rtmsync::check` (see `rtmsync/AGENTS.md`, the rules rtmcli uses
+  too) to messages instead of exiting, with `commit_changes` off (no `--commit-changes`
+  equivalent): sync off, no repository or an ignored file → not synced; an untracked file →
+  changed without sync, with a note; a failed check → a "Not syncing" note; both Git and Pijul
+  without a choice, or a choice the directory lacks → refused; a conflicted repository → refused;
+  outside changes → refused, the user commits or reverts them. No remote → commit only.
 - **`archive_items`** moves done items to the file's archive (`TodoLibrary::archive`, see
   `todotxt/AGENTS.md`): all of them, or with `older_than_days` (today minus that many days,
   `NaiveDate::MIN` when it underflows, as rtmcli) or `completed_before` (YYYY-MM-DD) only those

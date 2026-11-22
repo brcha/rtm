@@ -1,6 +1,6 @@
 use chrono::Local;
 use clap::{Parser, Subcommand, ValueEnum};
-use rtmsync::{State, Vcs};
+use rtmsync::{Checked, Refusal, State, Vcs};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use todotxt::TodoLibrary;
@@ -206,72 +206,48 @@ impl Repo {
             return None;
         }
         let file = PathBuf::from(file);
-        let found = rtmsync::detect(&file);
-        let vcs = match (found.as_slice(), choice.map(VcsName::vcs)) {
-            ([], _) => return None,
-            ([only], None) => *only,
-            (found, Some(chosen)) if found.contains(&chosen) => chosen,
-            ([only], Some(chosen)) => {
-                eprintln!(
-                    "'{}' is in a {only:?} repository, not {chosen:?}",
-                    file.display()
-                );
-                std::process::exit(2);
-            }
-            (found, _) => {
-                eprintln!(
-                    "'{}' is in a directory used by {found:?}; choose one with --vcs or RTM_VCS",
-                    file.display()
-                );
-                std::process::exit(2);
-            }
-        };
-        let state = if file.exists() {
-            vcs.state(&file)
-        } else {
-            // A missing file's state cannot be told reliably; it keeps the behaviour from before
-            // the check: synced when tracked, silently not otherwise.
-            vcs.is_tracked(&file).map(|tracked| {
-                if tracked {
-                    State::Clean
-                } else {
-                    State::Ignored
+        let (vcs, state, remote) =
+            match rtmsync::check(&file, choice.map(VcsName::vcs), commit_changes) {
+                Ok(Checked::Sync { vcs, state, remote }) => (vcs, state, remote),
+                Ok(Checked::NotVersioned) => return None,
+                Ok(Checked::Untracked(vcs)) => {
+                    eprintln!(
+                        "'{}' is not tracked by {vcs:?}; run with --commit-changes to add it and \
+                         sync, or ignore it in the repository to silence this",
+                        file.display()
+                    );
+                    return None;
                 }
-            })
-        };
-        let state = match state {
-            Ok(State::Ignored) => return None,
-            Ok(State::Untracked) if !commit_changes => {
-                eprintln!(
-                    "'{}' is not tracked by {vcs:?}; run with --commit-changes to add it and sync, \
-                     or ignore it in the repository to silence this",
-                    file.display()
-                );
-                return None;
-            }
-            Ok(state) => state,
-            Err(e) => {
-                eprintln!("Not syncing: {e}");
-                return None;
-            }
-        };
-        match vcs.is_conflicted(&file) {
-            Ok(false) => {}
-            Ok(true) => conflicted(&file),
-            Err(e) => {
-                eprintln!("Not syncing: {e}");
-                return None;
-            }
-        }
+                Ok(Checked::Unavailable(e)) => {
+                    eprintln!("Not syncing: {e}");
+                    return None;
+                }
+                Err(Refusal::NotChosen { found, chosen }) => {
+                    eprintln!(
+                        "'{}' is in a {found:?} repository, not {chosen:?}",
+                        file.display()
+                    );
+                    std::process::exit(2);
+                }
+                Err(Refusal::Ambiguous(found)) => {
+                    eprintln!(
+                        "'{}' is in a directory used by {found:?}; choose one with --vcs or \
+                         RTM_VCS",
+                        file.display()
+                    );
+                    std::process::exit(2);
+                }
+                Err(Refusal::Conflicted(_)) => conflicted(&file),
+                Err(Refusal::Modified) => {
+                    eprintln!(
+                        "'{}' has changes not committed by rtm (made by hand, or with \
+                         --no-sync); commit or revert them, or run with --commit-changes",
+                        file.display()
+                    );
+                    std::process::exit(1);
+                }
+            };
         let message = match state {
-            State::Modified if !commit_changes => {
-                eprintln!(
-                    "'{}' has changes not committed by rtm (made by hand, or with --no-sync); \
-                     commit or revert them, or run with --commit-changes",
-                    file.display()
-                );
-                std::process::exit(1);
-            }
             State::Modified => Some("rtm: commit outside changes".to_owned()),
             State::Untracked => Some(format!(
                 "rtm: track {}",
@@ -285,7 +261,6 @@ impl Repo {
             eprintln!("Not committed: {e}");
             std::process::exit(1);
         }
-        let remote = vcs.has_remote(&file).unwrap_or(false);
         Some(Repo { vcs, file, remote })
     }
 

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use rtmsync::{Error, State, Vcs};
+use rtmsync::{Checked, Error, Refusal, State, Vcs, check};
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
@@ -318,4 +318,212 @@ fn state_tells_a_file_ignored_by_name_or_by_its_directory() {
     assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Ignored);
     std::fs::write(dir.join(".gitignore"), "sub/\n").unwrap();
     assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Ignored);
+}
+
+/// Clone `a` of `remote_and_clones`, stopped in a rebase whose conflict in `sub/todo.txt` the user
+/// resolved and staged without running `git rebase --continue`. Returns the scratch directory.
+fn stopped_rebase(name: &str) -> PathBuf {
+    let dir = remote_and_clones(name);
+    git(&dir.join("b"), &["pull", "--quiet"]);
+    std::fs::write(dir.join("b/sub/todo.txt"), "one\nfrom b\n").unwrap();
+    Vcs::Git.commit(&dir.join("b/sub/todo.txt"), "b").unwrap();
+    git(&dir.join("b"), &["push", "--quiet"]);
+    std::fs::write(dir.join("a/sub/todo.txt"), "one\nfrom a\n").unwrap();
+    Vcs::Git.commit(&dir.join("a/sub/todo.txt"), "a").unwrap();
+    assert!(matches!(
+        Vcs::Git.sync(&dir.join("a/sub/todo.txt")),
+        Err(Error::Conflict)
+    ));
+    std::fs::write(dir.join("a/sub/todo.txt"), "one\nfrom b\nfrom a\n").unwrap();
+    git(&dir.join("a"), &["add", "sub/todo.txt"]);
+    dir
+}
+
+#[test]
+fn check_leaves_a_file_outside_a_repository_unsynced() {
+    let dir = scratch("check none");
+    let todo = dir.join("todo.txt");
+    std::fs::write(&todo, "").unwrap();
+    let result = check(&todo, None, true);
+    assert!(matches!(result, Ok(Checked::NotVersioned)), "{result:?}");
+}
+
+#[test]
+fn check_leaves_an_ignored_file_unsynced() {
+    let dir = repo("check ignored");
+    std::fs::write(dir.join(".gitignore"), "todo.txt\n").unwrap();
+    let result = check(&dir.join("sub/todo.txt"), None, true);
+    assert!(matches!(result, Ok(Checked::NotVersioned)), "{result:?}");
+}
+
+#[test]
+fn check_syncs_an_untracked_file_only_when_the_caller_adds_it() {
+    let dir = repo("check untracked");
+    let todo = dir.join("sub/todo.txt");
+    let result = check(&todo, None, false);
+    assert!(
+        matches!(result, Ok(Checked::Untracked(Vcs::Git))),
+        "{result:?}"
+    );
+    let result = check(&todo, None, true);
+    assert!(
+        matches!(
+            result,
+            Ok(Checked::Sync {
+                vcs: Vcs::Git,
+                state: State::Untracked,
+                remote: false
+            })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn check_syncs_a_missing_file_only_when_it_is_tracked() {
+    let dir = repo("check missing");
+    let result = check(&dir.join("sub/never.txt"), None, true);
+    assert!(matches!(result, Ok(Checked::NotVersioned)), "{result:?}");
+    let todo = dir.join("sub/todo.txt");
+    Vcs::Git.commit(&todo, "one").unwrap();
+    std::fs::remove_file(&todo).unwrap();
+    // Not `Modified`: committing the deletion would remove every item.
+    let result = check(&todo, None, true);
+    assert!(
+        matches!(
+            result,
+            Ok(Checked::Sync {
+                state: State::Clean,
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn check_refuses_outside_changes_unless_the_caller_commits_them() {
+    let dir = repo("check modified");
+    let todo = dir.join("sub/todo.txt");
+    Vcs::Git.commit(&todo, "one").unwrap();
+    let result = check(&todo, None, false);
+    assert!(
+        matches!(
+            result,
+            Ok(Checked::Sync {
+                vcs: Vcs::Git,
+                state: State::Clean,
+                remote: false
+            })
+        ),
+        "{result:?}"
+    );
+    std::fs::write(&todo, "by hand\n").unwrap();
+    assert_eq!(check(&todo, None, false).unwrap_err(), Refusal::Modified);
+    let result = check(&todo, None, true);
+    assert!(
+        matches!(
+            result,
+            Ok(Checked::Sync {
+                state: State::Modified,
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn check_finds_the_remote_of_a_clone() {
+    let dir = remote_and_clones("check remote");
+    let result = check(&dir.join("a/sub/todo.txt"), None, false);
+    assert!(
+        matches!(
+            result,
+            Ok(Checked::Sync {
+                vcs: Vcs::Git,
+                state: State::Clean,
+                remote: true
+            })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn check_finds_a_conflict_before_outside_changes() {
+    let dir = stopped_rebase("check conflict");
+    let todo = dir.join("a/sub/todo.txt");
+    assert_eq!(Vcs::Git.state(&todo).unwrap(), State::Modified);
+    for commit_changes in [false, true] {
+        assert_eq!(
+            check(&todo, None, commit_changes).unwrap_err(),
+            Refusal::Conflicted(State::Modified),
+            "commit_changes: {commit_changes}"
+        );
+    }
+}
+
+#[test]
+fn check_tells_an_untracked_file_in_a_conflicted_repository() {
+    let dir = stopped_rebase("check conflict untracked");
+    let new = dir.join("a/sub/new.txt");
+    std::fs::write(&new, "").unwrap();
+    let result = check(&new, None, false);
+    assert!(
+        matches!(result, Ok(Checked::Untracked(Vcs::Git))),
+        "{result:?}"
+    );
+    assert_eq!(
+        check(&new, None, true).unwrap_err(),
+        Refusal::Conflicted(State::Untracked)
+    );
+}
+
+#[test]
+fn check_needs_a_choice_the_directory_has() {
+    let dir = repo("check choice");
+    let todo = dir.join("sub/todo.txt");
+    Vcs::Git.commit(&todo, "one").unwrap();
+    assert_eq!(
+        check(&todo, Some(Vcs::Pijul), false).unwrap_err(),
+        Refusal::NotChosen {
+            found: Vcs::Git,
+            chosen: Vcs::Pijul
+        }
+    );
+    // Detection looks at markers only, so an empty `.pijul` makes the directory ambiguous.
+    std::fs::create_dir(dir.join(".pijul")).unwrap();
+    assert_eq!(
+        check(&todo, None, false).unwrap_err(),
+        Refusal::Ambiguous(vec![Vcs::Git, Vcs::Pijul])
+    );
+    let result = check(&todo, Some(Vcs::Git), false);
+    assert!(
+        matches!(
+            result,
+            Ok(Checked::Sync {
+                vcs: Vcs::Git,
+                state: State::Clean,
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn check_does_not_refuse_a_file_when_a_check_fails() {
+    let dir = scratch("check broken");
+    std::fs::create_dir(dir.join("sub")).unwrap();
+    // Passes detection, which looks at markers only, but every git call fails.
+    let gitdir = format!("gitdir: {}\n", dir.join("missing").display());
+    std::fs::write(dir.join(".git"), gitdir).unwrap();
+    let todo = dir.join("sub/todo.txt");
+    std::fs::write(&todo, "").unwrap();
+    let result = check(&todo, None, false);
+    assert!(
+        matches!(result, Ok(Checked::Unavailable(Error::Failed { .. }))),
+        "{result:?}"
+    );
 }

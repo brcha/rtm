@@ -116,20 +116,20 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ## Sync (RTM-21, RTM-63)
 
 - `Repo::find` decides, before the command runs: `--no-sync` / `RTM_NO_SYNC` (clap's boolish
-  parser: `1`/`0`, `true`/`false`, `yes`/`no`, `on`/`off`) → no sync and no commits.
-  `rtmsync::detect`: none → no sync; one → it; both Git and Pijul → `--vcs` / `RTM_VCS` picks, else
-  exit 2 (a `--vcs` that the directory lacks is also exit 2). Then the file's state
-  (`Vcs::state`, RTM-63, the RTM-57 decision): ignored → no sync, silently; untracked → no sync, with
-  a hint naming `--commit-changes` and that ignoring the file silences it (so rtmcli in a project
-  directory never adds a stray `todo.txt` on its own); a conflicted repository (`Vcs::is_conflicted`)
-  → exit 1 before loading, and before any commit; modified (changes made by hand or with
-  `--no-sync`) → exit 1, saying to commit or revert them or use the flag. `--commit-changes` (global,
-  deliberately no environment variable) answers yes: modified → commit `rtm: commit outside
-  changes`, untracked → commit `rtm: track <name>`, then the command runs; a failed commit exits 1.
-  A missing file skips the state check (synced when tracked, as before): `state` would call a
-  deleted tracked file modified, and the flag would commit the deletion of every item. Finally
-  `has_remote` decides whether to pull and push. A failed check (e.g. `git` not installed) is a
-  "Not syncing" warning. Exit 1 is for a state the user must fix, exit 2 for a usage error.
+  parser: `1`/`0`, `true`/`false`, `yes`/`no`, `on`/`off`) → no sync and no commits. Otherwise
+  `rtmsync::check` decides, with its rules and their order (see `rtmsync/AGENTS.md`; `--vcs` /
+  `RTM_VCS` is its choice, `--commit-changes` its `commit_changes`), and rtmcli maps the result:
+  no repository or an ignored file → no sync, silently; untracked → no sync, with a hint naming
+  `--commit-changes` and that ignoring the file silences it (so rtmcli in a project directory never
+  adds a stray `todo.txt` on its own); both Git and Pijul and no `--vcs`, or a `--vcs` that the
+  directory lacks → exit 2; a conflicted repository → exit 1 before loading, and before any commit
+  (with `--commit-changes`, for an untracked file too); modified (changes made by hand or with
+  `--no-sync`) → exit 1, saying to commit or revert them or use the flag; a failed check (e.g.
+  `git` not installed) → a "Not syncing" warning. `--commit-changes` (global, deliberately no
+  environment variable) answers yes: modified → commit `rtm: commit outside changes`, untracked →
+  commit `rtm: track <name>`, then the command runs; a failed commit exits 1. A missing file is
+  synced when tracked and never committed as a deletion. The check's `remote` decides whether to
+  pull and push. Exit 1 is for a state the user must fix, exit 2 for a usage error.
 - Every command syncs (pull, then push) first when there is a remote. `add`, `complete` and
   `delete` then commit (`rtm: add <description>`, `rtm: complete <item>` or `rtm: complete <n>
   items`, `rtm: delete <item>`) and sync again (`Repo::commit_and_sync`). Without a remote they only
