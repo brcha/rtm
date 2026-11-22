@@ -62,14 +62,16 @@
     from the list under "Commit subjects" in `AGENTS.md`, and ` -- RTM-NN` at the end. The edit
     starts no new run and the check action reads only the event's old title, so after appending
     the key the job checks the new title in a step of its own, against the same lists (job-level
-    `env` in `pr-title.yml`).
+    `env` in `pr-title.yml`). That step also sets the labels the action sets for a title it
+    checks: the type (`fix`, `feat`, ...), `breaking change` for a `!` title, and no other type.
   - GitHub does not render the `RTM-NN` autolink in titles, so the job also starts the
     description with `Issue: [RTM-NN](https://brcha.atlassian.net/browse/RTM-NN)`, the key taken
     from the title. It adds the line when missing, replaces it when the title's key changes, and
     changes nothing when it is already right, so there is never a second line; a line someone
     removes comes back on the next event. The rest of the description is kept as it is.
   - It uses the `pull_request` trigger with `pull-requests: write`. A fork's run gets a read-only
-    token, so the description step is skipped for forks (the title check still runs).
+    token, so for forks the job does not append the key, add the description line or set the
+    type label; the title check still runs and reports a key missing from the title.
     `pull_request_target` would give forks a write token, but it runs that token next to the
     fork's own title, branch and description text, for forks this repository does not get.
   - A `pull_request` run takes the workflow from the PR's merge commit. A PR against a branch

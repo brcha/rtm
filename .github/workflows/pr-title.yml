@@ -21,9 +21,12 @@ jobs:
       # If the branch name carries an RTM-NN reference (e.g. issues/RTM-27/foo) and the PR
       # title doesn't already end with " -- RTM-NN", append it automatically. Edits made with
       # the workflow token start no new run, so the validate step below is skipped on this run:
-      # it would check the event's old title. "Validate the fixed title" checks the new one.
+      # it would check the event's old title. "Validate and label the fixed title" checks the new
+      # one. Fork PRs get a read-only token and are skipped: the validate step reports the key
+      # missing from their title.
       - name: Autofix PR title from branch name
         id: autofix
+        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -104,10 +107,14 @@ jobs:
           gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/pr-body.md"
 
       # The same rules as the action below, which reads only the event's title: optional leading
-      # spaces, type, one scope, optional "!", ": ", and the key at the end.
-      - name: Validate the fixed title
+      # spaces, type, one scope, optional "!", ": ", and the key at the end. Then the labels the
+      # action sets: the type, "breaking change" for "!", and no other managed label.
+      - name: Validate and label the fixed title
         if: steps.autofix.outputs.patched == 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
           TITLE: ${{ steps.autofix.outputs.title }}
         run: |
           set -euo pipefail
@@ -119,6 +126,24 @@ jobs:
             exit 1
           fi
 
+          re='^[[:space:]]*([a-z]+)\([a-z]+\)(!?): '
+          [[ $TITLE =~ $re ]]
+          want=$(jq -nc --arg type "${BASH_REMATCH[1]}" --arg bang "${BASH_REMATCH[2]}" \
+            '[$type] + if $bang == "!" then ["breaking change"] else [] end')
+          have=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '[.labels[].name]')
+          remove=$(jq -nr --argjson have "$have" --argjson want "$want" --argjson types "$TASK_TYPES" \
+            '$have - $want | map(select(. as $l | $types + ["breaking change"] | index($l))) | join(",")')
+
+          existing=$(gh label list --repo "$REPO" --limit 1000 --json name --jq '[.[].name]')
+          jq -r --argjson existing "$existing" '.[] | select(. as $l | $existing | index($l) | not)' <<<"$want" |
+            while IFS= read -r label; do
+              gh label create "$label" --repo "$REPO"
+            done
+
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "$(jq -r 'join(",")' <<<"$want")" \
+            ${remove:+--remove-label "$remove"}
+
+      # Fork runs have a read-only token, so they check the title without labelling.
       - name: Validate PR title
         if: steps.autofix.outputs.patched != 'true'
         uses: ytanikin/pr-conventional-commits@639145d78959c53c43112365837e3abd21ed67c1 # 1.5.2
@@ -126,4 +151,4 @@ jobs:
           task_types: ${{ env.TASK_TYPES }}
           scope_types: ${{ env.SCOPE_TYPES }}
           title_regex: ' -- RTM-\d+$'
-          add_label: 'true'
+          add_label: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
