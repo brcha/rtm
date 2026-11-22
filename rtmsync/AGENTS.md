@@ -68,7 +68,7 @@ rtmsync/
   `Spawn` (could not start; `NotFound` usually means not in `PATH`, but also a missing directory),
   `Failed` (non-zero exit, with stderr), `Conflict` and `Timeout` (below). The only output parsed is
   git's porcelain v2 status, the plain path lists of `rev-parse --git-path` and `pijul ls`, the
-  `U <path>` and `A <path>` lines of `pijul diff --short --untracked`, and whether `pijul remote` or
+  `U <path>` lines of `pijul diff --short --untracked`, and whether `pijul remote` or
   `pijul diff --short` prints anything; none depends on the locale, so no `LC_ALL=C`.
 - **`Vcs::sync(file)` pulls, then pushes only if the pull applied cleanly.** Git: `pull --rebase
   --autostash`, so local commits are rebased onto the remote; any unmerged (`u`) path in `status
@@ -89,12 +89,16 @@ rtmsync/
   of the file (`1`, `2` or `u` lines) for a tracked one, or `check-ignore -q` (exit 0 ignored, 1
   not; status shows nothing for an ignored file) for an untracked one. Pijul: `is_tracked`, then
   whether `pijul diff --short -- <file>` prints anything, or whether `pijul diff --short
-  --untracked .` in the file's directory lists it, as `U <path>` at the repository root and
-  `A <path>` below it (pijul 1.0.0-beta.18; beta.11 has the flag); an ignored file is left out.
-  `U` lines use the OS separator (`sub\done.txt` on Windows), so the paths are compared as paths,
-  not strings.
-  Without `--untracked` an untracked file at the root is not listed, and `pijul add` cannot tell
-  either, as it reports success for an ignored file. A missing file is not classified reliably (a
+  --untracked` lists it or one of its parent directories as `U <path>` (root-relative, with the
+  OS separator: `sub\done.txt` on Windows, so paths are compared as paths, not strings); an
+  ignored file is left out. The command takes no path: with one, diff adds the untracked
+  files under it, and from pijul 1.0.0-beta.26 on it keeps them added (beta.11 and beta.18 discard
+  them). Without a path, pijul does not descend into an untracked directory and lists only the
+  directory, so an ignored file inside one reads as `Untracked` (a `shortcut:` in the code); adding
+  it tracks nothing and the frontends offer it again. The walk covers the whole repository, not
+  only the file's directory. `A <path>` lines (added, never recorded) are not read.
+  Without `--untracked` no untracked file is listed, and `pijul add` cannot tell either, as it
+  reports success for an ignored file. A missing file is not classified reliably (a
   deleted tracked file is `Modified` for Git, a missing untracked one `Ignored` for Pijul), so
   callers skip the check for one.
 - **The check on open (RTM-57 decision)**, before the first pull, whenever the frontend would commit
@@ -177,6 +181,8 @@ rtmsync/
   sets `RTM_REQUIRE_PIJUL=1`. Windows downloads the community build of 1.0.0-beta.11 linked from
   pijul.org (boringcactus/pijul-windows-builds), checked against its SHA-256: pijul cannot be built
   from source there (libsodium-sys's build script panics under MSVC, and pijul's own Windows code
-  did not compile at beta.12), and newer releases could not record anyway (RTM-58).
+  did not compile at beta.12), and newer releases could not record anyway (RTM-58). The dev shell
+  has beta.18; to run the Pijul test on beta.26 locally:
+  `nix develop -c nix shell github:NixOS/nixpkgs/nixos-unstable#pijul -c cargo test -p rtmsync --test sync_pijul_tests`.
 - `rtmcli` (RTM-21) and `rtmapp` (RTM-64) depend on the crate, so the package inputs that the
   Release workflow's `changes` job checks include `rtmsync/`.
