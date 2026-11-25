@@ -147,7 +147,7 @@ main > section, main > article {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.5rem;
 }
-.screenshots .wide { grid-column: 1 / -1; max-width: 807px; justify-self: center; }
+.screenshots .wide { grid-column: 1 / -1; max-width: 829px; justify-self: center; }
 .screenshots figure { margin: 0; }
 .screenshots img {
   display: block;

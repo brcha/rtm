@@ -32,7 +32,7 @@ What works today:
 
 Here are screenshots of the GUI, in the light and the dark theme:
 
-<img src="screenshot_gui.png" alt="rtmapp, light theme" title="RTM GUI, light theme" width="49%"> <img src="screenshot_gui_dark.png" alt="rtmapp, dark theme" title="RTM GUI, dark theme" width="49%">
+<img src="screenshot_gui.png" alt="rtmapp, light theme, showing two files in tabs and the projects and contexts sidebar" title="RTM GUI, light theme" width="49%"> <img src="screenshot_gui_dark.png" alt="rtmapp, dark theme, editing an item's whole line in the edit dialog" title="RTM GUI, dark theme, edit dialog" width="49%">
 
 and of the CLI:
 
