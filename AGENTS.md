@@ -1,210 +1,49 @@
 # AGENTS.md — Rusty Todo.txt Manager (rtm)
 
-## What This Project Is
+A [Todo.txt](https://github.com/todotxt/todo.txt) manager in Rust for GNU/Linux, macOS and Windows.
 
-A [Todo.txt](https://github.com/todotxt/todo.txt) manager written in Rust. Targets GNU/Linux,
-macOS, and Windows. Early development — core functionality works across two frontends.
-
-Subpart AGENTS.md files:
-- [`todotxt/AGENTS.md`](todotxt/AGENTS.md) — core library
-- [`rtmcli/AGENTS.md`](rtmcli/AGENTS.md) — CLI frontend
-- [`rtmapp/AGENTS.md`](rtmapp/AGENTS.md) — egui desktop app
-- [`rtmsync/AGENTS.md`](rtmsync/AGENTS.md) — sync through a VCS (epic RTM-1)
-- [`rtmupdate/AGENTS.md`](rtmupdate/AGENTS.md) — the update check (epic RTM-130)
-- [`rtmmcp/AGENTS.md`](rtmmcp/AGENTS.md) — the MCP server (epic RTM-113)
-- [`site/AGENTS.md`](site/AGENTS.md) — the project website (Zola, epic RTM-79)
-
-Documents:
-- [`doc/release-process.md`](doc/release-process.md) — making a release, the Release workflow, and
-  the Windows, Linux and macOS packages and their tests
-- [`doc/nix-packaging.md`](doc/nix-packaging.md) — the Nix packages, the dev shell and the nixpkgs pin
-- [`doc/ci.md`](doc/ci.md) — which changes start which build, and the Linux CI apt hardening
-
----
-
-## Architecture / Structure
-
-```
-rtm/                        ← Cargo workspace root
-├── todotxt/                ← Core library (no UI, no binary)
-├── rtmcli/                 ← CLI (clap-based)
-├── rtmapp/                 ← Desktop app (egui/eframe)
-├── rtmsync/                ← Sync of todo.txt through Git or Pijul (library)
-├── rtmupdate/              ← Update check against the website's releases.json (library)
-├── rtmmcp/                 ← MCP server for AI assistants, over stdio (library)
-├── site/                   ← Project website (Zola); its scripts are in scripts/site/
-├── vercel.json             ← How Vercel builds and deploys the website (site/AGENTS.md)
-├── doc/                    ← Detailed reference: release process, Nix packaging, CI
-├── .claude/skills/         ← Repository skills, each pointing to its document in doc/
-├── flake.nix, default.nix  ← Nix packages
-└── shell.nix               ← Nix dev shell
-```
-
-`todotxt`, `rtmcli`, `rtmapp`, `rtmsync`, `rtmupdate` and `rtmmcp` share the root Cargo workspace (`Cargo.lock` at root). The `todotxt`
-library is the single source of truth for parsing, serialization, and business logic. Frontends depend
-on it via `path` dependency.
-
-`rtmapp` replaced the app of the same name of versions up to 0.1.3, keeping its features, its look and
-its config file. References to the old app's sources name commit `5076649`, the last commit that had
-them.
-
-`rtmapp` stores its config in the OS config directory (`dirs::config_dir()`), under
-`rtm/config.toml`. `rtmcli` has no config file (file from `-f` or `$TODOTXT`).
-
----
+- Subparts: [`todotxt`](todotxt/AGENTS.md), [`rtmcli`](rtmcli/AGENTS.md), [`rtmapp`](rtmapp/AGENTS.md), [`rtmsync`](rtmsync/AGENTS.md), [`rtmupdate`](rtmupdate/AGENTS.md), [`rtmmcp`](rtmmcp/AGENTS.md), [`site`](site/AGENTS.md).
+- Reference: [release process](doc/release-process.md), [Nix packaging](doc/nix-packaging.md), [CI](doc/ci.md), [desktop app](doc/rtmapp.md), [MCP eval](doc/mcp-eval.md), [website](doc/website.md).
 
 ## Conventions
 
-- **Rust edition:** 2024 everywhere.
-- **Async** is allowed where a library needs it: rtmapp's file dialogs (RTM-65, see
-  `rtmapp/AGENTS.md`) and the MCP server's `rmcp` (RTM-115). It never delays a change reaching the
-  file and its repository (below).
-- **Shared config key:** `file_name` (TOML string) — path to the active todo.txt file. `rtmapp`
-  also has `sync` (default true), `sync_interval_minutes` (default 10), `check_for_updates`
-  (default true), `update_channel` (`"stable"`/`"beta"`, default `"stable"`), `auto_archive`
-  (default false), `archive_older_than_days` (default 30) and `[[files]]`, the saved list of
-  todo.txt files with a per-file `vcs` (`"git"`/`"pijul"`) and archive settings, see
-  `rtmapp/AGENTS.md`.
-- **Date format:** `%Y-%m-%d` everywhere (chrono `NaiveDate`).
-- **Priority encoding:** stored as `u8` (0 = A, 1 = B, …).
-- All `save()` calls happen immediately after mutations, and, for a synced file, each change is
-  committed right after it is saved, so merge conflicts stay unlikely. The one delay: rtmapp holds changes made while one
-  of its sync jobs runs until the job ends, then writes them in one commit (see `rtmapp/AGENTS.md`).
-  rtmcli (and the MCP server) pull before each change and push right after it; rtmapp's worker
-  pushes on its schedule (RTM-20).
-- **Symlinked todo files are refused** by every frontend (`todotxt::refuse_symlink`), with a
-  message naming the link's target to open instead, so files kept next to the todo file always
-  sit next to the real one. Links among its parent directories are allowed.
-- **Branches:** issue work goes on `issues/RTM-NN/<slug>`, branched from `main`, or from
-  `releases/vYY.M` for a PR against a release branch (see [Release Process](doc/release-process.md)).
-  A cherry-pick of a merged change to a release branch goes on `cherry/RTM-NN/<slug>`, branched
-  from `releases/vYY.M`.
-- **Commit subjects** (RTM-110): `type(scope): summary -- RTM-NN`, a conventional-commit type and
-  exactly one scope, for commits on issue branches and PR titles alike (merges are squashes, so a PR
-  title becomes the commit). `.github/workflows/pr-title.yml` rejects a PR title without one of
-  these scopes; a new part of the repository adds its scope there and here in the same PR. It
-  also starts the PR description with a link to the title's issue (RTM-219, see
-  [CI](doc/ci.md)).
-  - `todotxt`, `rtmcli`, `rtmapp`, `rtmsync`, `rtmupdate`, `rtmmcp`: the crates (for `rtmapp`, its
-    packaging metadata in `rtmapp/Cargo.toml` too).
+- Rust edition 2024 in every crate; async only where a library needs it (rtmapp's file dialogs, `rmcp`), and never delaying a save.
+- `todotxt` is the only code that parses or prints todo.txt lines and holds the shared logic (filters, tag matching, archive); frontends call it so they behave alike.
+- Save right after every change and, for a synced file, commit right after the save; only rtmapp holds changes made during one of its sync jobs, then writes them in one commit.
+- Every process writing a todo file, a pull included, holds `todotxt::WriteLock` on `rtmsync::lock_target(file)` from before the repository check until after the push.
+- Every frontend refuses a todo file that is itself a symlink (`todotxt::refuse_symlink`), before locking, syncing or creating it.
+- rtm's own commits are `rtm: <verb> <description>` (`add`, `complete`, `delete`, `archive`, …), the same in every frontend.
+- The `update-check` feature of rtmcli and rtmapp is on by default and off in the Nix packages; test both builds (`--no-default-features`).
+- **Branches:** `issues/RTM-NN/<slug>` from `main`, or from `releases/vYY.M` for a PR against a release branch; a cherry-pick to a release branch goes on `cherry/RTM-NN/<slug>`.
+- **Commit subjects** and PR titles: `type(scope): summary -- RTM-NN`, one conventional type, exactly one scope; `.github/workflows/pr-title.yml` checks them, and a new scope goes there and here together.
+  - `todotxt`, `rtmcli`, `rtmapp`, `rtmsync`, `rtmupdate`, `rtmmcp`: the crates (`rtmapp` with its packaging metadata).
   - `site`: the website, `scripts/site/`, `vercel.json`, its workflow and the release posts.
-  - `release`: `release.yml`, `announce.yml`, the packages, `scripts/set-version.*`,
-    `scripts/changelog.sh`, `scripts/announce.sh`, `cliff.toml`, `doc/release-process.md` and the
-    release PRs.
+  - `release`: `release.yml`, `announce.yml`, the packages, `scripts/set-version.*`, `scripts/changelog.sh`, `scripts/announce.sh`, `cliff.toml`, `doc/release-process.md`, release PRs.
   - `nix`: `default.nix`, `flake.nix`, `shell.nix`, `doc/nix-packaging.md`.
-  - `github`: the other GitHub Actions workflows, the issue forms, the rulesets and `doc/ci.md`.
-  - `workspace`: repository-wide files (root `AGENTS.md`, `README.md`, the workspace `Cargo.toml`
-    and `Cargo.lock`, `.claude/`) and changes spread over several parts.
-
-  A change that touches several parts takes the scope of the part it is about (a crate change with
-  its documentation and tests is that crate's); `workspace` only when no part dominates. The type
-  says what kind of change it is, the scope where: `ci(github): ...`, not `ci(ci): ...`.
-- **Tests** (RTM-83):
-  - Unit tests, which reach a module's private items, live in `<crate>/src/tests/`, one file per
-    source file and topic, named `<source file stem>_<topic>_tests.rs`
-    (`todo_item_parsing_tests.rs`, `config_file_tests.rs`); the topic is always present. The source
-    file declares each at its end:
-    ```rust
-    #[cfg(test)]
-    #[path = "tests/todo_item_parsing_tests.rs"]
-    mod parsing_tests;
-    ```
-    `#[path]` resolves relative to the declaring file's directory, and the module stays a child of
-    the source module, so `use super::*;` reaches private items. No inline `mod tests` blocks, no
-    `mod.rs` and no plain `tests.rs`.
-  - Helpers shared by several topic files of one source file go into
-    `<source file stem>_support_tests.rs`, declared as `mod support_tests;`, with the helpers
-    `pub(super)`; the topic files import them with `use super::support_tests::*;`.
-  - A source file in a subdirectory (none yet) mirrors it under `src/tests/`: `src/foo/bar.rs`
-    declares `#[path = "../tests/foo/bar_<topic>_tests.rs"]`.
-  - Integration tests, which use only the public interface, live in each crate's top-level
-    `tests/`, one test binary per file, named `<area>_<topic>_tests.rs` (`library_file_tests.rs`,
-    `cli_sync_tests.rs`). `rtmcli` tests run the binary through `CARGO_BIN_EXE_rtmcli`, never
-    `cargo run`, which would rebuild it with other features in the middle of a run (RTM-137).
-    `rtmapp` is a binary crate and has none; its UI tests run in-process with `egui_kittest`, as
-    unit tests (`app_ui_tests.rs`, see `rtmapp/AGENTS.md`).
-  - Every test works in scratch directories under the system temp directory and never reads or
-    writes the user's real `rtm/config.toml` or todo.txt. A new test that runs a program removes
-    the environment variables that would change its result (`TODOTXT`, `RTM_NO_SYNC`, `RTM_VCS`,
-    `RTM_UPDATE_URL`, `RTM_ARCHIVE_DAYS`).
-- **Epic close** (RTM-159): before closing an epic whose changes touch `rtmmcp/`, `todotxt/src/`
-  (how a line is printed and parsed, which the MCP tools show and match on) or the `mcp` entry
-  points (`rtmcli/src/main.rs`'s `mcp`, `rtmapp/src/mcp.rs`), run the LLM eval of the MCP tools,
-  `nix develop -c scripts/mcp-eval.sh` (see `rtmmcp/AGENTS.md`), and report its table in the
-  epic's last PR or on the epic. A scenario that fails becomes an issue of its own, not a reason
-  to keep the epic open.
-
----
+  - `github`: the other workflows, the issue forms, the rulesets and `doc/ci.md`.
+  - `workspace`: root `AGENTS.md`, `README.md`, the workspace `Cargo.toml` and `Cargo.lock`, `.claude/`, and changes no part dominates.
+  - A change takes the scope of the part it is about; the type says what kind (`ci(github)`, not `ci(ci)`).
+- **Tests:**
+  - Unit tests: `<crate>/src/tests/<source stem>_<topic>_tests.rs`, declared at the source file's end as `#[cfg(test)] #[path = "tests/<file>"] mod <topic>_tests;`; no inline `mod tests`, `mod.rs` or plain `tests.rs`.
+  - Helpers shared by one source file's topic files: `<stem>_support_tests.rs` as `mod support_tests;`, items `pub(super)`; a source in a subdirectory mirrors it under `src/tests/`.
+  - Integration tests: `<crate>/tests/<area>_<topic>_tests.rs`; rtmcli's run `CARGO_BIN_EXE_rtmcli`, never `cargo run`; rtmapp, a binary, has unit tests only, UI tests included.
+  - Tests use scratch directories under the system temp directory, never the user's `rtm/config.toml` or todo files, and a test running a program removes `TODOTXT`, `RTM_NO_SYNC`, `RTM_VCS`, `RTM_UPDATE_URL` and `RTM_ARCHIVE_DAYS`.
+  - Git tests give each scratch repository a local identity, `commit.gpgsign=false`, an empty `core.hooksPath` and `rerere.enabled=false`, with local bare remotes, never the network.
+- **Epic close:** before closing an epic that touches `rtmmcp/`, `todotxt/src/` or the `mcp` entry points, run the [MCP eval](doc/mcp-eval.md) and report its table in the epic's last PR; a failing scenario becomes its own issue.
 
 ## Important Notes
 
-- **Nix shell:** `shell.nix` (or `nix develop`) provides the toolchain and the libraries `rtmapp` loads
-  at run time. Use it before running `cargo build` on NixOS.
-- **Issue tracker** (RTM-180): Jira, https://brcha.atlassian.net, space RTM. The "RTM board"
-  (Scrum) shows the current sprint, "RTM overview" (Kanban) all work; keys continue the
-  YouTrack ones.
-  - Workflow: Open -> In Progress -> Code Review when the pull request opens -> Done after the
-    merge. The transitions into Done set the resolution (Done, Won't do, Duplicate, Obsolete,
-    Cannot reproduce). To Verify is the queue of finished work waiting for a manual check,
-    never the review state.
-  - Work types: Epic, Story, Task, Bug, Spike; an issue's epic is its parent field. Links:
-    "depends on", "blocks", "relates to".
-  - Access: the Atlassian MCP, or the REST API with the credentials in `~/.config/rtm-jira/env`.
-  - Each new pull request is added to its issue's links by a Jira Automation flow whose API token
-    expires on 2027-11-21; see "PR title and issue links" in [CI](doc/ci.md).
-  - GitHub issues (https://github.com/brcha/rtm/issues) are reports from users, not work items,
-    opened through the forms in `.github/ISSUE_TEMPLATE/` (blank issues are off; the website's
-    `report.md` describes the forms, so change both together). The maintainer triages them; work
-    that comes out of one gets its own Jira issue, which the branch, commits and PR title name.
-    The PR description may say `Closes #N` for the GitHub report, so the report closes when the
-    PR merges. Jira is private: user-facing text names it but never links it.
-  - History before 2026-11-11 is also in the frozen YouTrack project RTM. `PER-N` keys are
-    perseus_helm issues, which are still in YouTrack.
-- **Vercel bot comments** (RTM-141): `vercel[bot]` comments on every pull request with the
-  website's preview deployment status, whatever the PR changes. It is a status notice, not a
-  review: do not treat it as feedback or reply to it. It matters only for a PR that changes the
-  website (`site/`, `scripts/site/`, `vercel.json`, the site workflow), and there only when the
-  deployment failed.
-- **Claude review comments** (RTM-147): `claude-review.yml` reviews each pull request from a
-  branch of this repository when it opens and after every push, and posts its findings as
-  comments from `claude[bot]`. Unlike the Vercel bot's notices, these are review feedback. A
-  session working on the PR reads them, fixes what holds, and replies when it disagrees. See
-  "Claude review" in [CI](doc/ci.md).
-- **Native dependency sync:** When adding a new system/native library dependency to any crate in
-  the workspace, register it in **both** of the following locations to keep CI and the Nix builds
-  in sync:
-  1. `.github/workflows/rust.yml` — an `apt-get install` step (no crate links a native library
-     today; the existing apt step installs pijul's libraries for the `rtmsync` tests, see below;
-     use the hardened pattern from `release.yml`, see RTM-28 in [CI](doc/ci.md))
-  2. `default.nix` — the matching list (`eguiDeps` today; `flake.nix` and `shell.nix` import it),
-     plus `shell.nix`'s inputs if `cargo build` in the dev shell needs the library
-
-  **Run-time-only libraries are the exception to item 1.** `rtmapp` links no native libraries beyond
-  glibc: egui, winit, wgpu and the font provider load Wayland, xkbcommon, X11, GL, Vulkan and
-  fontconfig with `dlopen`, and rfd's file dialog loads libdbus the same way. Those go only into
-  the Nix `eguiDeps` list (put on the binary's rpath,
-  and, on Linux, on the dev shell's `LD_LIBRARY_PATH`); not into an apt step: `rust.yml` builds and
-  tests without ever starting the GUI, and the Release workflow's smoke launches get them from the
-  installed deb's `depends`, installing only its `suggests` and the Mesa drivers themselves. A new run-time library also goes into the `rtmapp` deb's `depends` (or `suggests`, if the
-  app runs fully without it) in `[package.metadata.deb]` of `rtmapp/Cargo.toml`, and by soname into
-  the `rtmapp` RPM's `requires` (or `suggests`) in `[package.metadata.generate-rpm]`; see the run-time
-  notes in `rtmapp/AGENTS.md` for how the current list was found.
-
-  This rule governs **additions**. It does not invert: apt's `-dev` packages pull each other in
-  transitively, so an apt list is intentionally a minimal subset of what the Nix lists declare. Do
-  not trim the Nix lists to match — Nix `buildInputs` do not propagate `pkg-config` search paths the
-  way apt's package interdependencies do.
-
-  **Test tools are not native dependencies.** `rust.yml` builds `pijul` (RTM-18), which the
-  `rtmsync` tests drive, on Linux and macOS, installing the libraries it needs (OpenSSL and
-  libsodium, from apt and Homebrew), and downloads a prebuilt `pijul.exe` on Windows. No crate
-  links them, so they do not go into the Nix lists or the debs; in Nix they go into
-  `nativeCheckInputs` and the dev shell, never `eguiDeps` (see [Nix Packaging](doc/nix-packaging.md)). See `rtmsync/AGENTS.md`.
-
----
+- AGENTS.md files hold one-line conventions and constraints only; detailed reference goes to `doc/`.
+- Run cargo in the dev shell (`nix develop`) on NixOS.
+- **Jira** (https://brcha.atlassian.net, space RTM): Open → In Progress → Code Review when the PR opens → Done after the merge; To Verify is for manual checks, never review.
+- Jira work types Epic, Story, Task, Bug, Spike; an epic is the parent field; links "depends on", "blocks", "relates to"; access through the Atlassian MCP or `~/.config/rtm-jira/env`.
+- GitHub issues are user reports from `.github/ISSUE_TEMPLATE/` (change with `site/content/report.md`); work from one gets a Jira issue, the PR may say `Closes #N`; never link the private Jira in user-facing text.
+- `vercel[bot]` comments are status notices, not review: ignore them unless a website PR's deployment failed.
+- `claude[bot]` comments (`claude-review.yml`) are review feedback: fix what holds, reply where you disagree.
+- **Native dependency sync:** a native library a crate links goes into both `rust.yml` (a hardened apt step, see [CI](doc/ci.md)) and `default.nix`'s `eguiDeps` (and `shell.nix` if the dev-shell build needs it).
+- Libraries rtmapp loads with `dlopen` go only into `eguiDeps`, the deb's `depends`/`suggests` and the RPM's `requires`/`suggests` by soname ([desktop app](doc/rtmapp.md)), never into an apt step.
+- Never trim the Nix lists to match apt's; test tools such as pijul go into `nativeCheckInputs` and the dev shell, never `eguiDeps` or the packages.
 
 ## Future Plans
 
-- Mobile GUI (Android-centric, cross-platform)
-- Subtasks (uuid + sub tags already in the data model, needs UI)
-- Comments per item (uuid-keyed, stored in a subdir of the todo.txt directory)
+- See README's "General plan".
