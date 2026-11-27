@@ -11,6 +11,7 @@ use todotxt::{TodoContext, TodoProject};
 #[derive(Parser)]
 #[command(name = "rtmcli")]
 #[command(about = "Rusty Todo.txt Manager CLI")]
+#[command(version)]
 struct Cli {
     /// Todo.txt file name
     #[arg(short = 'f', long, global = true)]
