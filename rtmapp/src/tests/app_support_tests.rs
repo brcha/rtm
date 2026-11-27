@@ -34,6 +34,7 @@ pub(super) fn bare_app(dir: &Path, library: Option<TodoLibrary>) -> App {
         editing: None,
         settings: None,
         archive_settings: None,
+        about: false,
         confirm_close: None,
         renaming: None,
         reconnect: false,

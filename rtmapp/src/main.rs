@@ -2,6 +2,7 @@
 // visible there.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod about;
 mod app;
 mod archive;
 mod calendar;

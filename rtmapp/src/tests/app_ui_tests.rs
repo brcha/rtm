@@ -570,7 +570,7 @@ fn add_row_enabled(harness: &Harness<'_, App>) -> bool {
 }
 
 #[test]
-fn the_menu_has_the_file_entries_settings_and_quit() {
+fn the_menu_has_the_file_entries_settings_about_and_quit() {
     let dir = temp_dir("ui-menu");
     let mut harness = harness(&dir, "Alpha\n", |_| {});
     // The sidebar no longer has the file buttons.
@@ -583,6 +583,7 @@ fn the_menu_has_the_file_entries_settings_and_quit() {
         "Load File…",
         "Archive Done Items",
         "Settings…",
+        "About",
         "Quit",
     ] {
         assert!(
@@ -757,6 +758,33 @@ fn the_settings_shortcut_opens_settings_but_not_over_the_edit_dialog() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
     assert!(harness.state().settings.is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn about_shows_the_version_and_the_links_and_closes() {
+    let dir = temp_dir("ui-about");
+    let mut harness = harness(&dir, "Alpha\n", |_| {});
+    for close in [None, Some(Key::Escape)] {
+        open_menu(&mut harness);
+        entry(&harness, "About").click();
+        harness.run();
+        harness.get_by_label(&format!("Version {}", env!("CARGO_PKG_VERSION")));
+        for link in ["Website", "Report a problem", "MIT licence"] {
+            harness.get_by_role_and_label(Role::Link, link);
+        }
+        // The menu's shortcuts are inactive while it is open.
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+        harness.run();
+        assert!(harness.state().settings.is_none());
+        match close {
+            None => harness.get_by_label("Close").click(),
+            Some(key) => harness.key_press(key),
+        }
+        harness.run();
+        assert!(!harness.state().about);
+        assert!(harness.query_by_label("Website").is_none());
+    }
     let _ = std::fs::remove_dir_all(dir);
 }
 
