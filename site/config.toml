@@ -7,3 +7,7 @@ description = "A Todo.txt manager written in Rust: a desktop app and a command-l
 # templates/releases.json at the site root. Zola calls it a feed; it is not a news feed.
 generate_feeds = true
 feed_filenames = ["releases.json"]
+
+[markdown]
+# External links in the Markdown pages open in a new tab; the templates set the same by hand.
+external_links_target_blank = true

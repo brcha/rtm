@@ -89,6 +89,9 @@ in `vercel.json`:
 ## Conventions
 
 - Text in `content/_index.md`, layout in the templates; no third-party theme.
+- External links open in a new tab: `external_links_target_blank` in `config.toml` for the
+  Markdown, and `target="_blank" rel="noopener"` on each external link in the templates, the
+  download links included. Links within the site open in place.
 - Advertise only features that exist in the code (subtasks, for example, exist only in the data
   model and are not listed).
 - The install guide is copied from `README.md` ("Installing") into `content/install.md`, not only
