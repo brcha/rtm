@@ -1,4 +1,4 @@
-//! Colours, fonts and egui styling; see "Look" in `rtmapp/AGENTS.md`.
+//! Colours, fonts and egui styling; see "Look" in `doc/rtmapp.md`.
 
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, Theme, Ui,

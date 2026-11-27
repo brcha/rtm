@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The LLM eval of rtm's MCP tools (rtmmcp/eval, see rtmmcp/AGENTS.md): runs each scenario a few
+# The LLM eval of rtm's MCP tools (rtmmcp/eval, see doc/mcp-eval.md): runs each scenario a few
 # times with Claude Code and with Grok Build on the rtm server, on scratch files only, and prints
 # the passes per scenario. Needs node 22.22 or newer (`nix develop`), `claude` (Claude Code) on
 # PATH, signed in, and for Grok, `grok` on PATH, signed in. It checks the login of each selected

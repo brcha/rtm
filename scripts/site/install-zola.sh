@@ -3,7 +3,7 @@
 # against a SHA-256. Vercel runs it as the install step (vercel.json): its built-in Zola preset
 # fails on current Zola, whose glibc build needs a newer glibc than Vercel's build image has.
 # The version and checksum in vercel.json follow flake.lock; update them with
-# scripts/site/sync-zola-version.sh. See site/AGENTS.md.
+# scripts/site/sync-zola-version.sh. See doc/website.md.
 #
 # Usage: scripts/site/install-zola.sh <version> <sha256>
 

@@ -195,7 +195,7 @@ pub fn show(
 }
 
 /// Painted, because the ☐ and ☑ glyphs are missing from most fonts (see "Look" in
-/// `rtmapp/AGENTS.md`). Returns whether it was clicked. `index` is the item's file index, for a
+/// `doc/rtmapp.md`). Returns whether it was clicked. `index` is the item's file index, for a
 /// stable widget id.
 fn checkbox(ui: &mut Ui, p: &Palette, item: &TodoItem, index: usize) -> bool {
     let done = item.done;

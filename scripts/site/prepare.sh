@@ -2,7 +2,7 @@
 # Copies the images the website uses into site/static/: the screenshots from the repository root
 # and the app icon from rtmapp/assets/icons/. Zola reads static files only from inside the site,
 # and copying keeps a single source for each image. The copies are git-ignored. Run it before
-# `zola --root site build` or `zola --root site serve`; see site/AGENTS.md.
+# `zola --root site build` or `zola --root site serve`; see doc/website.md.
 #
 # Usage: scripts/site/prepare.sh
 

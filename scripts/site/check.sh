@@ -4,7 +4,7 @@
 # the templates refer to. It also checks releases.json, the release metadata the programs read.
 # By default no network is used; with --external, external links are checked instead.
 # Needs zola, lychee and jq (the dev shell has them); CI runs this script, see
-# .github/workflows/site.yml and site/AGENTS.md.
+# .github/workflows/site.yml and doc/website.md.
 #
 # Usage: scripts/site/check.sh [--external]
 

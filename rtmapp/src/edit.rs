@@ -509,7 +509,7 @@ fn move_to(ui: &mut Ui, targets: &[MoveTarget]) -> Option<MoveTarget> {
 }
 
 /// A label with its control 6 px below; `add` gets the label's id, to name the control by it.
-/// Labels are regular (see "Look" in `rtmapp/AGENTS.md`).
+/// Labels are regular (see "Look" in `doc/rtmapp.md`).
 fn group<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui, egui::Id) -> R) -> R {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
