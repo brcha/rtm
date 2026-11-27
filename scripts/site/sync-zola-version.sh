@@ -2,7 +2,7 @@
 # Keeps the Zola that Vercel installs (the install-zola.sh arguments in vercel.json) in step with
 # the Zola that flake.lock pins for the dev shell and CI: reads the pinned version, downloads that
 # release's musl tarball, computes its SHA-256 and rewrites vercel.json. Run it after every
-# nixpkgs bump (nix flake update); see site/AGENTS.md and doc/nix-packaging.md.
+# nixpkgs bump (nix flake update); see doc/website.md and doc/nix-packaging.md.
 #
 # Usage: scripts/site/sync-zola-version.sh
 

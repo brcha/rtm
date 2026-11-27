@@ -80,7 +80,7 @@
     squash-merging: the changelog leaves those commits out.
   - **The MCP eval (RTM-159):** when a release changes `rtmmcp/`, `todotxt/src/` or the `mcp`
     entry points, run `nix develop -c scripts/mcp-eval.sh` on the release branch before the
-    release run and read its table (see `rtmmcp/AGENTS.md`). It runs locally on the Claude Code
+    release run and read its table (see [MCP eval](mcp-eval.md)). It runs locally on the Claude Code
     and Grok Build logins; the Release workflow does not run it.
   - **Website post (RTM-91):** each published release gets a post on the project website, and the
     website's download links are updated by hand in the same change; the site has no JavaScript
@@ -100,7 +100,7 @@
     without `older_line`: they point at
     `https://github.com/brcha/rtm/releases/download/vX.Y.Z/<asset>`, with X.Y.Z from the post's
     file name (names as under "Assets"; `platforms` in `site/templates/macros.html`). See
-    `site/AGENTS.md`.
+    [the website](website.md).
   - **Announcement (RTM-154):** each stable release, minor or patch (a patch on an older line
     too), is announced on X through Buffer, linking to its website post, once the post is live, so
     the link works. Betas are not announced.
@@ -248,7 +248,7 @@
 
 - **MSI source:** `rtmapp/wix/main.wxs` (WiX v3), built by `cargo wix -p rtmapp` (cargo-wix 0.3.9,
   `cargo install --locked`; WiX 3.14.1 is on the runner image, installed with choco if a future image
-  drops it). Its header lists what it keeps from the 0.1.x MSI; `rtmapp/AGENTS.md` has the details.
+  drops it). Its header lists what it keeps from the 0.1.x MSI.
 - **`UpgradeCode` `E0E423D1-1101-50D4-BAEE-4A27FA127509` must never change.** It is the 0.1.x MSI's,
   and with it `MajorUpgrade` replaces an installed version
   instead of installing beside it. Per-machine install, downgrades allowed (the build's only ICE
@@ -315,7 +315,12 @@
   hand: cargo-deb's `$auto` needs `dpkg-shlibdeps`, which AlmaLinux lacks, so both list
   `libc6 (>= 2.34), libgcc-s1` — the build image's glibc, so the floor changes with that image
   (`linux-deb` fails if a binary needs a newer glibc than its deb requires). `rtmapp`'s also lists the
-  libraries it loads with `dlopen`; see `rtmapp/AGENTS.md`.
+  libraries it loads with `dlopen`; see [the desktop app](rtmapp.md). cargo-deb requires
+  `description`, `license` and `repository` in `[package]`. Asset sources keep the literal
+  `target/release/` prefix even where that is not the crate's target directory: cargo-deb
+  substitutes the real one (workspaces, cross builds, `CARGO_TARGET_DIR`), and a workspace-relative
+  path makes it package stale files. The workflow passes `--output` explicitly, since cargo-deb's
+  default directory is `target/debian/`, not `target/release/debian/`.
 - **RPMs (RTM-9):** both come from cargo-generate-rpm 0.21.1, described in
   `[package.metadata.generate-rpm]` of the same files (release `1`; the licences go to
   `/usr/share/licenses/<name>/`). `rtmapp`'s `requires` names its `dlopen` libraries by soname

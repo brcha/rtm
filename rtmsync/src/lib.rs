@@ -499,7 +499,7 @@ pub enum Refusal {
 }
 
 /// The repository check every frontend runs before it commits to the repository holding `file`
-/// (the check on open, see `rtmsync/AGENTS.md`). `choice` picks the VCS in a directory used by
+/// (the check on open). `choice` picks the VCS in a directory used by
 /// several. With `commit_changes` the caller commits outside changes, and adds an untracked file,
 /// before anything else; without it outside changes are refused and an untracked file is not
 /// synced. Commits nothing itself.

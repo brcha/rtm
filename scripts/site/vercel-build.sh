@@ -3,7 +3,7 @@
 # scripts/site/install-zola.sh put in the repository root. The site's URLs are absolute, so a
 # preview deployment is built with its own *.vercel.app address as the base URL; otherwise it would
 # load the production site's stylesheet and images instead of its own. Production, and any build
-# without Vercel's variables, keeps base_url from site/config.toml. See site/AGENTS.md.
+# without Vercel's variables, keeps base_url from site/config.toml. See doc/website.md.
 #
 # Usage: scripts/site/vercel-build.sh
 

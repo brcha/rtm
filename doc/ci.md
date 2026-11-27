@@ -138,7 +138,7 @@
   dispatch (`check.sh --external`, with `GITHUB_TOKEN`), so a remote outage never blocks a merge.
   Zola, lychee and jq come from the pinned nixpkgs through `nix shell`, not the full dev shell.
   Publishing is not CI's job: Vercel's Git integration builds and deploys the site from
-  `vercel.json` (RTM-90, see `site/AGENTS.md`); its preview status on pull requests is not a
+  `vercel.json` (RTM-90, see [the website](website.md)); its preview status on pull requests is not a
   required check.
 - **Announcement (RTM-171):** `announce.yml` (named `Announce`) runs `scripts/announce.sh` for the
   release posts a change adds under `site/content/news/` (`git diff --diff-filter=A`, so editing a

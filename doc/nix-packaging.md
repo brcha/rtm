@@ -35,7 +35,7 @@
   the binary's rpath with `patchelf --add-rpath` in `postFixup` (after the rpath shrinking, which
   would drop them); on macOS the system frameworks come from stdenv's Apple SDK, and the result is
   a plain binary under `bin/`, not an app bundle (the dmg comes from `scripts/build-macos.sh`).
-  `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons (PNGs from 16 to 512 px and the scalable SVG, see `rtmapp/AGENTS.md`) and
+  `postInstall` installs `rtmapp/assets/rtmapp.desktop`, the hicolor icons (PNGs from 16 to 512 px and the scalable SVG, see [the desktop app](rtmapp.md)) and
   `Inter-LICENSE.txt` (under `share/licenses/rtmapp`).
 - **Metadata from `Cargo.toml` (RTM-75):** nothing about the packages is hard-coded in the Nix
   files. `fromCargo` in `default.nix` takes `pname`, `version`, `meta.description`,

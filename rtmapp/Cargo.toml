@@ -79,7 +79,7 @@ assets = [
 
 # RPM package, built with cargo-generate-rpm by the Release workflow. Same files and dependencies as the
 # deb, named by soname (and portal package names that Fedora, openSUSE and RHEL share), so one package
-# installs on all of them. glibc comes from auto-req; the run-time list is in AGENTS.md.
+# installs on all of them. glibc comes from auto-req; the run-time list is in doc/rtmapp.md.
 [package.metadata.generate-rpm]
 release = "1"
 assets = [
