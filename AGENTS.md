@@ -92,7 +92,7 @@ them.
     `scripts/changelog.sh`, `scripts/announce.sh`, `cliff.toml`, `doc/release-process.md` and the
     release PRs.
   - `nix`: `default.nix`, `flake.nix`, `shell.nix`, `doc/nix-packaging.md`.
-  - `github`: the other GitHub Actions workflows, the rulesets and `doc/ci.md`.
+  - `github`: the other GitHub Actions workflows, the issue forms, the rulesets and `doc/ci.md`.
   - `workspace`: repository-wide files (root `AGENTS.md`, `README.md`, the workspace `Cargo.toml`
     and `Cargo.lock`, `.claude/`) and changes spread over several parts.
 
@@ -152,6 +152,12 @@ them.
   - Access: the Atlassian MCP, or the REST API with the credentials in `~/.config/rtm-jira/env`.
   - Each new pull request is added to its issue's links by a Jira Automation flow whose API token
     expires on 2027-11-21; see "PR title and issue links" in [CI](doc/ci.md).
+  - GitHub issues (https://github.com/brcha/rtm/issues) are reports from users, not work items,
+    opened through the forms in `.github/ISSUE_TEMPLATE/` (blank issues are off; the website's
+    `report.md` describes the forms, so change both together). The maintainer triages them; work
+    that comes out of one gets its own Jira issue, which the branch, commits and PR title name.
+    The PR description may say `Closes #N` for the GitHub report, so the report closes when the
+    PR merges. Jira is private: user-facing text names it but never links it.
   - History before 2026-11-11 is also in the frozen YouTrack project RTM. `PER-N` keys are
     perseus_helm issues, which are still in YouTrack.
 - **Vercel bot comments** (RTM-141): `vercel[bot]` comments on every pull request with the

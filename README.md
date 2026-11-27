@@ -431,6 +431,14 @@ Then restart Claude Desktop. Claude Desktop does not start the server from a she
 Any MCP client that starts local servers over stdio works the same way: the command is `rtmcli`
 with the arguments `-f <file> mcp`, or `rtmapp` with `mcp`.
 
+## Reporting problems and requests
+
+Found a problem with rtm, or want to ask for something? Open an issue at
+<https://github.com/brcha/rtm/issues>; [Report a problem](https://rtm.brcha.com/report/) on the
+website shows how, and what to include. GitHub issues are reports from users: they are triaged,
+and the work that comes out of them is planned and tracked in the project's Jira (space RTM), not
+in the GitHub issue.
+
 ## General plan
 
 - [x] Implement basic functionality of the Todo.txt manager with CLI and desktop GUI (for GNU/Linux, macOS and Windows, since I use all of those).
