@@ -10,6 +10,7 @@ use eframe::egui::{
 };
 use todotxt::{TodoContext, TodoItem, TodoLibrary, TodoProject, WriteLock};
 
+use crate::about;
 use crate::archive::{self, ArchiveForm};
 use crate::config::{self, AppConfig};
 use crate::edit::{self, ConfirmMove, EditForm, MoveTarget, Outcome};
@@ -66,6 +67,8 @@ pub struct App {
     settings: Option<SettingsForm>,
     /// A file's archive settings, opened from its tab's context menu.
     archive_settings: Option<ArchiveForm>,
+    /// The About dialog is open.
+    about: bool,
     /// The file whose tab's close button was clicked, while the app asks before closing it.
     confirm_close: Option<PathBuf>,
     /// The file whose tab is being renamed, and the name typed so far.
@@ -200,6 +203,7 @@ impl App {
             editing: None,
             settings: None,
             archive_settings: None,
+            about: false,
             confirm_close: None,
             renaming: None,
             reconnect: false,
@@ -1466,6 +1470,7 @@ impl App {
         self.editing.is_some()
             || self.settings.is_some()
             || self.archive_settings.is_some()
+            || self.about
             || self.confirm_close.is_some()
             || self.file().is_some_and(|file| {
                 file.choose_vcs.is_some() || file.asking.is_some() || file.archive_asking
@@ -1482,6 +1487,7 @@ impl App {
                 }
             }
             MenuAction::Settings => self.settings = Some(SettingsForm::new(&self.config)),
+            MenuAction::About => self.about = true,
             // Through the normal close, so `on_exit` writes, commits and syncs.
             MenuAction::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         }
@@ -2457,6 +2463,9 @@ impl eframe::App for App {
                 None => {}
             }
         }
+        if self.about && about::show(ui.ctx(), p) {
+            self.about = false;
+        }
         let ignored_by =
             (self.archive_settings.as_ref()).and_then(|form| self.archive_ignored_by(&form.path));
         if let Some(form) = &mut self.archive_settings {
@@ -2846,6 +2855,7 @@ enum MenuAction {
     LoadFile,
     Archive,
     Settings,
+    About,
     Quit,
 }
 
@@ -2897,8 +2907,8 @@ fn header(
     clicked
 }
 
-/// The menu button and its popup: New File, Load File, Archive Done Items, Settings and Quit, with
-/// their shortcuts.
+/// The menu button and its popup: New File, Load File, Archive Done Items, Settings, About and
+/// Quit, with their shortcuts.
 fn menu(ui: &mut Ui, (files_enabled, archive_enabled): (bool, bool)) -> Option<MenuAction> {
     let button = theme::menu_button(ui);
     let mut chosen = None;
@@ -2908,6 +2918,7 @@ fn menu(ui: &mut Ui, (files_enabled, archive_enabled): (bool, bool)) -> Option<M
         menu_entry(ui, archive_enabled, MenuAction::Archive, &mut chosen);
         ui.separator();
         menu_entry(ui, true, MenuAction::Settings, &mut chosen);
+        menu_entry(ui, true, MenuAction::About, &mut chosen);
         ui.separator();
         menu_entry(ui, true, MenuAction::Quit, &mut chosen);
     });
@@ -2926,6 +2937,7 @@ fn menu_entry(ui: &mut Ui, enabled: bool, action: MenuAction, chosen: &mut Optio
         MenuAction::LoadFile => ("Load File…", Some(&LOAD_FILE)),
         MenuAction::Archive => ("Archive Done Items", None),
         MenuAction::Settings => ("Settings…", Some(&SETTINGS)),
+        MenuAction::About => ("About", None),
         MenuAction::Quit => ("Quit", Some(&QUIT)),
     };
     let mut button = egui::Button::new(text);
