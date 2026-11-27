@@ -22,7 +22,8 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
 ├── cli_mcp_tests.rs       ← mcp: the MCP server over stdio
 ├── cli_sync_tests.rs      ← Sync through git
 ├── cli_tags_tests.rs      ← projects and contexts, and filtering list by them
-└── cli_update_tests.rs    ← check-update against a local HTTP server
+├── cli_update_tests.rs    ← check-update against a local HTTP server
+└── cli_version_tests.rs   ← --version and -V
 ```
 
 ---
@@ -82,6 +83,8 @@ rtmcli/tests/   ← Integration tests, running the binary on scratch files
   completion date. Nothing to archive prints `No items to archive in '<file>'` and writes nothing.
   It never asks: archiving moves lines, it deletes none.
 - No config file — stateless, all options via CLI args/env.
+- `--version` / `-V` (clap's built-in flag) prints `rtmcli <version>` from the package
+  version and exits 0 before any file is resolved; no option may take `-V` as its short form.
 
 ## Update check (RTM-137)
 
