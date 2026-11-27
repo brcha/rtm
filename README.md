@@ -206,6 +206,8 @@ ARM64 and 32-bit Windows builds are not currently produced.
 
 ### Updates
 
+The desktop app shows its version in **About**, in the menu at the left of the title bar.
+
 The desktop app checks for a newer release a few seconds after it starts and once a day while it
 runs. When one exists, a notice under the title bar offers it: **Download** opens the release's
 page, where you download it as you did the first time; the × hides the notice until the next start.
