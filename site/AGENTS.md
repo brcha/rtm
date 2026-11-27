@@ -18,10 +18,11 @@ site/
 │   ├── _index.md         ← the landing page's text: tagline (front matter), intro and features
 │   ├── install.md        ← the install guide, a copy of README.md's "Installing" section
 │   ├── mcp.md            ← using rtm with AI assistants, from README.md's MCP section (RTM-116)
+│   ├── report.md         ← how to report a problem or ask for a feature in the GitHub issues
 │   └── news/             ← one post per release (`X.Y.Z.md`), listed newest first
 ├── templates/
 │   ├── base.html         ← skeleton: head, header (Install, AI assistants, Download, News,
-│   │                       GitHub), footer
+│   │                       Report a problem, GitHub), footer
 │   ├── index.html        ← the landing page: hero (with the latest release notice), screenshots
 │   │                       and their viewer, features, downloads
 │   ├── macros.html       ← the download links and the latest release's version
@@ -88,6 +89,9 @@ in `vercel.json`:
 ## Conventions
 
 - Text in `content/_index.md`, layout in the templates; no third-party theme.
+- External links open in a new tab: `external_links_target_blank` in `config.toml` for the
+  Markdown, and `target="_blank" rel="noopener"` on each external link in the templates, the
+  download links included. Links within the site open in place.
 - Advertise only features that exist in the code (subtasks, for example, exist only in the data
   model and are not listed).
 - The install guide is copied from `README.md` ("Installing") into `content/install.md`, not only
@@ -104,6 +108,9 @@ in `vercel.json`:
 - `content/mcp.md` is README.md's "Using rtm with AI assistants (MCP)" section, its `###` headings
   raised to `##` and its links adapted to the site (`@/install.md`, the README's Syncing section
   on GitHub); keep the two in step.
+- `content/report.md` is written for the site, not copied from README; README's "Reporting
+  problems and requests" section links to it. It names no tracker but GitHub's issues, and lists
+  what the issue forms in `.github/ISSUE_TEMPLATE/` ask for; keep the two in step.
 - Release changes appear in each release's post (`content/news/X.Y.Z.md`, its `CHANGELOG.md`
   section, headings one level up). The post opens with the downloads of its own release, taken from
   its file name (`news-post.html`, set as `page_template` in `content/news/_index.md`); the landing

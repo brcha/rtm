@@ -1,0 +1,40 @@
+name: Feature request
+description: Ask for something rtm does not do yet.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. The guide at https://rtm.brcha.com/report/ explains what helps.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched the existing issues, open and closed, and found no request for this.
+          required: true
+  - type: dropdown
+    id: program
+    attributes:
+      label: Program
+      description: Where you would use it. Choose every one that applies.
+      multiple: true
+      options:
+        - Desktop app (rtmapp)
+        - CLI (rtmcli)
+        - MCP server (rtmcli mcp or rtmapp mcp)
+        - Website
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you want to do
+      description: What you are trying to do, and why rtm does not let you do it today.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How it could work
+      description: How you would expect it to look or behave. Optional.

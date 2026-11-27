@@ -1,0 +1,100 @@
+name: Problem report
+description: Something in rtm does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. The guide at https://rtm.brcha.com/report/ explains what
+        helps. Issues are public: use made-up todo items that show the same problem, and leave out
+        paths, repository addresses and names you do not want published.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched the existing issues, open and closed, and found no report of this.
+          required: true
+        - label: This report contains no private todo items, paths or addresses.
+          required: true
+  - type: dropdown
+    id: program
+    attributes:
+      label: Program
+      description: Choose every one that shows the problem.
+      multiple: true
+      options:
+        - Desktop app (rtmapp)
+        - CLI (rtmcli)
+        - MCP server (rtmcli mcp or rtmapp mcp)
+    validations:
+      required: true
+  - type: input
+    id: release
+    attributes:
+      label: Release
+      description: The version you installed, as in the downloaded file's name.
+      placeholder: "26.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed from
+      options:
+        - deb
+        - RPM
+        - AppImage
+        - Nix
+        - macOS DMG
+        - Windows installer (MSI)
+        - Portable CLI (macOS archive or Windows .exe)
+        - Built from source
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - GNU/Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating system version
+      placeholder: "Ubuntu 24.04, Fedora 43, macOS 15, Windows 11"
+    validations:
+      required: true
+  - type: dropdown
+    id: sync
+    attributes:
+      label: Sync
+      description: How the todo.txt file is kept in sync.
+      options:
+        - Not synced
+        - Git
+        - Pijul
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, step by step, what you expected, and what happened instead.
+      placeholder: |
+        1. ...
+        2. ...
+        Expected: ...
+        Instead: ...
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message
+      description: Any error message or output, copied as text. Screenshots go in the field above.
+      render: text
