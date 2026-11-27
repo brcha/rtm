@@ -22,7 +22,7 @@ open file (RTM-128), for several open files (RTM-66); the title bar's menu and t
 (RTM-134); the projects and contexts in the sidebar (RTM-120) and filtering by them (RTM-121),
 also from a tag clicked in an item row (RTM-150); links in item text (RTM-193); New File and Load
 File buttons on the page while no file is open (RTM-179); archiving done items, from the menu and
-daily.
+daily; the About dialog.
 
 ---
 
@@ -40,6 +40,7 @@ rtmapp/
 │   └── rtmapp.desktop      ← XDG desktop entry (Nix package, deb and AppImage)
 └── src/
     ├── main.rs             ← `rtmapp mcp`, else window options and eframe::run_native
+    ├── about.rs            ← About dialog: the app's name, its version and links
     ├── archive.rs          ← A file's archive settings: the form (`ArchiveForm`) and the modal
     ├── app.rs              ← App state (`App`, and `OpenFile` per open todo.txt), panels, the
     │                         title bar's menu and shortcuts, the tab strip, New File and Load
@@ -284,9 +285,10 @@ rtmapp/
 - **Menu and shortcuts (RTM-134):** a painted ☰ button (`theme::menu_button`, accessible name
   "Menu"; Inter has no such glyph) at the left of the title bar opens an `egui::Popup::menu` with
   New File…, Load File…, Archive Done Items (no shortcut; enabled while a loaded file is shown,
-  see Archiving), Settings… and Quit, the others showing their shortcuts: Ctrl+N, Ctrl+O, Ctrl+,
-  and Ctrl+Q (Cmd on macOS, `Modifiers::COMMAND`). The shortcuts are inactive while a modal is open
-  (`App::modal_open`). New File and Load File are disabled while a file dialog is open.
+  see Archiving), Settings…, About (no shortcut; see About dialog) and Quit, the others showing
+  their shortcuts: Ctrl+N, Ctrl+O, Ctrl+, and Ctrl+Q (Cmd on macOS, `Modifiers::COMMAND`). The
+  shortcuts are inactive while a modal is open (`App::modal_open`). New File and Load File are
+  disabled while a file dialog is open.
   Quit sends `ViewportCommand::Close`, so `on_exit` runs as when the window is closed. On macOS,
   winit's own app menu also has Quit (Cmd+Q) through `terminate:`; RTM-140 checks that it reaches
   `on_exit` too. A menu entry's accessible name ends in its shortcut text, which differs on macOS,
@@ -325,6 +327,10 @@ rtmapp/
   pending changes are written first. The Git-or-Pijul choice is per file (RTM-124) and is not in
   the dialog: it stays the question asked on open. Escape and the backdrop cancel, as in the edit
   dialog.
+- **About dialog** (`about.rs`): the app's name, `Version <CARGO_PKG_VERSION>` (what users give in
+  a problem report), and links (`egui::Hyperlink`, in the palette's `link` colour) to the website,
+  its "Report a problem" page and the MIT licence page the website's footer uses. Close, Escape
+  and the backdrop close it.
 - **Edit dialog** (`edit.rs`): a click on an item's text opens it, filled from the item; Save (or
   Enter in a field) writes it, then `save`. The top field, Line, holds the item's line as in the
   file, priority, creation date and tags in their written order, less its `uuid:` and `sub:` tags
